@@ -42,7 +42,7 @@ test("a symbol query cannot stall on a long name", () => {
   db.prepare("INSERT INTO symbols VALUES (?, ?, ?, ?, ?)").run("a.md", "a".repeat(40) + "!", "h1", 1, 1);
   db.prepare("INSERT INTO symbols VALUES (?, ?, ?, ?, ?)").run("b.md", "Refresh", "h1", 1, 1);
   const start = performance.now();
-  assert.deepEqual(symbols(db, { query: "(a+)+$" }).map((s) => s.path), []);
+  assert.throws(() => symbols(db, { query: "(a+)+$" }), /stopped this symbol search/);
   assert.ok(performance.now() - start < 3000, `took ${Math.round(performance.now() - start)} ms`);
   assert.deepEqual(symbols(db, { query: "refresh" }).map((s) => s.path), ["b.md"]);
   assert.deepEqual(symbols(db, { query: "fresh(" }).map((s) => s.path), []);
