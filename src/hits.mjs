@@ -3,10 +3,11 @@
 // Each session's figure is appended to .findwright/hits.jsonl; `assess` reads the
 // misses back and says why they missed and what config change would help.
 
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { find } from "./find.mjs";
+import { checkOwnFolder } from "./store.mjs";
 
 const SEARCH_TOOL = /^mcp__findwright__(find|search)$/;
 const OPEN_TOOLS = { Read: "file_path", Edit: "file_path", Write: "file_path", MultiEdit: "file_path" };
@@ -95,12 +96,20 @@ function parseLine(line) {
  */
 export function recordSession(root, { goal = DEFAULT_GOAL, transcript = newestTranscript(root) } = {}) {
   if (!transcript) return { error: "No session transcript found for this folder." };
+  try {
+    checkOwnFolder(root);
+  } catch (error) {
+    return { error: error.message };
+  }
   const session = transcript.replace(/^.*[\\/]/, "").replace(/\.jsonl$/, "");
   const score = scoreSession(transcript, root);
   const past = history(root).filter((h) => h.session !== session);
   const entry = { session, date: new Date().toISOString().slice(0, 10), ...score };
   // A second close of the same session replaces its line instead of adding one.
-  if (score.scored) writeFileSync(logFile(root), [...past, entry].map((h) => JSON.stringify(h) + "\n").join(""));
+  if (score.scored) {
+    mkdirSync(dirname(logFile(root)), { recursive: true });
+    writeFileSync(logFile(root), [...past, entry].map((h) => JSON.stringify(h) + "\n").join(""));
+  }
   const recent = [...past, ...(score.scored ? [entry] : [])].slice(-SESSIONS_BEFORE_ASSESS);
   const rate = (h) => (100 * h.hits) / h.scored;
   return {

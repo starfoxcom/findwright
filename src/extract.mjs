@@ -1,11 +1,14 @@
 // Symbol extractors: each takes a file's text and returns its symbols as
 // { name, kind, line, endLine } with 1-based, inclusive line numbers. They read
 // structure from the text alone (headings, keys, declarations), so a file that
-// does not parse still yields what can be read from it.
+// does not parse still yields what can be read from it. Every pattern runs on the
+// linear-time engine, and lines past MAX_LINE (minified or generated text, never a
+// declaration) are read as blank, so no file can make extraction slow.
 
-import v8 from "node:v8";
+import { linear, linearRegExp } from "./linear.mjs";
 
-const lines = (text) => text.split(/\r?\n/);
+const MAX_LINE = 1000;
+const lines = (text) => text.split(/\r?\n/).map((line) => (line.length > MAX_LINE ? "" : line));
 
 // The last line of a block that starts at `start` and runs while `isInside` holds.
 function blockEnd(all, start, isInside) {
@@ -20,6 +23,10 @@ function blockEnd(all, start, isInside) {
 
 const indentOf = (line) => line.length - line.trimStart().length;
 
+const FRONT_MATTER_KEY = linear(/^([A-Za-z][\w-]*):/);
+const FENCE = linear(/^\s*(```|~~~)/);
+const HEADING = linear(/^(#{1,6})\s+(.+?)\s*#*\s*$/);
+
 // Markdown: headings outside code fences, each running to the next heading of
 // the same or a higher level; front-matter keys at the top.
 export function markdown(text) {
@@ -29,16 +36,16 @@ export function markdown(text) {
   let start = 0;
   if (all[0]?.trim() === "---") {
     for (let i = 1; i < all.length && all[i].trim() !== "---"; i++) {
-      const key = /^([A-Za-z][\w-]*):/.exec(all[i]);
+      const key = FRONT_MATTER_KEY.exec(all[i]);
       if (key) found.push({ name: key[1], kind: "front-matter", line: i + 1, endLine: i + 1 });
       start = i + 1;
     }
   }
   const open = [];
   for (let i = start; i < all.length; i++) {
-    const fenceMark = /^\s*(```|~~~)/.exec(all[i]);
+    const fenceMark = FENCE.exec(all[i]);
     if (fenceMark) fence = fence === fenceMark[1] ? null : (fence ?? fenceMark[1]);
-    const heading = !fence && /^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(all[i]);
+    const heading = !fence && HEADING.exec(all[i]);
     if (!heading) continue;
     const level = heading[1].length;
     while (open.length && open.at(-1).level >= level) open.pop().symbol.endLine = i;
@@ -48,6 +55,10 @@ export function markdown(text) {
   }
   return found;
 }
+
+const YAML_ITEM = linear(/^(\s*)-\s+name:\s*["']?(.+?)["']?\s*$/);
+const YAML_KEY = linear(/^(\s*)(?:-\s+)?["']?([\w.$/@-]+)["']?\s*:(?:\s|$)(.*)$/);
+const BLOCK_SCALAR = linear(/^[|>][-+]?\s*$/);
 
 // YAML: every mapping key, named by its path (`jobs.review.steps`), plus each
 // list item's `name:`. Block scalars (`|`, `>`) are skipped as text.
@@ -62,18 +73,18 @@ export function yaml(text) {
     const indent = indentOf(line);
     if (scalarIndent >= 0 && indent > scalarIndent) continue;
     scalarIndent = -1;
-    const item = /^(\s*)-\s+name:\s*["']?(.+?)["']?\s*$/.exec(line);
+    const item = YAML_ITEM.exec(line);
     if (item) {
       found.push({ name: item[2], kind: "item", line: i + 1, endLine: blockEnd(all, i, (l) => indentOf(l) > indent) });
     }
-    const key = /^(\s*)(?:-\s+)?["']?([\w.$/@-]+)["']?\s*:(?:\s|$)(.*)$/.exec(line);
+    const key = YAML_KEY.exec(line);
     if (!key) continue;
     const depth = key[1].length + (line.trimStart().startsWith("- ") ? 2 : 0);
     while (path.length && path.at(-1).depth >= depth) path.pop();
     path.push({ depth, name: key[2] });
     const name = path.map((p) => p.name).join(".");
     found.push({ name, kind: "key", line: i + 1, endLine: blockEnd(all, i, (l) => indentOf(l) > indent) });
-    if (/^[|>][-+]?\s*$/.test(key[3].trim())) scalarIndent = indent;
+    if (BLOCK_SCALAR.test(key[3].trim())) scalarIndent = indent;
   }
   return found;
 }
@@ -125,22 +136,41 @@ function stringEnd(text, start) {
   return text.length - 1;
 }
 
-// The line where the brace block opened on `start` closes, counting braces
-// outside strings and comments; the start line itself when it opens none.
-function braceEnd(all, start) {
+// The braces of a line outside its strings and its `//` comment: +1 per `{`, -1 per `}`, and whether it opened one.
+function braceCount(line) {
+  let delta = 0;
+  let opened = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === "/" && line[i + 1] === "/") break;
+    if (ch === '"' || ch === "'" || ch === "`") {
+      while (++i < line.length && line[i] !== ch) if (line[i] === "\\") i++;
+    } else if (ch === "{") { delta++; opened = true; } else if (ch === "}") delta--;
+  }
+  return { delta, opened };
+}
+
+// Most lines one file's brace blocks may scan in all: past it a block ends on its first line,
+// so a file of blocks that never close costs no more than this.
+const BRACE_SCAN_LINES = 200_000;
+const braceBudget = () => ({ left: BRACE_SCAN_LINES });
+
+// The line where the brace block opened on `start` closes; the start line itself when it opens none.
+function braceEnd(all, start, budget) {
   let depth = 0;
   let opened = false;
   for (let i = start; i < all.length; i++) {
-    const code = all[i].replace(/\/\/.*$/, "").replace(/(["'`])(?:\\.|(?!\1).)*\1/g, "''");
-    for (const ch of code) {
-      if (ch === "{") { depth++; opened = true; }
-      if (ch === "}") depth--;
-    }
+    if (--budget.left < 0) return start + 1;
+    const count = braceCount(all[i]);
+    depth += count.delta;
+    opened ||= count.opened;
     if (opened && depth <= 0) return i + 1;
     if (!opened && i > start + 2) return start + 1;
   }
   return all.length;
 }
+
+const firstGroup = (m) => m[1];
 
 const JS_RULES = [
   [/^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)/, "function"],
@@ -150,8 +180,8 @@ const JS_RULES = [
   [/^(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)/, "const"],
   [/^\s+(?:static\s+|async\s+|get\s+|set\s+|private\s+|public\s+|protected\s+|readonly\s+)*([A-Za-z_$][\w$]*)\s*\([^)]*\)\s*(?::[^{]+)?\{\s*$/, "method"],
   [/^\s*on\(\s*['"]([\w.]+)['"]/, "hook"],
-  [/^\s*test\(\s*(['"`])(.+?)\1/, "test", 2],
-];
+  [/^\s*test\(\s*(?:'([^']+)'|"([^"]+)"|`([^`]+)`)/, "test", (m) => m[1] ?? m[2] ?? m[3]],
+].map(([pattern, kind, nameOf = firstGroup]) => [linear(pattern), kind, nameOf]);
 
 const RESERVED = new Set(["if", "for", "while", "switch", "catch", "return", "function", "else"]);
 
@@ -159,24 +189,28 @@ const RESERVED = new Set(["if", "for", "while", "switch", "catch", "return", "fu
 export function javascript(text) {
   const all = lines(text);
   const found = [];
+  const budget = braceBudget();
   for (let i = 0; i < all.length; i++) {
-    for (const [rule, kind, group = 1] of JS_RULES) {
+    for (const [rule, kind, nameOf] of JS_RULES) {
       const match = rule.exec(all[i]);
-      if (!match || RESERVED.has(match[group])) continue;
-      found.push({ name: match[group], kind, line: i + 1, endLine: braceEnd(all, i) });
+      if (!match || RESERVED.has(nameOf(match))) continue;
+      found.push({ name: nameOf(match), kind, line: i + 1, endLine: braceEnd(all, i, budget) });
       break;
     }
   }
   return found;
 }
 
+const PY_DEF = linear(/^(\s*)(?:async\s+)?(def|class)\s+([A-Za-z_]\w*)/);
+const PY_CONST = linear(/^([A-Z_][A-Z0-9_]*)\s*=/);
+
 // Python: classes, functions and methods by indentation, plus module-level names.
 export function python(text) {
   const all = lines(text);
   const found = [];
   for (let i = 0; i < all.length; i++) {
-    const def = /^(\s*)(?:async\s+)?(def|class)\s+([A-Za-z_]\w*)/.exec(all[i]);
-    const name = /^([A-Z_][A-Z0-9_]*)\s*=/.exec(all[i]);
+    const def = PY_DEF.exec(all[i]);
+    const name = PY_CONST.exec(all[i]);
     if (def) {
       const indent = def[1].length;
       const kind = def[2] === "class" ? "class" : indent ? "method" : "function";
@@ -188,39 +222,49 @@ export function python(text) {
   return found;
 }
 
+const CSS_RULE = linear(/^\s*([^{}/@][^{}]*?)\s*\{/);
+const CSS_PROPERTY = linear(/^\s*(--[\w-]+)\s*:/);
+
 // CSS: rule selectors and custom properties.
 export function css(text) {
   const all = lines(text);
   const found = [];
+  const budget = braceBudget();
   for (let i = 0; i < all.length; i++) {
-    const rule = /^\s*([^{}/@][^{}]*?)\s*\{/.exec(all[i]);
-    const prop = /^\s*(--[\w-]+)\s*:/.exec(all[i]);
-    if (rule) found.push({ name: rule[1], kind: "selector", line: i + 1, endLine: braceEnd(all, i) });
+    const rule = CSS_RULE.exec(all[i]);
+    const prop = CSS_PROPERTY.exec(all[i]);
+    if (rule) found.push({ name: rule[1], kind: "selector", line: i + 1, endLine: braceEnd(all, i, budget) });
     if (prop) found.push({ name: prop[1], kind: "property", line: i + 1, endLine: i + 1 });
   }
   return found;
 }
 
-// HTML: element ids, text keys (`data-i18n`) and headings.
+const HTML_ID = linear(/\bid="([^"]+)"/g);
+const HTML_TEXT_KEY = linear(/\bdata-i18n(?:-[\w-]+)?="([^"]+)"/g);
+
+// HTML: element ids and text keys (`data-i18n`).
 export function html(text) {
   const all = lines(text);
   const found = [];
   for (let i = 0; i < all.length; i++) {
-    for (const m of all[i].matchAll(/\bid="([^"]+)"/g)) found.push({ name: m[1], kind: "id", line: i + 1, endLine: i + 1 });
-    for (const m of all[i].matchAll(/\bdata-i18n(?:-[\w-]+)?="([^"]+)"/g)) {
+    for (const m of all[i].matchAll(HTML_ID)) found.push({ name: m[1], kind: "id", line: i + 1, endLine: i + 1 });
+    for (const m of all[i].matchAll(HTML_TEXT_KEY)) {
       found.push({ name: m[1], kind: "text-key", line: i + 1, endLine: i + 1 });
     }
   }
   return found;
 }
 
+const SHELL_FUNCTION = linear(/^\s*(?:function\s+)?([A-Za-z_][\w-]*)\s*\(\)\s*\{?/);
+
 // Shell: function definitions.
 export function shell(text) {
   const all = lines(text);
   const found = [];
+  const budget = braceBudget();
   for (let i = 0; i < all.length; i++) {
-    const fn = /^\s*(?:function\s+)?([A-Za-z_][\w-]*)\s*\(\)\s*\{?/.exec(all[i]);
-    if (fn) found.push({ name: fn[1], kind: "function", line: i + 1, endLine: braceEnd(all, i) });
+    const fn = SHELL_FUNCTION.exec(all[i]);
+    if (fn) found.push({ name: fn[1], kind: "function", line: i + 1, endLine: braceEnd(all, i, budget) });
   }
   return found;
 }
@@ -229,22 +273,11 @@ export const EXTRACTORS = { markdown, yaml, json, javascript, python, css, html,
 
 // Symbols from the project's own pattern rules: each rule's regex runs on every
 // line of the files its globs match, and its `name` group (or the whole match) names the symbol.
-// A rule comes from the repo's own config, so a cloned repo can carry a hostile one.
-// Rules run on V8's linear-time engine (the `l` flag, the same guarantee RE2 and
-// ripgrep give): no pattern can backtrack, so none can hang the index. A pattern
-// that engine cannot run (back-references, lookarounds) is skipped, and so is
-// every rule if the engine is missing.
-v8.setFlagsFromString("--enable-experimental-regexp-engine");
+// A rule comes from the repo's own config, so a cloned repo can carry a hostile one: it runs
+// on the linear engine, and a rule that engine cannot run (back-references, lookarounds) is skipped.
 const MAX_RULE_LINE = 400;
 
-function rulePattern(source) {
-  if (typeof source !== "string" || source.length > 300) return null;
-  try {
-    return new RegExp(source, "gl");
-  } catch {
-    return null;
-  }
-}
+const rulePattern = (source) => (typeof source === "string" && source.length <= 300 ? linearRegExp(source, "g") : null);
 
 export function fromRules(text, rules) {
   const all = lines(text);

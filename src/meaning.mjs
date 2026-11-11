@@ -34,15 +34,17 @@ const STEP_LINES = 20;
 /** Embeds every indexed text file that has no vectors yet; returns how many it embedded. */
 export function embedMissing(db, model, budgetMs = Infinity) {
   const started = performance.now();
+  // Paths first and each text as it is reached, so a call holds one file's text, not the whole repo's.
   const todo = db.prepare(
-    "SELECT b.path, b.text FROM body b JOIN files f ON f.path = b.path WHERE b.path NOT IN (SELECT path FROM embedded)",
+    "SELECT b.path FROM body b JOIN files f ON f.path = b.path WHERE b.path NOT IN (SELECT path FROM embedded)",
   ).all();
+  const textOf = db.prepare("SELECT text FROM body WHERE path = ?");
   const insert = db.prepare("INSERT INTO chunks VALUES (?, ?, ?, ?)");
   const mark = db.prepare("INSERT OR IGNORE INTO embedded VALUES (?)");
   db.exec("BEGIN");
   try {
-    for (const { path, text } of todo) {
-      const lines = text.split(/\r?\n/);
+    for (const { path } of todo) {
+      const lines = textOf.get(path).text.split(/\r?\n/);
       for (let start = 0; start < lines.length; start += STEP_LINES) {
         const end = Math.min(lines.length, start + WINDOW_LINES);
         const vector = model.encode(`${path}\n${lines.slice(start, end).join("\n")}`);
