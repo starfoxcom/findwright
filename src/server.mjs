@@ -95,9 +95,6 @@ function formatSearch(result) {
     }
   }
   if (result.truncated) out.push("(more matches; narrow the search)");
-  if (result.skippedLongLines) {
-    out.push(`(${result.skippedLongLines} lines past 1000 characters not searched: this pattern needs the backtracking engine)`);
-  }
   return out.join("\n") || "No matches.";
 }
 

@@ -4,15 +4,29 @@
 import { globToRegExp } from "./store.mjs";
 import { linearRegExp } from "./linear.mjs";
 
-// A pattern the linear engine cannot run (case-insensitive, back-references, lookarounds) runs on the
-// backtracking engine, which a long line can stall: it skips lines past this length and says so.
-const MAX_BACKTRACK_LINE = 1000;
+// Every session pattern runs on the linear engine, so no query can stall on repo text. That engine has
+// no case-insensitive mode, so ignoring case lower-cases the line and the pattern's own letters (escapes
+// such as `\D` or `\p{Lu}` keep their meaning). A pattern it cannot run at all (back-references,
+// lookarounds) is refused with a message saying so.
+export function lowerPattern(source) {
+  let out = "";
+  for (let i = 0; i < source.length; i++) {
+    if (source[i] !== "\\") { out += source[i].toLowerCase(); continue; }
+    const end = /^\\[pPkuU][{<]/.test(source.slice(i, i + 3)) ? source.indexOf(source[i + 2] === "<" ? ">" : "}", i) : i + 1;
+    const stop = end < 0 ? source.length - 1 : end;
+    out += source.slice(i, stop + 1);
+    i = stop;
+  }
+  return out;
+}
 
-function sessionPattern(source, flags) {
-  const linear = linearRegExp(source, flags);
-  if (linear) return { test: (line) => linear.test(line) };
-  const re = new RegExp(source, flags);
-  return { test: (line) => line.length <= MAX_BACKTRACK_LINE && re.test(line), isCapped: true };
+export function sessionPattern(source, ignoreCase = false) {
+  const linear = linearRegExp(ignoreCase ? lowerPattern(source) : source);
+  if (!linear) {
+    new RegExp(source);
+    throw new Error(`FindWright runs patterns in linear time and cannot run \`${source}\`: rewrite it without back-references or lookarounds.`);
+  }
+  return { test: (line) => linear.test(ignoreCase ? line.toLowerCase() : line) };
 }
 
 // The literal runs every match of a regex branch must contain, longest first;
@@ -152,8 +166,7 @@ function enclosing(db, path, line) {
 // Lines matching any of `patterns` (JavaScript regexes) in files matching `globs`.
 // With several patterns and `all`, a file must match each of them somewhere.
 export function search(db, { patterns, globs = [], ignoreCase = false, context = 0, limit = 200, all = false }) {
-  const flags = ignoreCase ? "i" : "";
-  const regexes = patterns.map((p) => sessionPattern(p, flags));
+  const regexes = patterns.map((p) => sessionPattern(p, ignoreCase));
   const candidates = all ? shortlist(db, patterns) : unionOf(patterns.map((p) => shortlist(db, [p])));
   const globRes = globs.map(globToRegExp);
   const rows = candidates
@@ -161,11 +174,9 @@ export function search(db, { patterns, globs = [], ignoreCase = false, context =
     : db.prepare("SELECT path, text FROM body").all();
   const out = [];
   let hits = 0;
-  let skipped = 0;
   for (const { path, text } of rows.sort((a, b) => a.path.localeCompare(b.path))) {
     if (globRes.length && !globRes.some((g) => g.test(path))) continue;
     const lines = text.split(/\r?\n/);
-    if (regexes.some((re) => re.isCapped)) skipped += lines.filter((l) => l.length > MAX_BACKTRACK_LINE).length;
     if (all && !regexes.every((re) => lines.some((l) => re.test(l)))) continue;
     const matched = lines.flatMap((l, i) => (regexes.some((re) => re.test(l)) ? [i] : []));
     if (!matched.length) continue;
@@ -173,7 +184,7 @@ export function search(db, { patterns, globs = [], ignoreCase = false, context =
     hits += matched.length;
     if (hits >= limit) break;
   }
-  return { files: out, truncated: hits >= limit, skippedLongLines: skipped };
+  return { files: out, truncated: hits >= limit };
 }
 
 function hit(db, path, lines, i, context) {
@@ -188,7 +199,7 @@ function hit(db, path, lines, i, context) {
 // Symbols whose name matches `query` (a regex, or a substring when it is not one).
 export function symbols(db, { query, kind, globs = [], limit = 50 }) {
   let re;
-  try { re = new RegExp(query, "i"); } catch { re = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"); }
+  try { re = sessionPattern(query, true); } catch { re = sessionPattern(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), true); }
   const globRes = globs.map(globToRegExp);
   const rows = db.prepare("SELECT path, name, kind, line, end_line FROM symbols").all();
   const found = rows.filter((r) => re.test(r.name) && (!kind || r.kind === kind)

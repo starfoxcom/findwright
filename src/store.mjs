@@ -128,10 +128,14 @@ export function listFiles(root, config) {
   const files = new Set(git.toString("utf8").split("\0").filter(Boolean));
   for (const glob of (config.include ?? []).filter(insideRepo)) {
     const base = glob.split("/").filter((part) => !/[*?]/.test(part));
-    const start = glob.includes("*") ? base.slice(0, glob.split("/").findIndex((p) => /[*?]/.test(p))).join("/") : glob;
+    const start = /[*?]/.test(glob) ? base.slice(0, glob.split("/").findIndex((p) => /[*?]/.test(p))).join("/") : glob;
     const found = [];
     if (!realInside(root, start)) continue;
-    try { walk(root, start, found); } catch { continue; }
+    // A glob that names one file includes that file; the rest walk their fixed folder.
+    try {
+      if (lstatSync(join(root, start)).isFile()) found.push(start);
+      else walk(root, start, found);
+    } catch { continue; }
     for (const path of found) if (globToRegExp(glob).test(path)) files.add(path);
   }
   return [...files].filter((path) => !matchesAny(path, config.exclude ?? [])).sort();
