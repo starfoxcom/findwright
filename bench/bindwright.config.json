@@ -1,0 +1,36 @@
+{
+  "include": [
+    "_core/global-template/mods/ci-watch/.claude-plugin/types/**"
+  ],
+  "kinds": {
+    "*.additions": "markdown",
+    "CODEOWNERS*": "text"
+  },
+  "rules": [
+    {
+      "globs": ["page/i18n/*.js"],
+      "pattern": "^\\s*\"(?<name>[\\w.-]+)\"\\s*:",
+      "kind": "text-key"
+    },
+    {
+      "globs": ["**"],
+      "pattern": "\\{\\{(?<name>[A-Z][A-Z0-9_]*)\\}\\}",
+      "kind": "placeholder"
+    },
+    {
+      "globs": ["_core/**"],
+      "pattern": "<!-- TOGGLE:(?<name>[\\w:]+) START -->",
+      "kind": "toggle"
+    },
+    {
+      "globs": ["*.sql"],
+      "pattern": "CREATE\\s+(?:TABLE|INDEX|VIEW)\\s+(?:IF NOT EXISTS\\s+)?(?<name>\\w+)",
+      "kind": "table"
+    },
+    {
+      "globs": ["**/*.sh", "**/*.yml", "**/*.template"],
+      "pattern": "^\\s*(?:export\\s+)?(?<name>[A-Z][A-Z0-9_]{2,})=",
+      "kind": "variable"
+    }
+  ]
+}

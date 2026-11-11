@@ -1,0 +1,189 @@
+// The project index: one SQLite file holding every indexed file's text (in a
+// trigram full-text table, the shortlist for any search) and its symbols.
+// Each call first re-reads the files whose size or modified time changed, so
+// answers always match the working tree.
+
+import { DatabaseSync } from "node:sqlite";
+import { execFileSync } from "node:child_process";
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join, sep } from "node:path";
+import { EXTRACTORS, fromRules } from "./extract.mjs";
+
+// Files past this size are listed but not read: they are data, not code.
+const MAX_FILE_BYTES = 2 * 1024 * 1024;
+
+const DEFAULT_KINDS = {
+  "*.md": "markdown", "*.mdx": "markdown",
+  "*.yml": "yaml", "*.yaml": "yaml",
+  "*.json": "json", "*.jsonc": "json",
+  "*.js": "javascript", "*.mjs": "javascript", "*.cjs": "javascript",
+  "*.ts": "javascript", "*.tsx": "javascript", "*.jsx": "javascript", "*.mts": "javascript",
+  "*.py": "python",
+  "*.css": "css",
+  "*.html": "html", "*.htm": "html",
+  "*.sh": "shell", "*.bash": "shell",
+};
+
+const SCHEMA = `
+  CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, size INTEGER, mtime REAL, kind TEXT, symbols INTEGER);
+  CREATE VIRTUAL TABLE IF NOT EXISTS body USING fts5(path UNINDEXED, text, tokenize = 'trigram');
+  CREATE TABLE IF NOT EXISTS symbols (path TEXT, name TEXT, kind TEXT, line INTEGER, end_line INTEGER);
+  CREATE INDEX IF NOT EXISTS symbols_name ON symbols (name);
+  CREATE INDEX IF NOT EXISTS symbols_path ON symbols (path);
+  CREATE TABLE IF NOT EXISTS chunks (path TEXT, line INTEGER, end_line INTEGER, vec BLOB);
+  CREATE INDEX IF NOT EXISTS chunks_path ON chunks (path);
+  CREATE TABLE IF NOT EXISTS embedded (path TEXT PRIMARY KEY);
+`;
+
+// A glob as a RegExp over forward-slash paths: `**` spans folders, `*` and `?` stay within one.
+export function globToRegExp(glob) {
+  let out = "";
+  for (let i = 0; i < glob.length; i++) {
+    const ch = glob[i];
+    if (ch === "*" && glob[i + 1] === "*") {
+      out += glob[i + 2] === "/" ? "(?:.*/)?" : ".*";
+      i += glob[i + 2] === "/" ? 2 : 1;
+    } else if (ch === "*") out += "[^/]*";
+    else if (ch === "?") out += "[^/]";
+    else out += ch.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  }
+  // A glob with no folder in it matches the file name at any depth.
+  return new RegExp(glob.includes("/") ? `^${out}$` : `(?:^|/)${out}$`);
+}
+
+const matchesAny = (path, globs) => globs.some((g) => globToRegExp(g).test(path));
+
+export function readConfig(root) {
+  try {
+    return JSON.parse(readFileSync(join(root, ".findwright", "config.json"), "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+// The kind a path is read as: the config's own globs first, then the defaults.
+// A `.template` file is read as the file it renders to (`ci.yml.template` as YAML).
+export function kindOf(path, config) {
+  const kinds = { ...DEFAULT_KINDS, ...(config.kinds ?? {}) };
+  const target = path.endsWith(".template") ? path.slice(0, -".template".length) : path;
+  const own = Object.entries(config.kinds ?? {}).find(([glob]) => globToRegExp(glob).test(path));
+  if (own) return own[1];
+  const found = Object.entries(kinds).find(([glob]) => globToRegExp(glob).test(target));
+  return found ? found[1] : "text";
+}
+
+function walk(root, folder, out) {
+  for (const entry of readdirSync(join(root, folder), { withFileTypes: true })) {
+    const path = folder ? `${folder}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) walk(root, path, out);
+    else if (entry.isFile()) out.push(path);
+  }
+}
+
+// Every file git tracks or would track, plus the config's `include` globs
+// (files git ignores but the work reads, such as generated typings), minus `exclude`.
+// A folder an include walks must really sit in the repo: one reached through a
+// symlink that points outside is skipped.
+function realInside(root, folder) {
+  try {
+    const real = realpathSync(join(root, folder));
+    const base = realpathSync(root);
+    return real === base || real.startsWith(base + sep);
+  } catch {
+    return false;
+  }
+}
+
+// An include glob may not climb out of the repo or name an absolute path.
+const insideRepo = (glob) => typeof glob === "string" && !/^([\\/]|[A-Za-z]:)/.test(glob)
+  && !glob.split(/[\\/]/).includes("..");
+
+export function listFiles(root, config) {
+  const git = execFileSync("git", ["ls-files", "-co", "--exclude-standard", "-z"], { cwd: root, maxBuffer: 1 << 28 });
+  const files = new Set(git.toString("utf8").split("\0").filter(Boolean));
+  for (const glob of (config.include ?? []).filter(insideRepo)) {
+    const base = glob.split("/").filter((part) => !/[*?]/.test(part));
+    const start = glob.includes("*") ? base.slice(0, glob.split("/").findIndex((p) => /[*?]/.test(p))).join("/") : glob;
+    const found = [];
+    if (!realInside(root, start)) continue;
+    try { walk(root, start, found); } catch { continue; }
+    for (const path of found) if (globToRegExp(glob).test(path)) files.add(path);
+  }
+  return [...files].filter((path) => !matchesAny(path, config.exclude ?? [])).sort();
+}
+
+export function openIndex(root) {
+  const file = process.env.FINDWRIGHT_DB ?? join(root, ".findwright", "index.db");
+  mkdirSync(dirname(file), { recursive: true });
+  // Everything in .findwright/ is this computer's except config.json, the project's settings.
+  const ignore = join(root, ".findwright", ".gitignore");
+  if (!process.env.FINDWRIGHT_DB && !existsSync(ignore)) writeFileSync(ignore, "*\n!config.json\n");
+  const db = new DatabaseSync(file);
+  db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;");
+  db.exec(SCHEMA);
+  return db;
+}
+
+function readText(root, path, size) {
+  if (size > MAX_FILE_BYTES) return null;
+  const bytes = readFileSync(join(root, path));
+  if (bytes.subarray(0, 8000).includes(0)) return null;
+  return bytes.toString("utf8");
+}
+
+function symbolsOf(text, path, kind, config) {
+  const extractor = EXTRACTORS[kind];
+  const own = extractor ? extractor(text) : [];
+  const rules = (config.rules ?? []).filter((rule) => matchesAny(path, rule.globs ?? ["**"]));
+  return own.concat(fromRules(text, rules));
+}
+
+// Brings the index level with the working tree; returns what changed.
+export function refresh(db, root, config = readConfig(root)) {
+  const known = new Map(db.prepare("SELECT path, size, mtime FROM files").all().map((r) => [r.path, r]));
+  const seen = new Set();
+  const changed = [];
+  for (const path of listFiles(root, config)) {
+    let stat;
+    // Regular files only: a submodule, a nested repo or a symlink (which may point
+    // outside the repo) is listed by git but never read.
+    try { stat = lstatSync(join(root, path)); } catch { continue; }
+    if (!stat.isFile()) continue;
+    seen.add(path);
+    const old = known.get(path);
+    if (old && old.size === stat.size && old.mtime === stat.mtimeMs) continue;
+    changed.push({ path, stat });
+  }
+  const removed = [...known.keys()].filter((path) => !seen.has(path));
+  db.exec("BEGIN");
+  try {
+    for (const path of removed) dropFile(db, path);
+    for (const { path, stat } of changed) indexFile(db, root, path, stat, config);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+  return { changed: changed.length, removed: removed.length, files: seen.size };
+}
+
+function dropFile(db, path) {
+  db.prepare("DELETE FROM files WHERE path = ?").run(path);
+  db.prepare("DELETE FROM body WHERE path = ?").run(path);
+  db.prepare("DELETE FROM symbols WHERE path = ?").run(path);
+  db.prepare("DELETE FROM chunks WHERE path = ?").run(path);
+  db.prepare("DELETE FROM embedded WHERE path = ?").run(path);
+}
+
+function indexFile(db, root, path, stat, config) {
+  dropFile(db, path);
+  const kind = kindOf(path, config);
+  let text;
+  try { text = readText(root, path, stat.size); } catch { text = null; }
+  const symbols = text === null ? [] : symbolsOf(text, path, kind, config);
+  db.prepare("INSERT INTO files VALUES (?, ?, ?, ?, ?)").run(path, stat.size, stat.mtimeMs, text === null ? "binary" : kind, symbols.length);
+  if (text === null) return;
+  db.prepare("INSERT INTO body (path, text) VALUES (?, ?)").run(path, text);
+  const insert = db.prepare("INSERT INTO symbols VALUES (?, ?, ?, ?, ?)");
+  for (const s of symbols) insert.run(path, s.name, s.kind, s.line, s.endLine);
+}

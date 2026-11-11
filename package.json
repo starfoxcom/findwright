@@ -1,0 +1,20 @@
+{
+  "name": "findwright",
+  "version": "0.1.0",
+  "description": "A code index and search tool that adapts to each project: regex search over every file, symbols from built-in extractors and per-project rules, served over MCP.",
+  "type": "module",
+  "bin": {
+    "findwright": "src/cli.mjs",
+    "findwright-mcp": "src/server.mjs"
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "license": "MIT",
+  "private": true
+}

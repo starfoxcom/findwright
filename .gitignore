@@ -1,0 +1,4 @@
+node_modules/
+.findwright/index.db*
+bench/projects.local.json
+bench/out/
