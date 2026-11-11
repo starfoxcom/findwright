@@ -89,9 +89,14 @@ export function yaml(text) {
   return found;
 }
 
+const MAX_KEY_PATH = 400;
+
 // JSON: object keys by path (`hooks.PreToolUse`), read token by token so a
 // one-line file and a file that does not parse (a template with placeholders)
 // both yield their keys. A key's block runs to the bracket that closes its value.
+// Each open bracket holds its full path, so a key costs its own length; a key
+// whose path passes MAX_KEY_PATH is skipped with everything under it, which keeps
+// deep nesting linear.
 export function json(text) {
   const found = [];
   const stack = [];
@@ -103,14 +108,10 @@ export function json(text) {
     else if (ch === '"') {
       const end = stringEnd(text, i);
       const after = /^\s*:/.exec(text.slice(end + 1, end + 40));
-      if (after) {
-        const path = [...stack.map((s) => s.key).filter(Boolean), unquote(text.slice(i, end + 1))];
-        pending = { name: path.join("."), kind: "key", line, endLine: line };
-        found.push(pending);
-      }
+      if (after) pending = key(parentPath(stack), text.slice(i, end + 1), line, found);
       i = end;
     } else if (ch === "{" || ch === "[") {
-      stack.push({ key: pending ? pending.name.split(".").at(-1) : null, symbol: pending });
+      stack.push(pending ?? { path: parentPath(stack), symbol: null });
       pending = null;
     } else if (ch === "}" || ch === "]") {
       const frame = stack.pop();
@@ -118,6 +119,20 @@ export function json(text) {
     } else if (ch === ",") pending = null;
   }
   return found;
+}
+
+// Records a key under `parent` (null once a path is too long) and returns the
+// frame its value's bracket opens.
+// The path keys under the innermost open bracket take: "" at the top, null when too long.
+const parentPath = (stack) => (stack.length ? stack.at(-1).path : "");
+
+function key(parent, quoted, line, found) {
+  if (parent === null || quoted.length > MAX_KEY_PATH) return { path: null, symbol: null };
+  const name = parent ? `${parent}.${unquote(quoted)}` : unquote(quoted);
+  if (name.length > MAX_KEY_PATH) return { path: null, symbol: null };
+  const symbol = { name, kind: "key", line, endLine: line };
+  found.push(symbol);
+  return { path: name, symbol };
 }
 
 function unquote(quoted) {

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { css, fromRules, javascript, markdown, yaml } from "../src/extract.mjs";
+import { css, fromRules, javascript, json, markdown, yaml } from "../src/extract.mjs";
 
 const names = (text, pattern) => fromRules(text, [{ pattern, kind: "rule" }]).map((s) => s.name);
 
@@ -50,4 +50,15 @@ test("the built-in extractors still name what they find", () => {
   assert.deepEqual(javascript("test('reads a file', () => {\n});").map((s) => [s.name, s.endLine]), [["reads a file", 2]]);
   // A brace inside a string opens no block; a declaration looks two lines ahead for its own.
   assert.deepEqual(javascript('const s = "{";\n\n\n\nfunction g() {\n}').map((s) => [s.name, s.endLine]), [["s", 1], ["g", 6]]);
+});
+
+test("JSON keys are named by path, and deep nesting stays fast with names capped", () => {
+  const keys = json('{"hooks": {"PreToolUse": [{"matcher": "Bash"}]}, "a.b": 1}').map((s) => s.name);
+  assert.deepEqual(keys, ["hooks", "hooks.PreToolUse", "hooks.PreToolUse.matcher", "a.b"]);
+  const deep = '{"a":'.repeat(60_000) + "1" + "}".repeat(60_000);
+  const start = performance.now();
+  const found = json(deep);
+  assert.ok(performance.now() - start < 2000, `took ${Math.round(performance.now() - start)} ms`);
+  assert.equal(found.length, 200);
+  assert.ok(found.every((s) => s.name.length <= 400));
 });
