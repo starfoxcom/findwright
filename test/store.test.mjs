@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkOwnFolder, globToRegExp } from "../src/store.mjs";
+import { checkOwnFolder, globToRegExp, normalConfig } from "../src/store.mjs";
 
 test("globs match paths the way their syntax says", () => {
   const cases = [
@@ -61,4 +61,38 @@ test("the .findwright folder must be FindWright's own", async (t) => {
     assert.throws(() => checkOwnFolder(root), /the repo commits/);
     rmSync(root, { recursive: true, force: true });
   });
+});
+
+test("a config of the wrong shape is read as far as it is right, never thrown on", () => {
+  const cases = [
+    ["null", null],
+    ["a string include", { include: "src" }],
+    ["an object include", { include: {} }],
+    ["a string exclude", { exclude: "x" }],
+    ["a number in exclude", { exclude: [5, "dist/**"] }],
+    ["rules as an object", { rules: {} }],
+    ["a null rule", { rules: [null, { pattern: "x", kind: "k" }] }],
+    ["rule globs as a string", { rules: [{ pattern: "x", kind: "k", globs: "*.md" }] }],
+    ["an object kind", { kinds: { "*.js": {} }, rules: [{ pattern: "x", kind: {} }] }],
+    ["a goal out of range", { goal: 500 }],
+  ];
+  for (const [name, raw] of cases) {
+    const config = normalConfig(raw);
+    assert.ok(Array.isArray(config.include) && config.include.every((g) => typeof g === "string"), name);
+    assert.ok(config.exclude.every((g) => typeof g === "string"), name);
+    assert.ok(config.rules.every((r) => typeof r.kind === "string" && Array.isArray(r.globs)), name);
+    assert.ok(Object.values(config.kinds).every((k) => typeof k === "string"), name);
+    assert.ok(config.goal === undefined || (config.goal > 0 && config.goal <= 100), name);
+  }
+  assert.deepEqual(normalConfig({ exclude: [5, "dist/**"] }).exclude, ["dist/**"]);
+});
+
+test("an index committed under another case of the folder name is refused", () => {
+  const root = repo();
+  mkdirSync(join(root, ".findwright"));
+  writeFileSync(join(root, ".findwright", "index.db"), "");
+  execFileSync("git", ["add", "-f", ".findwright/index.db"], { cwd: root });
+  execFileSync("git", ["mv", "-f", ".findwright/index.db", ".findwright/INDEX.db"], { cwd: root });
+  assert.throws(() => checkOwnFolder(root), /the repo commits/);
+  rmSync(root, { recursive: true, force: true });
 });

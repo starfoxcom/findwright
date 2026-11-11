@@ -2,6 +2,18 @@
 // symbol lookup, a file's outline, and the coverage report.
 
 import { globToRegExp } from "./store.mjs";
+import { linearRegExp } from "./linear.mjs";
+
+// A pattern the linear engine cannot run (case-insensitive, back-references, lookarounds) runs on the
+// backtracking engine, which a long line can stall: it skips lines past this length and says so.
+const MAX_BACKTRACK_LINE = 1000;
+
+function sessionPattern(source, flags) {
+  const linear = linearRegExp(source, flags);
+  if (linear) return { test: (line) => linear.test(line) };
+  const re = new RegExp(source, flags);
+  return { test: (line) => line.length <= MAX_BACKTRACK_LINE && re.test(line), isCapped: true };
+}
 
 // The literal runs every match of a regex branch must contain, longest first;
 // used only to shortlist files, so missing a run is safe and inventing one is not.
@@ -31,7 +43,7 @@ export function requiredLiterals(source) {
       if (/\W/.test(next)) { run += next; i++; }
       else { flush(); i = escapeEnd(source, i + 1); }
     } else if ("*?{".includes(ch)) {
-      run = run.slice(0, -1);
+      run = [...run].slice(0, -1).join("");
       flush();
       if (ch === "{") i = closing(source, "}", i);
     } else if (ch === "+") flush();
@@ -118,7 +130,8 @@ function shortlist(db, patterns) {
     const terms = [];
     for (const branch of branches(pattern)) {
       const [longest] = requiredLiterals(branch);
-      if (!longest || longest.length < 3) return null;
+      // The trigram table counts characters, not UTF-16 units.
+      if (!longest || [...longest].length < 3 || !longest.isWellFormed()) return null;
       terms.push(ftsQuote(longest));
     }
     const paths = new Set(ask.all(`text : (${terms.join(" OR ")})`).map((r) => r.path));
@@ -140,7 +153,7 @@ function enclosing(db, path, line) {
 // With several patterns and `all`, a file must match each of them somewhere.
 export function search(db, { patterns, globs = [], ignoreCase = false, context = 0, limit = 200, all = false }) {
   const flags = ignoreCase ? "i" : "";
-  const regexes = patterns.map((p) => new RegExp(p, flags));
+  const regexes = patterns.map((p) => sessionPattern(p, flags));
   const candidates = all ? shortlist(db, patterns) : unionOf(patterns.map((p) => shortlist(db, [p])));
   const globRes = globs.map(globToRegExp);
   const rows = candidates
@@ -148,9 +161,11 @@ export function search(db, { patterns, globs = [], ignoreCase = false, context =
     : db.prepare("SELECT path, text FROM body").all();
   const out = [];
   let hits = 0;
+  let skipped = 0;
   for (const { path, text } of rows.sort((a, b) => a.path.localeCompare(b.path))) {
     if (globRes.length && !globRes.some((g) => g.test(path))) continue;
     const lines = text.split(/\r?\n/);
+    if (regexes.some((re) => re.isCapped)) skipped += lines.filter((l) => l.length > MAX_BACKTRACK_LINE).length;
     if (all && !regexes.every((re) => lines.some((l) => re.test(l)))) continue;
     const matched = lines.flatMap((l, i) => (regexes.some((re) => re.test(l)) ? [i] : []));
     if (!matched.length) continue;
@@ -158,7 +173,7 @@ export function search(db, { patterns, globs = [], ignoreCase = false, context =
     hits += matched.length;
     if (hits >= limit) break;
   }
-  return { files: out, truncated: hits >= limit };
+  return { files: out, truncated: hits >= limit, skippedLongLines: skipped };
 }
 
 function hit(db, path, lines, i, context) {
