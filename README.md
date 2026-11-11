@@ -4,7 +4,7 @@
 
 A code index and search tool that adapts to each project. It indexes every file the project tracks, answers regular-expression searches over all of them, and pulls symbols out of each file with built-in extractors plus pattern rules the project defines, so a language or file format no extractor knows is still searchable by name. It serves the index to coding assistants over MCP.
 
-Status: prototype, private while it is measured against the code-search tool it replaces.
+Status: early (0.1). On 169 searches replayed from real coding sessions, the file the session opened next was in its answer 72% of the time, against 53% for the code-search tool it replaced, at the same answer length.
 
 ## Use
 

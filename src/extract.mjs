@@ -3,6 +3,8 @@
 // structure from the text alone (headings, keys, declarations), so a file that
 // does not parse still yields what can be read from it.
 
+import v8 from "node:v8";
+
 const lines = (text) => text.split(/\r?\n/);
 
 // The last line of a block that starts at `start` and runs while `isInside` holds.
@@ -227,18 +229,29 @@ export const EXTRACTORS = { markdown, yaml, json, javascript, python, css, html,
 
 // Symbols from the project's own pattern rules: each rule's regex runs on every
 // line of the files its globs match, and its `name` group (or the whole match) names the symbol.
-// A rule comes from the repo's own config, so a cloned repo can carry a hostile one:
-// patterns with a quantified group that is itself quantified (catastrophic
-// backtracking) are skipped, and rules never run on very long lines.
+// A rule comes from the repo's own config, so a cloned repo can carry a hostile one.
+// Rules run on V8's linear-time engine (the `l` flag, the same guarantee RE2 and
+// ripgrep give): no pattern can backtrack, so none can hang the index. A pattern
+// that engine cannot run (back-references, lookarounds) is skipped, and so is
+// every rule if the engine is missing.
+v8.setFlagsFromString("--enable-experimental-regexp-engine");
 const MAX_RULE_LINE = 400;
-const NESTED_QUANTIFIER = /\((?:[^()\\]|\\.)*[+*}](?:[^()\\]|\\.)*\)[+*{]/;
-const safePattern = (p) => typeof p === "string" && p.length <= 300 && !NESTED_QUANTIFIER.test(p);
+
+function rulePattern(source) {
+  if (typeof source !== "string" || source.length > 300) return null;
+  try {
+    return new RegExp(source, "gl");
+  } catch {
+    return null;
+  }
+}
 
 export function fromRules(text, rules) {
   const all = lines(text);
   const found = [];
-  for (const rule of rules.filter((r) => safePattern(r.pattern))) {
-    const pattern = new RegExp(rule.pattern, "g");
+  for (const rule of rules) {
+    const pattern = rulePattern(rule.pattern);
+    if (!pattern) continue;
     for (let i = 0; i < all.length; i++) {
       if (all[i].length > MAX_RULE_LINE) continue;
       for (const m of all[i].matchAll(pattern)) {
