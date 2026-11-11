@@ -8,6 +8,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
 import { EXTRACTORS, fromRules } from "./extract.mjs";
+import { linearRegExp } from "./linear.mjs";
 
 // Files past this size are listed but not read: they are data, not code.
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
@@ -35,8 +36,16 @@ const SCHEMA = `
   CREATE TABLE IF NOT EXISTS embedded (path TEXT PRIMARY KEY);
 `;
 
+const compiledGlobs = new Map();
+
 // A glob as a RegExp over forward-slash paths: `**` spans folders, `*` and `?` stay within one.
+// It runs on the linear engine, since globs come from the repo's config; one it cannot build matches nothing.
 export function globToRegExp(glob) {
+  if (!compiledGlobs.has(glob)) compiledGlobs.set(glob, linearRegExp(globSource(glob)) ?? /$^/);
+  return compiledGlobs.get(glob);
+}
+
+function globSource(glob) {
   let out = "";
   for (let i = 0; i < glob.length; i++) {
     const ch = glob[i];
@@ -48,7 +57,7 @@ export function globToRegExp(glob) {
     else out += ch.replace(/[.+^${}()|[\]\\]/g, "\\$&");
   }
   // A glob with no folder in it matches the file name at any depth.
-  return new RegExp(glob.includes("/") ? `^${out}$` : `(?:^|/)${out}$`);
+  return glob.includes("/") ? `^${out}$` : `(?:^|/)${out}$`;
 }
 
 const matchesAny = (path, globs) => globs.some((g) => globToRegExp(g).test(path));
@@ -112,14 +121,34 @@ export function listFiles(root, config) {
   return [...files].filter((path) => !matchesAny(path, config.exclude ?? [])).sort();
 }
 
+// .findwright/ is where FindWright writes, so a repo must not be able to point it elsewhere: it has to be
+// a real folder holding only regular files, and git may track nothing in it but config.json (a committed
+// index would be opened as this computer's own).
+export function checkOwnFolder(root) {
+  const folder = join(root, ".findwright");
+  let stat;
+  try { stat = lstatSync(folder); } catch { return; }
+  const refuse = (what) => {
+    throw new Error(`FindWright will not use ${what}; remove it and search again.`);
+  };
+  if (!stat.isDirectory()) refuse(".findwright, which is not a plain folder");
+  for (const name of readdirSync(folder)) {
+    if (!lstatSync(join(folder, name)).isFile()) refuse(`.findwright/${name}, which is not a plain file`);
+  }
+  const tracked = execFileSync("git", ["ls-files", "-z", "--", ".findwright"], { cwd: root }).toString("utf8");
+  const committed = tracked.split("\0").filter((path) => path && path !== ".findwright/config.json");
+  if (committed.length) refuse(`${committed[0]}, which the repo commits`);
+}
+
 export function openIndex(root) {
   const file = process.env.FINDWRIGHT_DB ?? join(root, ".findwright", "index.db");
+  if (!process.env.FINDWRIGHT_DB) checkOwnFolder(root);
   mkdirSync(dirname(file), { recursive: true });
   // Everything in .findwright/ is this computer's except config.json, the project's settings.
   const ignore = join(root, ".findwright", ".gitignore");
   if (!process.env.FINDWRIGHT_DB && !existsSync(ignore)) writeFileSync(ignore, "*\n!config.json\n");
   const db = new DatabaseSync(file);
-  db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;");
+  db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA trusted_schema = OFF;");
   db.exec(SCHEMA);
   return db;
 }

@@ -13,13 +13,15 @@ export function requiredLiterals(source) {
     const ch = source[i];
     if (ch === "(") {
       flush();
-      const prefix = /^\((?:\?(?:<[A-Za-z_]\w*>|<?[=!]|:))?/.exec(source.slice(i))[0];
+      const prefix = /^\((?:\?(?:<[^>=!]+>|<?[=!]|:))?/.exec(source.slice(i))[0];
       const end = groupEnd(source, i);
       const inner = source.slice(i + prefix.length, end);
       const isOptional = /^[?*]|^\{0/.test(source.slice(end + 1));
-      // A lookaround's text is not part of the match, and an optional group or one with
-      // several branches holds no text every match must contain: each is skipped whole.
-      if (/[=!]$/.test(prefix) || isOptional || branches(inner).length > 1) i = end;
+      const isUnknownForm = prefix === "(" && source[i + 1] === "?";
+      // A lookaround's text is not part of the match, an optional group or one with several
+      // branches holds no text every match must contain, and a `(?` form not read here (inline
+      // modifiers such as `(?i:...)`) may change what its text matches: each is skipped whole.
+      if (/[=!]$/.test(prefix) || isOptional || isUnknownForm || branches(inner).length > 1) i = end;
       else i += prefix.length - 1;
     } else if (ch === "\\") {
       const next = source[i + 1];

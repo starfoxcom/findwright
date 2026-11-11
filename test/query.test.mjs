@@ -20,6 +20,8 @@ const cases = [
   ["alternation group is skipped", "a(bc|de)f", ["a", "f"]],
   ["unclosed class ends the scan", "ab[cd", ["ab"]],
   ["trailing backslash", "ab\\", ["ab"]],
+  ["inline modifiers are skipped whole", "(?i:abc)def", ["def"]],
+  ["a group name of any letters", "(?<ñ>abc)d", ["abc", "d"]],
 ];
 
 for (const [name, pattern, expected] of cases) {

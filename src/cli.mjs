@@ -46,11 +46,17 @@ function printSearch(result) {
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
   const root = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
+  const opts = parse(rest);
+  // Scoring reads the session's transcript, not the index, so it builds none.
+  if (command === "hits") {
+    const goal = readConfig(root).goal ?? DEFAULT_GOAL;
+    console.log(JSON.stringify(recordSession(root, { goal, ...(opts.positional[0] ? { transcript: opts.positional[0] } : {}) })));
+    return;
+  }
   const db = openIndex(root);
   const started = performance.now();
   const changes = refresh(db, root, readConfig(root));
   const refreshed = performance.now() - started;
-  const opts = parse(rest);
   if (command === "refresh") console.log(JSON.stringify({ ...changes, ms: Math.round(refreshed) }));
   else if (command === "search") printSearch(search(db, { patterns: opts.positional, ...opts }));
   else if (command === "symbols") {
@@ -64,9 +70,6 @@ async function main() {
     const model = await meaningModel(db, { wait: true });
     for (const f of find(db, { query: opts.positional.join(" "), limit: 12, model: model.ready })) console.log(f.path);
     if (model.note) console.log(model.note);
-  } else if (command === "hits") {
-    const goal = readConfig(root).goal ?? DEFAULT_GOAL;
-    console.log(JSON.stringify(recordSession(root, { goal, ...(opts.positional[0] ? { transcript: opts.positional[0] } : {}) })));
   } else if (command === "assess") console.log(JSON.stringify(assess(db, root, (await meaningModel(db, { wait: true })).ready), null, 1));
   else console.log("Usage: see the top of src/cli.mjs");
   db.close();

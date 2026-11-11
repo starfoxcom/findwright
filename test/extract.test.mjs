@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { fromRules } from "../src/extract.mjs";
+import { css, fromRules, javascript, markdown, yaml } from "../src/extract.mjs";
 
 const names = (text, pattern) => fromRules(text, [{ pattern, kind: "rule" }]).map((s) => s.name);
 
@@ -27,4 +27,27 @@ for (const [name, pattern, line] of hostile) {
 test("a rule the linear engine cannot run is skipped", () => {
   assert.deepEqual(names("aa", String.raw`(a)\1`), []);
   assert.deepEqual(names("xa", "(?=x)a"), []);
+});
+
+// Ordinary files whose one long line would hang a backtracking engine: no config needed.
+const longLines = [
+  ["markdown heading", markdown, "# a" + " ".repeat(20000) + "b"],
+  ["css selector", css, "a" + " ".repeat(20000)],
+  ["yaml item", yaml, "- name: a" + " ".repeat(20000) + "b"],
+  ["many blocks that never close", javascript, "function f() {\n".repeat(140000)],
+];
+
+for (const [name, extract, text] of longLines) {
+  test(`a hostile file is read at once: ${name}`, () => {
+    const start = performance.now();
+    extract(text);
+    assert.ok(performance.now() - start < 2000, `took ${Math.round(performance.now() - start)} ms`);
+  });
+}
+
+test("the built-in extractors still name what they find", () => {
+  assert.deepEqual(markdown("# Title ##\n## Part").map((s) => s.name), ["Title", "Part"]);
+  assert.deepEqual(javascript("test('reads a file', () => {\n});").map((s) => [s.name, s.endLine]), [["reads a file", 2]]);
+  // A brace inside a string opens no block; a declaration looks two lines ahead for its own.
+  assert.deepEqual(javascript('const s = "{";\n\n\n\nfunction g() {\n}').map((s) => [s.name, s.endLine]), [["s", 1], ["g", 6]]);
 });
