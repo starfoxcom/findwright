@@ -22,9 +22,12 @@ export function requiredLiterals(source) {
       if (/[=!]$/.test(prefix) || isOptional || branches(inner).length > 1) i = end;
       else i += prefix.length - 1;
     } else if (ch === "\\") {
-      const next = source[++i];
-      if (next !== undefined && /[^\w]/.test(next)) run += next;
-      else flush();
+      const next = source[i + 1];
+      if (next === undefined) break;
+      // An escaped symbol is that symbol; a letter or digit escape (`\d`, `é`,
+      // `\k<name>`) is no literal text, so the run ends and its operand is skipped whole.
+      if (/\W/.test(next)) { run += next; i++; }
+      else { flush(); i = escapeEnd(source, i + 1); }
     } else if ("*?{".includes(ch)) {
       run = run.slice(0, -1);
       flush();
@@ -32,7 +35,7 @@ export function requiredLiterals(source) {
     } else if (ch === "+") flush();
     else if (".^$()[]|".includes(ch)) {
       flush();
-      if (ch === "[") i = closing(source, "]", i + 1);
+      if (ch === "[") i = classEnd(source, i + 1);
     } else run += ch;
   }
   flush();
@@ -40,18 +43,45 @@ export function requiredLiterals(source) {
 }
 
 // Where `mark` next appears from `from`, or the end when it never does, so an
-// unclosed `{` or `[` ends the scan instead of restarting it.
+// unclosed `{`, `<` or `[` ends the scan instead of restarting it.
 const closing = (source, mark, from) => {
   const at = source.indexOf(mark, from);
   return at < 0 ? source.length : at;
 };
+
+// The `]` that closes the class whose body starts at `from`, past escaped ones.
+function classEnd(source, from) {
+  for (let i = from; i < source.length; i++) {
+    if (source[i] === "\\") i++;
+    else if (source[i] === "]") return i;
+  }
+  return source.length;
+}
+
+// The last character of the escape whose letter or digit sits at `at`:
+// `é` and `\u{e9}`, `\x41`, `\cM`, `\k<name>`, `\p{Lu}`, `\12`.
+function escapeEnd(source, at) {
+  const letter = source[at];
+  const run = (test, most) => {
+    let end = at;
+    while (end - at < most && test.test(source[end + 1] ?? "")) end++;
+    return end;
+  };
+  if ("upP".includes(letter) && source[at + 1] === "{") return closing(source, "}", at + 1);
+  if (letter === "u") return run(/[0-9A-Fa-f]/, 4);
+  if (letter === "x") return run(/[0-9A-Fa-f]/, 2);
+  if (letter === "c") return Math.min(at + 1, source.length - 1);
+  if (letter === "k" && source[at + 1] === "<") return closing(source, ">", at + 1);
+  if (/\d/.test(letter)) return run(/\d/, Infinity);
+  return at;
+}
 
 // The index of the `)` that closes the group opened at `start`.
 function groupEnd(source, start) {
   let depth = 0;
   for (let i = start; i < source.length; i++) {
     if (source[i] === "\\") i++;
-    else if (source[i] === "[") i = closing(source, "]", i + 1);
+    else if (source[i] === "[") i = classEnd(source, i + 1);
     else if (source[i] === "(") depth++;
     else if (source[i] === ")" && --depth === 0) return i;
   }
@@ -66,7 +96,7 @@ export function branches(source) {
   for (let i = 0; i < source.length; i++) {
     const ch = source[i];
     if (ch === "\\") i++;
-    else if (ch === "[") i = closing(source, "]", i + 1);
+    else if (ch === "[") i = classEnd(source, i + 1);
     else if (ch === "(") depth++;
     else if (ch === ")") depth--;
     else if (ch === "|" && depth === 0) { out.push(source.slice(start, i)); start = i + 1; }

@@ -76,7 +76,17 @@ const logFile = (root) => join(root, ".findwright", "hits.jsonl");
 /** The sessions recorded so far, oldest first. */
 export function history(root) {
   if (!existsSync(logFile(root))) return [];
-  return readFileSync(logFile(root), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+  return readFileSync(logFile(root), "utf8").split("\n").filter(Boolean).flatMap(parseLine);
+}
+
+// A damaged line (a close cut off mid-write) is dropped, never the whole history.
+function parseLine(line) {
+  try {
+    const entry = JSON.parse(line);
+    return entry && typeof entry.scored === "number" && Array.isArray(entry.misses) ? [entry] : [];
+  } catch {
+    return [];
+  }
 }
 
 /**
