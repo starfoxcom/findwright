@@ -222,7 +222,8 @@ export function symbols(db, { query, kind, globs = [], limit = 50 }) {
     named = new Set(re.matchLines(rows.map((r) => r.name), searchBudget()));
   } catch (error) {
     if (!(error instanceof TimeUp)) throw error;
-    named = new Set();
+    // A cut-off scan is not an answer: say so instead of reporting no match.
+    throw new Error("FindWright stopped this symbol search after 2 s: the pattern is slow on this repo's names; narrow it.");
   }
   const found = rows.filter((_, i) => named.has(i));
   // Exact names first, then shorter names, so `search` finds `search` before `searchAll`.
