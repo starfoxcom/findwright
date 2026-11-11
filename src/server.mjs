@@ -121,7 +121,7 @@ async function answer(message) {
 
 let queue = Promise.resolve();
 createInterface({ input: process.stdin }).on("line", (line) => {
-  queue = queue.then(() => handle(line));
+  queue = queue.then(() => handle(line)).catch((error) => process.stderr.write(`findwright: ${error.message}\n`));
 });
 
 async function handle(line) {
@@ -131,6 +131,10 @@ async function handle(line) {
     message = JSON.parse(line);
   } catch {
     process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }) + "\n");
+    return;
+  }
+  if (message === null || typeof message !== "object" || Array.isArray(message)) {
+    process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Invalid Request" } }) + "\n");
     return;
   }
   let reply;
