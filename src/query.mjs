@@ -2,31 +2,38 @@
 // symbol lookup, a file's outline, and the coverage report.
 
 import { globToRegExp } from "./store.mjs";
+import vm from "node:vm";
 import { linearRegExp } from "./linear.mjs";
 
-// Every session pattern runs on the linear engine, so no query can stall on repo text. That engine has
-// no case-insensitive mode, so ignoring case lower-cases the line and the pattern's own letters (escapes
-// such as `\D` or `\p{Lu}` keep their meaning). A pattern it cannot run at all (back-references,
-// lookarounds) is refused with a message saying so.
-export function lowerPattern(source) {
-  let out = "";
-  for (let i = 0; i < source.length; i++) {
-    if (source[i] !== "\\") { out += source[i].toLowerCase(); continue; }
-    const end = /^\\[pPkuU][{<]/.test(source.slice(i, i + 3)) ? source.indexOf(source[i + 2] === "<" ? ">" : "}", i) : i + 1;
-    const stop = end < 0 ? source.length - 1 : end;
-    out += source.slice(i, stop + 1);
-    i = stop;
-  }
-  return out;
-}
+// A session pattern runs on the linear engine when it can, which never backtracks. One that engine
+// refuses (ignoring case, back-references, lookarounds, counts above 16) runs on the full engine inside a
+// vm script with a deadline, so a pattern that would stall on the repo's text stops when one search's
+// budget runs out instead of hanging the server.
+const SEARCH_BUDGET_MS = 2000;
+const SCAN = new vm.Script("(() => { const out = []; for (let i = 0; i < lines.length; i++) if (re.test(lines[i])) out.push(i); return out; })()");
+
+/** Thrown when a search's time budget runs out. */
+export class TimeUp extends Error {}
+
+export const searchBudget = (ms = SEARCH_BUDGET_MS) => ({ until: Date.now() + ms });
 
 export function sessionPattern(source, ignoreCase = false) {
-  const linear = linearRegExp(ignoreCase ? lowerPattern(source) : source);
-  if (!linear) {
-    new RegExp(source);
-    throw new Error(`FindWright runs patterns in linear time and cannot run \`${source}\`: rewrite it without back-references or lookarounds.`);
-  }
-  return { test: (line) => linear.test(ignoreCase ? line.toLowerCase() : line) };
+  const linear = ignoreCase ? null : linearRegExp(source);
+  if (linear) return { matchLines: (lines) => lines.flatMap((line, i) => (linear.test(line) ? [i] : [])) };
+  const context = vm.createContext({ re: new RegExp(source, ignoreCase ? "i" : ""), lines: [] });
+  return {
+    matchLines(lines, budget) {
+      const left = budget.until - Date.now();
+      if (left <= 0) throw new TimeUp();
+      context.lines = lines;
+      try {
+        return [...SCAN.runInContext(context, { timeout: left })];
+      } catch (error) {
+        if (error?.code === "ERR_SCRIPT_EXECUTION_TIMEOUT") throw new TimeUp();
+        throw error;
+      }
+    },
+  };
 }
 
 // The literal runs every match of a regex branch must contain, longest first;
@@ -174,15 +181,22 @@ export function search(db, { patterns, globs = [], ignoreCase = false, context =
     : db.prepare("SELECT path, text FROM body").all();
   const out = [];
   let hits = 0;
-  for (const { path, text } of rows.sort((a, b) => a.path.localeCompare(b.path))) {
-    if (globRes.length && !globRes.some((g) => g.test(path))) continue;
-    const lines = text.split(/\r?\n/);
-    if (all && !regexes.every((re) => lines.some((l) => re.test(l)))) continue;
-    const matched = lines.flatMap((l, i) => (regexes.some((re) => re.test(l)) ? [i] : []));
-    if (!matched.length) continue;
-    out.push({ path, hits: matched.map((i) => hit(db, path, lines, i, context)) });
-    hits += matched.length;
-    if (hits >= limit) break;
+  const budget = searchBudget();
+  try {
+    for (const { path, text } of rows.sort((a, b) => a.path.localeCompare(b.path))) {
+      if (globRes.length && !globRes.some((g) => g.test(path))) continue;
+      const lines = text.split(/\r?\n/);
+      const perPattern = regexes.map((re) => re.matchLines(lines, budget));
+      if (all && perPattern.some((found) => found.length === 0)) continue;
+      const matched = [...new Set(perPattern.flat())].sort((a, b) => a - b);
+      if (!matched.length) continue;
+      out.push({ path, hits: matched.map((i) => hit(db, path, lines, i, context)) });
+      hits += matched.length;
+      if (hits >= limit) break;
+    }
+  } catch (error) {
+    if (!(error instanceof TimeUp)) throw error;
+    return { files: out, truncated: true, timedOut: true };
   }
   return { files: out, truncated: hits >= limit };
 }
@@ -201,9 +215,16 @@ export function symbols(db, { query, kind, globs = [], limit = 50 }) {
   let re;
   try { re = sessionPattern(query, true); } catch { re = sessionPattern(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), true); }
   const globRes = globs.map(globToRegExp);
-  const rows = db.prepare("SELECT path, name, kind, line, end_line FROM symbols").all();
-  const found = rows.filter((r) => re.test(r.name) && (!kind || r.kind === kind)
-    && (!globRes.length || globRes.some((g) => g.test(r.path))));
+  const rows = db.prepare("SELECT path, name, kind, line, end_line FROM symbols").all()
+    .filter((r) => (!kind || r.kind === kind) && (!globRes.length || globRes.some((g) => g.test(r.path))));
+  let named;
+  try {
+    named = new Set(re.matchLines(rows.map((r) => r.name), searchBudget()));
+  } catch (error) {
+    if (!(error instanceof TimeUp)) throw error;
+    named = new Set();
+  }
+  const found = rows.filter((_, i) => named.has(i));
   // Exact names first, then shorter names, so `search` finds `search` before `searchAll`.
   const rank = (r) => (r.name.toLowerCase() === query.toLowerCase() ? 0 : 1) * 1e6 + r.name.length;
   return found.sort((a, b) => rank(a) - rank(b)).slice(0, limit);
