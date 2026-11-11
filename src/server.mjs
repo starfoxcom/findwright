@@ -94,7 +94,8 @@ function formatSearch(result) {
       for (const c of h.context.filter((c) => c.line > h.line)) out.push(`  ${c.line}- ${c.text}`);
     }
   }
-  if (result.truncated) out.push("(more matches; narrow the search)");
+  if (result.timedOut) out.push("(stopped after 2 s: this pattern is slow on the repo's text; narrow it or add globs)");
+  else if (result.truncated) out.push("(more matches; narrow the search)");
   return out.join("\n") || "No matches.";
 }
 
