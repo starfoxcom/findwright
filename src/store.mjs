@@ -62,11 +62,27 @@ function globSource(glob) {
 
 const matchesAny = (path, globs) => globs.some((g) => globToRegExp(g).test(path));
 
+const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+const strings = (value) => (Array.isArray(value) ? value.filter((v) => typeof v === "string") : []);
+
+// The config as the code reads it: a value of the wrong type is dropped, so a hand-edited or hostile
+// config.json can make FindWright index less, never fail.
+export function normalConfig(raw) {
+  const config = isObject(raw) ? raw : {};
+  const kinds = Object.fromEntries(Object.entries(isObject(config.kinds) ? config.kinds : {})
+    .filter(([, kind]) => typeof kind === "string"));
+  const rules = (Array.isArray(config.rules) ? config.rules : [])
+    .filter((r) => isObject(r) && typeof r.pattern === "string" && typeof r.kind === "string")
+    .map((r) => ({ pattern: r.pattern, kind: r.kind, globs: Array.isArray(r.globs) ? strings(r.globs) : ["**"] }));
+  const goal = typeof config.goal === "number" && config.goal > 0 && config.goal <= 100 ? config.goal : undefined;
+  return { include: strings(config.include), exclude: strings(config.exclude), kinds, rules, goal };
+}
+
 export function readConfig(root) {
   try {
-    return JSON.parse(readFileSync(join(root, ".findwright", "config.json"), "utf8"));
+    return normalConfig(JSON.parse(readFileSync(join(root, ".findwright", "config.json"), "utf8")));
   } catch {
-    return {};
+    return normalConfig({});
   }
 }
 
@@ -135,8 +151,9 @@ export function checkOwnFolder(root) {
   for (const name of readdirSync(folder)) {
     if (!lstatSync(join(folder, name)).isFile()) refuse(`.findwright/${name}, which is not a plain file`);
   }
-  const tracked = execFileSync("git", ["ls-files", "-z", "--", ".findwright"], { cwd: root }).toString("utf8");
-  const committed = tracked.split("\0").filter((path) => path && path !== ".findwright/config.json");
+  // Case-insensitive: on macOS and Windows a committed `.FindWright/index.db` is this same folder.
+  const tracked = execFileSync("git", ["ls-files", "-z", "--", ":(icase).findwright"], { cwd: root }).toString("utf8");
+  const committed = tracked.split("\0").filter((path) => path && path.toLowerCase() !== ".findwright/config.json");
   if (committed.length) refuse(`${committed[0]}, which the repo commits`);
 }
 
