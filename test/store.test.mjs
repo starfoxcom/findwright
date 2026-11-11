@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkOwnFolder, globToRegExp, normalConfig } from "../src/store.mjs";
+import { checkOwnFolder, globToRegExp, listFiles, normalConfig } from "../src/store.mjs";
 
 test("globs match paths the way their syntax says", () => {
   const cases = [
@@ -94,5 +94,16 @@ test("an index committed under another case of the folder name is refused", () =
   execFileSync("git", ["add", "-f", ".findwright/index.db"], { cwd: root });
   execFileSync("git", ["mv", "-f", ".findwright/index.db", ".findwright/INDEX.db"], { cwd: root });
   assert.throws(() => checkOwnFolder(root), /the repo commits/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("an include that names one file, or uses only ?, takes that file in", () => {
+  const root = repo();
+  mkdirSync(join(root, "gen"));
+  writeFileSync(join(root, "gen", "types.d.ts"), "x");
+  writeFileSync(join(root, "gen", "file1.ts"), "x");
+  writeFileSync(join(root, ".gitignore"), "gen/\n");
+  const files = listFiles(root, normalConfig({ include: ["gen/types.d.ts", "gen/file?.ts"] }));
+  assert.ok(files.includes("gen/types.d.ts") && files.includes("gen/file1.ts"), files.join(","));
   rmSync(root, { recursive: true, force: true });
 });

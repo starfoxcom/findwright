@@ -142,8 +142,9 @@ export function assess(db, root, model = null) {
   const causes = misses.map((m) => ({ ...m, ...diagnose(db, m, model) }));
   const count = (reason) => causes.filter((c) => c.reason === reason);
   const suggestions = [];
-  const unindexed = [...new Set(count("not-indexed").map((c) => c.path.split("/")[0]))];
-  if (unindexed.length) suggestions.push({ change: "include", globs: unindexed.map((d) => `${d}/**`), why: "files the session opened are not indexed" });
+  const asGlob = (path) => (path.includes("/") ? `${path.split("/")[0]}/**` : path);
+  const globs = [...new Set(count("not-indexed").map((c) => asGlob(c.path)))];
+  if (globs.length) suggestions.push({ change: "include", globs, why: "files the session opened are not indexed" });
   for (const ext of new Set(count("no-symbols").map((c) => extensionOf(c.path)))) {
     suggestions.push({ change: "rule", glob: `**/*${ext}`, why: `${ext} files yield no symbols; add a pattern rule for their definitions` });
   }
