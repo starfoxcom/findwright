@@ -3,14 +3,52 @@
 // the session went on to use.
 //   node replay.mjs events.jsonl results.jsonl
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, openSync, writeSync } from "node:fs";
 import { openIndex, refresh } from "../src/store.mjs";
 import { search } from "../src/query.mjs";
 import { find } from "../src/find.mjs";
 import { ensureModel, loadModel } from "../src/embed.mjs";
 import { embedMissing } from "../src/meaning.mjs";
-const MODEL = loadModel(await ensureModel(new URL("./out/models", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1")));
-const WEIGHTS = [0.5, 1, 2, 4];
+// BENCH_MODEL names another model folder (Model2Vec, F16 table, WordPiece) to measure in place of the pinned one.
+// BENCH_RECORD=<file> writes each distinct text the model embeds as a JSON line
+// ({ kind: "doc" | "query", text }); BENCH_VECTORS=<folder> answers those texts
+// from vectors computed elsewhere (texts.json, a list of [kind, text], and
+// vectors.f32, one row per text), so a transformer run in Python is measured the
+// same way. BENCH_TAG names the index the run builds; give each model its own.
+const BASE_MODEL = loadModel(process.env.BENCH_MODEL
+  ?? await ensureModel(new URL("./out/models", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1")));
+const MODEL_TAG = process.env.BENCH_TAG ? `-${process.env.BENCH_TAG}`
+  : process.env.BENCH_MODEL ? `-${process.env.BENCH_MODEL.split(/[\/]/).filter(Boolean).at(-1)}` : "";
+let phase = "query";
+const MODEL = benchModel(BASE_MODEL);
+
+function benchModel(base) {
+  const key = (text) => `${phase}\0${text}`;
+  if (process.env.BENCH_RECORD) {
+    const seen = new Set();
+    const out = openSync(process.env.BENCH_RECORD, "w");
+    return { ...base, encode(text) {
+      if (!seen.has(key(text))) {
+        seen.add(key(text));
+        writeSync(out, JSON.stringify({ kind: phase, text }) + "\n");
+      }
+      return base.encode(text);
+    } };
+  }
+  if (!process.env.BENCH_VECTORS) return base;
+  const dir = process.env.BENCH_VECTORS;
+  const texts = JSON.parse(readFileSync(`${dir}/texts.json`, "utf8"));
+  const index = new Map(texts.map(([kind, text], i) => [`${kind}\0${text}`, i]));
+  const bytes = readFileSync(`${dir}/vectors.f32`);
+  const all = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
+  const dims = all.length / texts.length;
+  return { ...base, encode(text) {
+    const i = index.get(key(text));
+    if (i === undefined) throw new Error(`no precomputed vector for a ${phase} text`);
+    return all.subarray(i * dims, (i + 1) * dims);
+  } };
+}
+const WEIGHTS = [0, 0.5, 1, 2, 4];
 import { RULE_SETS } from "./configs.mjs";
 
 const [eventsFile, outFile] = process.argv.slice(2);
@@ -187,13 +225,15 @@ function project(name, events, out) {
     ? JSON.parse(readFileSync(new URL(p.config, import.meta.url), "utf8"))
     : { exclude: p.exclude ?? [], rules: (p.rules ?? []).flatMap((set) => RULE_SETS[set]) };
   mkdirSync("db", { recursive: true });
-  process.env.FINDWRIGHT_DB = `db/${name}.db`;
+  process.env.FINDWRIGHT_DB = `db/${name}${MODEL_TAG}.db`;
   const db = openIndex(root);
   const t = performance.now();
   const built = refresh(db, root, config);
   const buildMs = Math.round(performance.now() - t);
   const te = performance.now();
+  phase = "doc";
   const embedded = embedMissing(db, MODEL);
+  phase = "query";
   console.log(`  embedded ${embedded} files in ${Math.round(performance.now() - te)} ms`);
   const fileset = new Set(db.prepare("SELECT path FROM files").all().map((r) => r.path));
   const tracked = new Set(execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean));

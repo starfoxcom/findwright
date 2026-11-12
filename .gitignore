@@ -2,3 +2,6 @@ node_modules/
 .findwright/index.db*
 bench/projects.local.json
 bench/out/
+bench/db/
+bench/meta.json
+bench/ts-cache.json
