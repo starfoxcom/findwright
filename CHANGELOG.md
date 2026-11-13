@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 ### Fixed
+- FindWright now asks for Node 22.16 or later (or Node 24 and up), the first releases whose built-in SQLite has the full-text search the index needs, and says so plainly on an older Node instead of failing with "no such module: fts5". It used to claim 22.13, where every search failed. Node 23 never had it.
 
 ### Removed
 

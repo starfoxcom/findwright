@@ -21,7 +21,7 @@ Then run `/findwright:setup`. It installs the helper, the part that runs on your
 
 ## Use from the shell
 
-Needs Node 22.13 or later (it uses the built-in `node:sqlite`).
+Needs Node 22.16 or later (or Node 24 and up), for the full-text search in Node's built-in SQLite. Node 23 lacks it.
 
 ```
 findwright find <question or name>         # the files that answer it, best first

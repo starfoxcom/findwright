@@ -34,4 +34,4 @@ The index stays in each project's `.findwright/` folder, which keeps itself out 
 
 ## Needs
 
-Node 22.13 or later, since FindWright keeps its index in Node's built-in SQLite. Setup says how to install it when it is missing.
+Node 22.16 or later (or Node 24 and up), since FindWright keeps its index in Node's built-in SQLite and needs its full-text search, which Node 23 lacks. Setup says how to install it when it is missing.

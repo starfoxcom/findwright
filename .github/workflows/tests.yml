@@ -28,7 +28,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        node: ["22", "24"]
+        # The oldest Node with SQLite full-text search, and the current LTS.
+        node: ["22.16", "24"]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     env:
@@ -41,8 +42,6 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7 (v7.1.0)
         with:
           node-version: ${{ matrix.node }}
-      - name: Show whether this Node's SQLite has full-text search
-        run: node -e "new (require('node:sqlite').DatabaseSync)(':memory:').exec('CREATE VIRTUAL TABLE t USING fts5(x)'); console.log(process.version, 'has FTS5')"
       - name: Run the tests
         run: |
           git config --global user.email "ci@example.invalid"

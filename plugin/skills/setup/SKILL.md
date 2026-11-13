@@ -11,7 +11,7 @@ Sets FindWright up in three parts, each after a yes: the helper (the part that r
 
 ## 1. Node
 
-Run `node --version`. FindWright needs Node 22.13 or later, since it keeps its index in Node's built-in SQLite. When Node is missing or older, say so in one line and give the install for the user's system: on Windows, offer to run `winget install --id OpenJS.NodeJS.LTS -e --source winget --accept-source-agreements --accept-package-agreements` on a yes; on macOS, `brew install node` or the installer from nodejs.org; on Linux, the installer from nodejs.org, since the distributions' own `nodejs` package is often too old. Then say to restart Claude Code, since a running session does not see a program installed after it started, and to run `/findwright:setup` again. Stop here.
+Run `node --version`. FindWright needs Node 22.16 or later on the 22 line, or 24 or later, since it keeps its index in Node's built-in SQLite and needs its full-text search, which Node 23 and Node 22 before 22.16 lack. When Node is missing or older, or is 23, say so in one line and give the install for the user's system: on Windows, offer to run `winget install --id OpenJS.NodeJS.LTS -e --source winget --accept-source-agreements --accept-package-agreements` on a yes; on macOS, `brew install node` or the installer from nodejs.org; on Linux, the installer from nodejs.org, since the distributions' own `nodejs` package is often too old. Then say to restart Claude Code, since a running session does not see a program installed after it started, and to run `/findwright:setup` again. Stop here.
 
 ## 2. The helper
 
