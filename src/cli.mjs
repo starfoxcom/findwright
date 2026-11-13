@@ -9,6 +9,7 @@
 //   findwright hits [transcript]   (score the newest session, record it, say when to assess)
 //   findwright assess              (why recorded searches missed, and what would fix it)
 //   findwright home status|install-hook|remove-hook   (the search hook in Claude Code's settings)
+//   findwright model               (download the meaning model, check its pinned SHA-256, load it)
 // Runs from the repo root (or any folder inside it).
 
 import { execFileSync } from "node:child_process";
@@ -17,6 +18,7 @@ import { coverage, outline, search, symbols } from "./query.mjs";
 import { find } from "./find.mjs";
 import { assess, DEFAULT_GOAL, recordSession } from "./hits.mjs";
 import { meaningModel } from "./meaning.mjs";
+import { ensureModel, loadModel, MODEL } from "./embed.mjs";
 import { runHome } from "./home.mjs";
 
 function parse(argv) {
@@ -51,10 +53,24 @@ function printHome(action) {
   process.exitCode = ok ? 0 : 1;
 }
 
+// Prints `{"model", "folder"}` once the model is on disk, checked and loadable, else `{"error"}`.
+async function installModel() {
+  try {
+    const folder = await ensureModel();
+    loadModel(folder);
+    console.log(JSON.stringify({ model: MODEL.name, folder }));
+  } catch (error) {
+    console.log(JSON.stringify({ error: error.message }));
+    process.exitCode = 1;
+  }
+}
+
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
   // Home settings live outside any repo, so this runs before the repo lookup below.
   if (command === "home") return printHome(rest[0]);
+  // The meaning model lives outside any repo too: setup installs it with this command.
+  if (command === "model") return installModel();
   const root = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
   const opts = parse(rest);
   // Scoring reads the session's transcript, not the index, so it builds none.
@@ -76,11 +92,16 @@ async function main() {
   } else if (command === "outline") {
     for (const s of outline(db, opts.positional[0])) console.log(`${s.line}-${s.end_line}  ${s.kind} ${s.name}`);
   } else if (command === "coverage") console.log(JSON.stringify(coverage(db), null, 1));
-  else if (command === "find") {
-    const model = await meaningModel(db, { wait: true });
-    for (const f of find(db, { query: opts.positional.join(" "), limit: 12, model: model.ready })) console.log(f.path);
-    if (model.note) console.log(model.note);
-  } else if (command === "assess") console.log(JSON.stringify(assess(db, root, (await meaningModel(db, { wait: true })).ready), null, 1));
+  else if (command === "find" || command === "assess") {
+    const model = meaningModel(db);
+    if (model.error) {
+      console.error(model.error);
+      process.exitCode = 1;
+    } else if (command === "find") {
+      const query = opts.positional.join(" ");
+      for (const f of find(db, { query, limit: 12, model: model.ready })) console.log(f.path);
+    } else console.log(JSON.stringify(assess(db, root, model.ready), null, 1));
+  }
   else console.log("Usage: see the top of src/cli.mjs");
   db.close();
 }
