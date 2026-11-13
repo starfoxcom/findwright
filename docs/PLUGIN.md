@@ -15,7 +15,7 @@ The plugin directory accepts from an organization that is not Verified only Mark
   - Skills: `setup`, `update`, `doctor`, `remove`, and `find` (the lookup sequence: `find`, then `search`, `symbols` and `outline`).
 - **The helper** (`findwright-X.Y.Z.tgz`, attached to each release): `package.json`, `src/`, `hooks/findwright-first.mjs`, `README.md`, `LICENSE`, `CHANGELOG.md`. No dependencies and no install scripts. Setup installs it with `npm install --prefix ~/.findwright/helper --no-save --ignore-scripts --no-audit --no-fund <file>`, so it lands at `~/.findwright/helper/node_modules/findwright/`.
 - **The marketplace** (`.claude-plugin/marketplace.json` at the repo root): one plugin, `findwright`, with an `archive` source naming the release zip and its SHA-256.
-- **The `plugin` branch**: the packed plugin of the newest release at its root, one commit per release, which the directory listing follows.
+- **The `plugin` branch**: the packed plugin of the newest release at its root, one commit per release, which the directory listing follows. Each of those commits is tagged `findwright--vX.Y.Z`, so a marketplace that sources the branch can resolve a version range.
 
 ## What setup does
 
