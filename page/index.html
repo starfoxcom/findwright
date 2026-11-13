@@ -15,6 +15,7 @@
 <link rel="stylesheet" href="scene.css">
 <script type="module" src="app.js"></script>
 <script type="module" src="reveal.js"></script>
+<script type="module" src="scene.js"></script>
 <script>if (!matchMedia("(prefers-reduced-motion: reduce)").matches) document.documentElement.classList.add("reveal");</script>
 </head>
 <body>
@@ -52,27 +53,32 @@
         </div>
         <div class="desk-title">Directory check</div>
         <div class="pane">
-          <div class="user"><span class="bubble">Which check refuses skill frontmatter the plugin directory would reject?</span></div>
-          <div class="tool"><span class="dot"></span><span class="act">Searched with FindWright</span><span class="target">which check refuses skill frontmatter</span></div>
-          <div class="out">test/directory_check.test.mjs<br>tools/directory_check.mjs<br>.bindwright/pristine.json<br>.github/workflows/claude-code-review.yml</div>
-          <div class="tool"><span class="dot"></span><span class="act">Read</span><span class="target">tools/directory_check.mjs, lines 66 to 85</span></div>
-          <p class="reply">The directory check does it: <code>frontmatterKeys</code> reads each skill's frontmatter, and <code>skillProblems</code> reports any key outside the allowed list.</p>
+          <div class="user"><span class="bubble" data-step="ask">Which check refuses skill frontmatter the plugin directory would reject?</span></div>
+          <div class="tool" data-step="search"><span class="dot"></span><span class="act">Searched with FindWright</span><span class="target">which check refuses skill frontmatter</span></div>
+          <div class="out">
+            <div data-step="file">test/directory_check.test.mjs</div>
+            <div data-step="file">tools/directory_check.mjs</div>
+            <div data-step="file">.bindwright/pristine.json</div>
+            <div data-step="file">.github/workflows/claude-code-review.yml</div>
+          </div>
+          <div class="tool" data-step="read"><span class="dot"></span><span class="act">Read</span><span class="target">tools/directory_check.mjs, lines 66 to 85</span></div>
+          <p class="reply" data-step="reply">The directory check does it: <code>frontmatterKeys</code> reads each skill's frontmatter, and <code>skillProblems</code> reports any key outside the allowed list.</p>
         </div>
         <div class="input">Type / for commands</div>
         <div class="desk-modes"><span>findwright</span><span>Auto</span></div>
       </div>
       <div class="cards">
-        <div class="card">
+        <div class="card" data-card="search">
           <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg></span>One search</h3>
           <p>The question went in as plain words, and the files that answer it came back first.</p>
           <span class="chip">38 ms, typical</span>
         </div>
-        <div class="card">
+        <div class="card" data-card="read">
           <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M9 11h6M9 15h6"/></svg></span>Only the part it needs</h3>
           <p>Claude read twenty lines of one file instead of opening files to guess.</p>
           <span class="chip">240 bytes, typical answer</span>
         </div>
-        <div class="card">
+        <div class="card" data-card="current">
           <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg></span>Always current</h3>
           <p>Every search first takes in the files that changed, so nothing needs a refresh.</p>
           <span class="chip">Every search</span>

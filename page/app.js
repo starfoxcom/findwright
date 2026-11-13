@@ -1,6 +1,8 @@
 // Fills the page's numbers from metrics.json, which bench/page_metrics.py writes, and runs the
 // install switch and the copy buttons. Without metrics.json the numbers written into the page stay.
 
+const COUNT_MS = 1200;
+
 const GROUPS = [
   ["all", "Every search"],
   ["questions", "Plain-English questions"],
@@ -48,8 +50,9 @@ function barLine(className, rate) {
   return line;
 }
 
-function barRow(group) {
+function barRow(group, index) {
   const row = element("li", "bar-row");
+  row.style.setProperty("--row", String(index));
   row.setAttribute("aria-label",
     `${group.label}, ${group.searches} searches: FindWright ${group.findwright.hitRate}%, previous tool ${group.baseline.hitRate}%`);
   const name = element("div", "bar-name", group.label);
@@ -89,6 +92,42 @@ async function loadMetrics() {
   } catch {
     // The numbers written into the page stay; nothing else depends on them.
   }
+}
+
+// Runs `start` once, when `node` rises past the bottom 8% of the view, as reveal.js fades it in.
+function onEnter(node, start) {
+  const observer = new IntersectionObserver((entries) => {
+    if (!entries.some((entry) => entry.isIntersecting)) return;
+    observer.disconnect();
+    start();
+  }, { rootMargin: "0px 0px -8% 0px" });
+  observer.observe(node);
+}
+
+// Counts a number up from zero to the value it shows, quick at first and slowing at the end.
+function countUp(node) {
+  const target = Number(node.textContent.replaceAll(",", ""));
+  if (!Number.isFinite(target)) return;
+  const start = performance.now();
+  const tick = (now) => {
+    const progress = Math.min(1, (now - start) / COUNT_MS);
+    node.textContent = formatNumber(Math.round(target * (1 - (1 - progress) ** 3)));
+    if (progress < 1) requestAnimationFrame(tick);
+  };
+  node.textContent = "0";
+  requestAnimationFrame(tick);
+}
+
+// The totals count up and the bars grow as each comes into view; reduced motion shows them done.
+function animateNumbers() {
+  const stats = document.querySelector(".stats");
+  const bars = document.querySelector("[data-bars]");
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    bars.classList.add("counted");
+    return;
+  }
+  onEnter(stats, () => stats.querySelectorAll(".stat-num [data-field]").forEach(countUp));
+  onEnter(bars, () => bars.classList.add("counted"));
 }
 
 function selectTab(tabs, chosen) {
@@ -134,4 +173,4 @@ function setUpCopy() {
 
 setUpSwitch();
 setUpCopy();
-loadMetrics();
+loadMetrics().then(animateNumbers);

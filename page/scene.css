@@ -102,3 +102,30 @@
   .stage .cards, .boxes { grid-template-columns: minmax(0, 1fr); }
   .stage .card { font-size: 15px; }
 }
+
+/* The playing scene (scene.js): every step keeps its place but stays hidden until its turn,
+   then rises in; a running tool's dot blinks; the cards pop in. Without the script, or with
+   reduced motion, nothing is hidden. */
+.stage .caption.in { animation: scene-cap 520ms cubic-bezier(.2, .8, .2, 1) both; }
+.stage .caption b { margin-right: .3em; color: var(--accent); font-weight: 750; }
+@keyframes scene-cap { from { opacity: 0; transform: translateY(12px); filter: blur(4px); } }
+
+.stage.playing [data-step] { visibility: hidden; }
+.stage.playing [data-step].on { visibility: visible; animation: scene-rise 260ms cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes scene-rise { from { opacity: 0; transform: translateY(6px); } }
+.stage .tool.running .dot { background: var(--dim); animation: scene-blink 900ms steps(2, jump-none) infinite; }
+@keyframes scene-blink { 50% { opacity: .2; } }
+.stage .typed { color: var(--text); }
+.stage .caret {
+  display: inline-block; width: 1.5px; height: 1.15em; margin-left: 1px; vertical-align: -.2em;
+  background: var(--text-2); animation: scene-blink 1s steps(2, jump-none) infinite;
+}
+
+.stage.playing .card {
+  opacity: 0; transform: translateY(18px) scale(.96); filter: blur(6px);
+  transition: opacity 420ms, transform 520ms cubic-bezier(.2, .9, .25, 1.2), filter 420ms;
+}
+.stage.playing .card.on { opacity: 1; transform: none; filter: none; }
+.stage.playing .out:not(:has(.on)) { border-color: transparent; }
+/* Typing stays on one line; the script keeps its end in view. */
+.stage.playing .input { white-space: nowrap; overflow: hidden; }

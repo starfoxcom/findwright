@@ -150,6 +150,12 @@ h1 {
 .bar-line { display: grid; grid-template-columns: minmax(0, 1fr) 48px; gap: 12px; align-items: center; }
 .bar-track { height: 12px; border-radius: 99px; background: var(--key); overflow: hidden; }
 .bar-track i { display: block; height: 100%; border-radius: 99px; }
+/* Each row's bars grow 80 ms after the row above (--row is its index), over 900 ms. */
+.bars .bar-track i {
+  transform: scaleX(0); transform-origin: left;
+  transition: transform 900ms ease-out calc(var(--row, 0) * 80ms);
+}
+.bars.counted .bar-track i { transform: none; }
 .bar-value { font-size: 14px; color: var(--text-2); font-variant-numeric: tabular-nums; text-align: right; }
 .bar-line:first-child .bar-value { color: var(--text); font-weight: 650; }
 
