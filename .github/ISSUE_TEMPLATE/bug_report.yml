@@ -1,0 +1,55 @@
+name: Bug report
+description: Report a reproducible defect
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug report. The more concrete the repro, the faster the fix.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: One paragraph describing the unexpected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: what-expected
+    attributes:
+      label: What did you expect to happen instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How can we reproduce it?
+      description: Numbered steps, exact commands / inputs, smallest possible case.
+      placeholder: |
+        1. Run `…`
+        2. Open `…`
+        3. Click on `…`
+        4. Observe …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: What version of the project are you on? (`git rev-parse --short HEAD` works.)
+    validations:
+      required: false
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, runtime version, any relevant config.
+      placeholder: |
+        - OS: macOS 15.2 / Windows 11 / Ubuntu 24.04
+        - Runtime: Node 22 / Python 3.13 / Rust 1.85
+        - Build: dev / production
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / error output
+      description: Paste any relevant log lines. Wrap in triple backticks.
+      render: shell

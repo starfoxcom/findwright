@@ -1,0 +1,32 @@
+# Code-size check. Fails a PR that adds a hard size breach, or grows one that
+# .github/size-check/baseline.txt records. The limits come from
+# .claude/rules/code-size.md; .github/scripts/size_check.py says how.
+
+name: Size check
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  size:
+    name: Size check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6 (v6.1.0)
+        with:
+          persist-credentials: false
+
+      # A pinned lizard in its own environment, so a new release never
+      # changes a PR's result and the runner's Python stays untouched.
+      - name: Install lizard
+        run: |
+          python3 -m venv "$RUNNER_TEMP/size"
+          "$RUNNER_TEMP/size/bin/pip" install --quiet lizard==1.24.3
+
+      - name: Check sizes
+        run: '"$RUNNER_TEMP/size/bin/python" .github/scripts/size_check.py'

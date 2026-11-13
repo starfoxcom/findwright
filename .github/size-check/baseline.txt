@@ -1,0 +1,26 @@
+# Hard size breaches the project had when this was written. One that is
+# not listed, or whose value grew past the listed one, fails the check.
+# Delete a line once its code complies. Rewrite with --write-baseline.
+# path|construct|name|value
+bench/configs.mjs|line_length|-|5
+bench/harvest.py|line_length|-|1
+bench/replay.mjs|ccn|tokensaveRun|86
+bench/replay.mjs|function|tokensaveRun|203
+bench/replay.mjs|line_length|-|16
+bench/summarize.py|ccn|report|27
+bench/summarize.py|line_length|-|5
+bench/summarize4.py|line_length|-|3
+src/cli.mjs|line_length|-|2
+src/embed.mjs|line_length|-|2
+src/extract.mjs|line_length|-|2
+src/find.mjs|line_length|-|1
+src/hits.mjs|line_length|-|5
+src/meaning.mjs|line_length|-|2
+src/query.mjs|line_length|-|5
+src/server.mjs|line_length|-|12
+src/store.mjs|ccn|listFiles|40
+src/store.mjs|function|listFiles|114
+src/store.mjs|line_length|-|2
+test/extract.test.mjs|line_length|-|3
+test/search.test.mjs|line_length|-|2
+test/store.test.mjs|line_length|-|1

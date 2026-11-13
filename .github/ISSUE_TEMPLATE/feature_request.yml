@@ -1,0 +1,32 @@
+name: Feature request
+description: Suggest a new feature, behavior, or improvement
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for proposing this. The clearer the problem statement, the easier it is to scope.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you solving?
+      description: Describe the situation today and why it's not good enough. Skip the proposed solution for now.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What do you propose?
+      description: Sketch the solution. Bullet points are fine. Multiple options are welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other approaches did you weigh, and why aren't they the right call?
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Screenshots, references to related issues, links to similar features elsewhere.

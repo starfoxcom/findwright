@@ -1,0 +1,82 @@
+# Weekly pin check. The review workflows pin the review action's commit (they
+# install the newest CLI release on every run), and a project's test workflow
+# can pin a CLI version (PINNED_VERSION), so a new release never changes a
+# PR's result. This run says
+# when those pins fall behind: it looks up the newest CLI release and the
+# commit the action's v1 tag points to, and keeps one issue listing every pin
+# that is behind and every action used by a tag instead of a commit, closed
+# again once all are current. It can also be started by
+# hand from the Actions tab.
+
+name: Pin check
+
+on:
+  schedule:
+    - cron: "41 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: pin-check
+  cancel-in-progress: false
+
+jobs:
+  pins:
+    name: Pins behind the newest releases
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # The default branch's copy, which is what runs PRs once merged.
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6 (v6.1.0)
+        with:
+          persist-credentials: false
+
+      - name: Look up the newest releases
+        id: newest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cli=$(npm view @anthropic-ai/claude-code version)
+          # The v1 tag may be annotated: follow a tag object to its commit.
+          read -r kind sha < <(gh api repos/anthropics/claude-code-action/git/ref/tags/v1 --jq '"\(.object.type) \(.object.sha)"')
+          if [ "$kind" = tag ]; then
+            sha=$(gh api "repos/anthropics/claude-code-action/git/tags/$sha" --jq .object.sha)
+          fi
+          # The exact release tag on that commit names it (v1 itself says little).
+          version=$(gh api "repos/anthropics/claude-code-action/tags?per_page=100" --jq \
+            "[.[] | select(.commit.sha == \"$sha\") | .name | select(test(\"^v[0-9]+[.][0-9]+[.][0-9]+\$\"))][0] // \"v1\"")
+          echo "cli=$cli" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "::notice::Newest CLI $cli; action v1 at $sha ($version)"
+
+      - name: Open, update or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CLI: ${{ steps.newest.outputs.cli }}
+          SHA: ${{ steps.newest.outputs.sha }}
+          VERSION: ${{ steps.newest.outputs.version }}
+        run: |
+          stale=$(python3 -I .github/scripts/pin_check.py --cli "$CLI" --action-sha "$SHA" --action-version "$VERSION" \
+            .github/workflows/*.yml)
+          title="Pins behind the newest releases"
+          number=$(gh issue list --repo "$REPO" --state open --search "\"$title\" in:title" \
+            --json number,title --jq "[.[] | select(.title == \"$title\")][0].number // empty")
+          if [ -z "$stale" ]; then
+            if [ -n "$number" ]; then
+              gh issue close "$number" --repo "$REPO" --comment "Every pin is current and every action is pinned by commit. Run: $RUN_URL"
+            fi
+            exit 0
+          fi
+          body=$(printf '%s\n\nMove a pin only after the reviews or tests that use it pass on the newer release. Run: %s\n' "$stale" "$RUN_URL")
+          # The body always holds the current list: no weekly comment noise.
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --repo "$REPO" --body "$body"
+          else
+            gh issue create --repo "$REPO" --title "$title" --body "$body"
+          fi
