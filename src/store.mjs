@@ -255,8 +255,7 @@ export function refresh(db, root, config = readConfig(root)) {
     if (!sameExtraction) {
       const fresh = new Set(changed.map((c) => c.path));
       const others = db.prepare("SELECT path FROM files").all().map((r) => r.path).filter((p) => !fresh.has(p));
-      for (const path of others) extractAgain(db, path, config);
-      result.reextracted = others.length;
+      result.reextracted = others.filter((path) => extractAgain(db, root, path, config)).length;
       db.prepare("INSERT OR REPLACE INTO settings VALUES ('extraction', ?)").run(extraction);
     }
     db.exec("COMMIT");
@@ -292,15 +291,20 @@ function indexFile(db, root, path, stat, config) {
   writeSymbols(db, path, symbols);
 }
 
-// Re-reads an unchanged text file's kind and symbols from its stored text; its vectors stay.
-function extractAgain(db, path, config) {
-  const stored = db.prepare("SELECT text FROM body WHERE path = ?").get(path);
-  if (!stored) return;
+// Re-reads an indexed text file's kind and symbols the way indexFile does; its stored text and
+// vectors stay. Returns false for a binary file, or one gone from disk, which keep their rows.
+function extractAgain(db, root, path, config) {
+  const row = db.prepare("SELECT size, kind FROM files WHERE path = ?").get(path);
+  if (row.kind === "binary") return false;
+  let text;
+  try { text = readText(root, path, row.size); } catch { return false; }
+  if (text === null) return false;
   const kind = kindOf(path, config);
-  const symbols = symbolsOf(stored.text, path, kind, config);
+  const symbols = symbolsOf(text, path, kind, config);
   db.prepare("DELETE FROM symbols WHERE path = ?").run(path);
   db.prepare("UPDATE files SET kind = ?, symbols = ? WHERE path = ?").run(kind, symbols.length, path);
   writeSymbols(db, path, symbols);
+  return true;
 }
 
 function writeSymbols(db, path, symbols) {
