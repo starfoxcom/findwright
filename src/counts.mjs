@@ -11,7 +11,7 @@ import { basename, dirname, join, resolve } from "node:path";
 import { scoredSearches, transcriptsOf } from "./hits.mjs";
 
 /** The project kinds a person can pick. */
-export const KINDS = ["game", "business-app", "developer-tool", "mobile-app", "website", "other"];
+const KINDS = ["game", "business-app", "developer-tool", "mobile-app", "website", "other"];
 /** The kind that keeps a project out of the counts. */
 export const LEFT_OUT = "none";
 

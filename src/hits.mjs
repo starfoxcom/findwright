@@ -93,13 +93,12 @@ export function scoredSearches(transcript, root) {
   return out;
 }
 
-/** Scores one session: `{ scored, hits, bytes, misses: [{ query, wanted }] }`. */
+/** Scores one session: `{ scored, hits, misses: [{ query, wanted }] }`. */
 export function scoreSession(transcript, root) {
   const searches = scoredSearches(transcript, root);
   return {
     scored: searches.length,
     hits: searches.filter((s) => s.hit).length,
-    bytes: searches.reduce((sum, s) => sum + s.bytes, 0),
     misses: searches.filter((s) => !s.hit).map(({ query, wanted }) => ({ query, wanted })),
   };
 }
