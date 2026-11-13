@@ -1,0 +1,100 @@
+// The opt-in usage counter behind the FindWright page.
+//
+//   POST /increment  {project, kind, sessions, searches, hits, bytes, from, to}
+//                    adds one send
+//   GET  /total      the sums, projects per country and the top projects
+//
+// Sends come from the plugin of users who said yes at setup; the page reads
+// /total. The sender's IP only feeds Cloudflare's rate limiter and is never stored.
+
+import {
+  MAX_BODY_IN_BYTES,
+  MAX_NEW_PROJECTS_PER_DAY,
+  MIN_SEND_GAP_IN_MILLISECONDS,
+  TOP_PROJECTS,
+  checkSend,
+  countryOf,
+} from "./rules.js";
+import { D1Store } from "./store.js";
+
+const READ_HEADERS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET",
+  "cache-control": "public, max-age=300",
+};
+
+export default {
+  async fetch(request, env) {
+    return handle(request, {
+      store: new D1Store(env.DB),
+      rateLimiter: env.SENDS,
+      timeInMilliseconds: Date.now(),
+    });
+  },
+};
+
+/**
+ * Answers one request. `store` has the methods of `D1Store`; `rateLimiter`
+ * is a Workers rate-limit binding, or undefined to skip it (local runs).
+ */
+export async function handle(request, { store, rateLimiter, timeInMilliseconds }) {
+  const { pathname } = new URL(request.url);
+  if (pathname === "/total" && request.method === "GET") {
+    return json(await store.totals(TOP_PROJECTS), 200, READ_HEADERS);
+  }
+  if (pathname === "/total" && request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: READ_HEADERS });
+  }
+  if (pathname === "/increment" && request.method === "POST") {
+    return increment(request, { store, rateLimiter, timeInMilliseconds });
+  }
+  return json({ error: "not found" }, 404);
+}
+
+async function increment(request, { store, rateLimiter, timeInMilliseconds }) {
+  if (rateLimiter !== undefined) {
+    const sender = request.headers.get("cf-connecting-ip") ?? "unknown";
+    const { success } = await rateLimiter.limit({ key: sender });
+    if (!success) return json({ error: "too many sends" }, 429);
+  }
+
+  const parsed = await readBody(request);
+  if (!parsed.ok) return json({ error: parsed.reason }, parsed.status);
+  const verdict = checkSend(parsed.body);
+  if (!verdict.ok) return json({ error: verdict.reason }, 400);
+
+  const result = await store.addSend({
+    send: verdict.send,
+    country: countryOf(request),
+    timeInMilliseconds,
+    gapInMilliseconds: MIN_SEND_GAP_IN_MILLISECONDS,
+    maxNewPerDay: MAX_NEW_PROJECTS_PER_DAY,
+  });
+  if (result.outcome === "overlap") {
+    return json({ error: "this window was already counted", coveredTo: result.coveredTo }, 409);
+  }
+  if (result.outcome === "too-soon") return json({ error: "this project already sent today" }, 429);
+  if (result.outcome === "day-full") return json({ error: "too many new projects today" }, 429);
+  return json({ ok: true }, 200);
+}
+
+async function readBody(request) {
+  const declared = Number(request.headers.get("content-length") ?? 0);
+  if (declared > MAX_BODY_IN_BYTES) return { ok: false, status: 413, reason: "body too large" };
+  const text = await request.text();
+  if (new TextEncoder().encode(text).length > MAX_BODY_IN_BYTES) {
+    return { ok: false, status: 413, reason: "body too large" };
+  }
+  try {
+    return { ok: true, body: JSON.parse(text) };
+  } catch {
+    return { ok: false, status: 400, reason: "body is not JSON" };
+  }
+}
+
+function json(value, status, headers = {}) {
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { "content-type": "application/json", ...headers },
+  });
+}
