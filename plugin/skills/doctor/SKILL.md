@@ -22,4 +22,4 @@ Run each, and keep every one that fails as a finding with its fix:
 
 No findings: one line, with the plugin and helper versions. Otherwise one short line per finding, what is wrong and what to do, most serious first, leaving out what passed. Offer each fix that is a command or a skill, one at a time, on a yes.
 
-When a finding looks like a bug in FindWright itself (a crash, an error from the server, a count that contradicts what the user sees), offer to open an issue at https://github.com/starfoxcom/findwright/issues with the error text, after taking out paths, names and tokens and showing the user the full text first.
+When a finding looks like a bug in FindWright itself (a crash, an error from the server, a count that contradicts what the user sees), draft an issue with the error text, after taking out paths, names and tokens, show the user the full text, and give them the link https://github.com/starfoxcom/findwright/issues/new to file it themselves.
