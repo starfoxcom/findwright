@@ -10,7 +10,7 @@ import { gitRoot, globToRegExp, openIndex, readConfig, refresh } from "./store.m
 import { coverage, outline, search, symbols } from "./query.mjs";
 import { find } from "./find.mjs";
 import { meaningModel } from "./meaning.mjs";
-import { status } from "./counts.mjs";
+import { sendDue } from "./counts.mjs";
 
 const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
@@ -108,6 +108,7 @@ async function answer(message) {
     const tool = TOOLS[params.name];
     if (!tool) throw new Error(`No tool named ${params.name}`);
     if (!root) throw new Error("FindWright works inside a git repository; this folder is not in one.");
+    sendCountsIfDue();
     db ??= openIndex(root);
     refresh(db, root, readConfig(root));
     return await tool.run(params.arguments ?? {});
@@ -121,17 +122,28 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   queue = queue.then(() => handle(line)).catch((error) => process.stderr.write(`findwright: ${error.message}\n`));
 });
 
-// The counts go out from a detached child, so a slow counter never delays an answer. Only the
-// computer-wide setting is read here, so nothing about the counts can stop the server starting.
-function sendCountsInBackground() {
-  if (!root || !status().share) return;
+// A started send records its try within seconds; until then this pause keeps a second one from starting.
+const SEND_PAUSE_MS = 60 * 60 * 1000;
+let sendPausedUntil = 0;
+
+// Tried at start and before every tool call, so a session open for days still sends once a day.
+// The counts go out from a detached child, so a slow counter never delays an answer, and a counts
+// file that cannot be read never stops the server.
+function sendCountsIfDue() {
+  if (!root || Date.now() < sendPausedUntil) return;
+  try {
+    if (!sendDue(root)) return;
+  } catch {
+    return;
+  }
+  sendPausedUntil = Date.now() + SEND_PAUSE_MS;
   const cli = fileURLToPath(new URL("./cli.mjs", import.meta.url));
   const child = spawn(process.execPath, [cli, "counts", "send"],
     { cwd: root, detached: true, stdio: "ignore", windowsHide: true });
   child.on("error", () => {}); // a launch that fails leaves the answers unaffected
   child.unref();
 }
-sendCountsInBackground();
+sendCountsIfDue();
 
 async function handle(line) {
   if (!line.trim()) return;
