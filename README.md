@@ -47,9 +47,10 @@ The index lives in `.findwright/index.db`, in a folder that keeps itself out of 
 
 ## Privacy
 
-FindWright sends nothing about you or your code. It makes two kinds of network call:
+FindWright sends nothing about you or your code. It makes three kinds of network call:
 
 - **The helper install**, after your yes in `/findwright:setup`, downloads the helper file the plugin pins from `github.com/starfoxcom/findwright/releases`.
+- **The Node check**: `/findwright:setup` and `/findwright:doctor` read Node's public release list from `nodejs.org/dist/index.json`, to say when your Node is missing security fixes.
 - **The meaning model**, on the first search, downloads its two files (32 MB) from Hugging Face, checked against pinned SHA-256 sums, into `~/.cache/findwright/models`. Set `FINDWRIGHT_MEANING=off` to skip it; FindWright then ranks by words alone.
 
 The index and any project settings stay in each project's `.findwright/` folder.

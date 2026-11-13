@@ -11,7 +11,7 @@ A read-only health check. It changes nothing; it offers each fix and runs it onl
 
 Run each, and keep every one that fails as a finding with its fix:
 
-1. **Node:** `node --version` shows 22.16 or later on the 22 line, or 24 or later (Node 23 lacks the SQLite full-text search FindWright needs). Fix: step 1 of `${CLAUDE_PLUGIN_ROOT}/skills/setup/SKILL.md`.
+1. **Node:** `node --version` shows 22.16 or later on the 22 line, or 24 or later (Node 23 lacks the SQLite full-text search FindWright needs). Also a finding: a newer release of the same major version in `https://nodejs.org/dist/index.json`, or a major version outside long-term support, since an old patch leaves known security holes open. Fix: step 1 of `${CLAUDE_PLUGIN_ROOT}/skills/setup/SKILL.md`, which checks both and offers the upgrade.
 2. **Helper:** `<helper>/package.json` exists and its `version` is the `version` in `${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json`. Fix: `/findwright:update`.
 3. **Registration:** `claude mcp get findwright` names `<helper>/src/server.mjs`. Another copy (such as Bindwright's) is a note, not a failure: say which one runs. Missing is a finding. Fix: step 3 of the setup skill.
 4. **The server starts:** `node "<helper>/src/cli.mjs" coverage` inside a git repo prints the index's file counts. Outside a repo, skip it.

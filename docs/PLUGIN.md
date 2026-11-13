@@ -19,7 +19,7 @@ The plugin directory accepts from an organization that is not Verified only Mark
 
 ## What setup does
 
-1. Checks Node 22.16 or later (or Node 24 and up), whose built-in SQLite has full-text search; Node 23 does not. Without it, says how to get it and stops.
+1. Checks Node 22.16 or later (or Node 24 and up), whose built-in SQLite has full-text search; Node 23 does not. It also reads `nodejs.org/dist/index.json` and offers the upgrade when a newer patch of the same line exists or the line is outside long-term support, since an old patch leaves known security holes open. Without it, says how to get it and stops.
 2. When `~/.findwright/helper/node_modules/findwright/package.json` is missing or holds another version than the plugin, asks, then downloads the file `helper.json` names, checks its SHA-256 and installs it as above.
 3. Registers the server for the user: `claude mcp add --scope user findwright -- node "<home>/.findwright/helper/node_modules/findwright/src/server.mjs"`. When a `findwright` server is registered already (Bindwright's copy), it says which copy runs now and offers to switch to the plugin's one, which is the newer.
 4. Offers the search hook, which sends Grep, Glob and shell searches to FindWright in repos that have an index: `findwright home install-hook` merges it into `~/.claude/settings.json` (backup first, refusing a file that is not valid JSON). When Bindwright's `findwright-first.py` is registered, it leaves that one in place, since two would answer every search twice.

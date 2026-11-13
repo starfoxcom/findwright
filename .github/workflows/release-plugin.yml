@@ -73,7 +73,8 @@ jobs:
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7 (v7.1.0)
         with:
-          node-version: "22.16"
+          node-version: "lts/*"
+          check-latest: true
 
       - name: Build the zip and the helper, and check them against the pins
         id: build
