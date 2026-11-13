@@ -10,7 +10,7 @@ bench/replay.mjs|line_length|-|16
 bench/summarize.py|ccn|report|27
 bench/summarize.py|line_length|-|5
 bench/summarize4.py|line_length|-|3
-src/cli.mjs|line_length|-|2
+src/cli.mjs|line_length|-|1
 src/embed.mjs|line_length|-|2
 src/extract.mjs|line_length|-|2
 src/find.mjs|line_length|-|1

@@ -98,7 +98,8 @@ async function main() {
       console.error(model.error);
       process.exitCode = 1;
     } else if (command === "find") {
-      for (const f of find(db, { query: opts.positional.join(" "), limit: 12, model: model.ready })) console.log(f.path);
+      const query = opts.positional.join(" ");
+      for (const f of find(db, { query, limit: 12, model: model.ready })) console.log(f.path);
     } else console.log(JSON.stringify(assess(db, root, model.ready), null, 1));
   }
   else console.log("Usage: see the top of src/cli.mjs");
