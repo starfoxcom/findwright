@@ -4,7 +4,7 @@
 
 A code index and search tool that adapts to each project. It indexes every file the project tracks, answers plain-English questions, names and regular-expression searches over all of them, and pulls symbols out of each file with built-in extractors plus pattern rules the project defines, so a language or file format no extractor knows is still searchable by name. It serves the index to Claude Code, or any coding assistant, over MCP.
 
-Status: early (0.1). On 169 searches replayed from real coding sessions on four projects, the file the session went on to open was in FindWright's answer 69% of the time, against 53% for the code-search tool it replaced, with answers about a sixth the size. The page at https://starfoxcom.github.io/findwright/ has the full numbers.
+On 169 searches replayed from real coding sessions on four projects, the file the session went on to open was in FindWright's answer 69% of the time, against 53% for the code-search tool it replaced, with answers about a sixth the size. `bench/` holds the replay.
 
 ## Install as a plugin
 
