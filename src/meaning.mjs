@@ -4,7 +4,7 @@
 import { dot, installedModel, loadModel, packVector } from "./embed.mjs";
 
 const NOT_INSTALLED = "FindWright's meaning model is not installed or does not match its pinned checksum. "
-  + "Run /findwright:setup to install it, or set FINDWRIGHT_MEANING=off to turn meaning search off.";
+  + "Run /findwright:setup (or `findwright model` from a shell) to install it, or set FINDWRIGHT_MEANING=off to turn meaning search off.";
 
 let loaded = null;
 

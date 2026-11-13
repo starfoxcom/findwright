@@ -11,7 +11,7 @@ From the plugin directory: in Claude Code, run `/plugin`, open Discover and inst
 /plugin install findwright@findwright
 ```
 
-Then run `/findwright:setup`. It asks to install FindWright's helper, the part that runs on your computer: the file attached to the plugin's GitHub release, checked against the SHA-256 the plugin pins, into `~/.findwright/helper` for your user only. It then registers FindWright with Claude Code for every project, offers a hook that sends searches to it in indexed repos, and, inside a project, offers to fit the index to that project.
+Then run `/findwright:setup`. Running it is your yes to everything FindWright needs, so it installs each part and says what it installs: Node when yours is missing or behind on security fixes (on Windows; elsewhere it gives you the installer), the helper (the part that runs on your computer, the file attached to the plugin's GitHub release, checked against the SHA-256 the plugin pins, into `~/.findwright/helper` for your user only), the 32 MB meaning model, and the registration with Claude Code for every project. It asks only about the hook that sends searches to FindWright in indexed repos and, inside a project, about fitting the index to that project. When a part cannot be installed, setup stops and FindWright stays off.
 
 ## Use
 
@@ -25,14 +25,14 @@ The tools themselves are `find` (the files that answer a question or hold a name
 
 ## Privacy
 
-FindWright sends nothing about you or your code. It makes three kinds of network call:
+FindWright sends nothing about you or your code. Setup and the doctor make these network calls:
 
-- **The helper install**, after your yes, downloads the helper file the plugin pins from `github.com/starfoxcom/findwright/releases`.
-- **The Node check**: `/findwright:setup` and `/findwright:doctor` read Node's public release list from `nodejs.org/dist/index.json`, to say when your Node is missing security fixes.
+- **The helper install**: setup downloads the helper file the plugin pins from `github.com/starfoxcom/findwright/releases`.
+- **The Node check**: `/findwright:setup` and `/findwright:doctor` read Node's public release list from `nodejs.org/dist/index.json`, to find the newest security patch of your Node. On Windows, setup installs Node or its newest patch through winget when yours is missing or behind; elsewhere you run the installer from nodejs.org.
 - **The meaning model**: setup downloads its two files (32 MB) from Hugging Face, checked against pinned SHA-256 sums, into `~/.cache/findwright/models`. Find refuses to answer without it rather than rank worse. Set `FINDWRIGHT_MEANING=off` in the registration to turn meaning search off.
 
 The index stays in each project's `.findwright/` folder, which keeps itself out of git.
 
 ## Needs
 
-Node 22.16 or later (or Node 24 and up) on a long-term-support line, since FindWright keeps its index in Node's built-in SQLite and needs its full-text search, which Node 23 lacks. Setup says how to install it when it is missing.
+Node 22.16 or later (or Node 24 and up), since FindWright keeps its index in Node's built-in SQLite and needs its full-text search, which Node 23 lacks. Setup installs it on Windows and gives the installer elsewhere.

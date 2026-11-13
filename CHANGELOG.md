@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The search hook in Node (`hooks/findwright-first.mjs`) and `findwright home status|install-hook|remove-hook`, which add it to and take it out of the user's settings with a backup first.
 - Each published release carries the plugin zip and the helper tarball, both rebuilt from the tag so their SHA-256 matches the pins, and writes the `plugin` branch the directory installs from.
 - Tests run on Linux and Windows for every pull request, on the newest patch of Node 22, Node 24 and the current LTS.
-- Setup and the doctor say when your Node is behind on security fixes or outside long-term support, and setup installs the upgrade.
+- Setup and the doctor say when your Node is behind on security fixes, and setup installs the newest patch (with winget on Windows, through the nodejs.org installer elsewhere). A Node outside long-term support gets a note.
 - `findwright model` downloads the meaning model, checks it against its pinned SHA-256 and loads it; setup runs it.
 - The project is set up with Bindwright: rules, session skills, review workflows and the size check.
 
