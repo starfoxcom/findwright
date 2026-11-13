@@ -43,19 +43,26 @@ function startsAt(data, offset, magic) {
   return data.subarray(offset, offset + magic.length).equals(magic);
 }
 
-// A block this reader cannot read as plain top-level keys reports a pseudo-key, so the check
-// fails closed instead of passing keys it never saw.
+const OPENER = /^---[ \t]*\n/;
+// The only frontmatter line this check reads: a top-level key with its value on the same line.
+const PLAIN_KEY_LINE = /^([A-Za-z][\w-]*):(?:[ \t].*)?$/;
+
+// Anything but plain one-line keys (indented lines, lists, block scalars) reports a pseudo-key,
+// so the check fails closed instead of passing keys it never read.
 function frontmatterKeys(rawText) {
   const text = rawText.replace(/^﻿/, "");
-  if (!text.startsWith("---\n")) return [];
-  const end = text.indexOf("\n---", 4);
+  const opener = text.match(OPENER);
+  if (!opener) return [];
+  const end = text.indexOf("\n---", opener[0].length - 1);
   if (end === -1) return ["(unclosed frontmatter)"];
-  const lines = text.slice(4, end).split(/\r\n|\r|\n/).filter((line) => line.trim());
-  if (lines.length && /\s/.test(lines[0][0])) return ["(indented frontmatter)"];
-  const keys = lines
-    .filter((line) => !/\s/.test(line[0]) && line.includes(":"))
-    .map((line) => line.slice(0, line.indexOf(":")).trim());
-  return lines.length && !keys.length ? ["(unreadable frontmatter)"] : keys;
+  const lines = text.slice(opener[0].length, end).split("\n").filter((line) => line.trim());
+  const keys = [];
+  for (const line of lines) {
+    const match = line.match(PLAIN_KEY_LINE);
+    if (!match) return ["(frontmatter other than one-line keys)"];
+    keys.push(match[1]);
+  }
+  return keys;
 }
 
 function skillProblems(rel, text) {

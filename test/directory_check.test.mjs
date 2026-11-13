@@ -87,11 +87,16 @@ test("a skill, agent or command may use only the allowed frontmatter keys", () =
   ]);
 });
 
+const ONLY_PLAIN = "(frontmatter other than one-line keys)";
+
 test("frontmatter the check cannot read plainly fails closed", () => {
   const rows = {
     "behind a byte order mark": ["﻿---\nname: x\nallowed-tools: Bash\n---\n", "allowed-tools"],
-    "indented keys": ["---\n  name: x\n  allowed-tools: Bash\n---\n", "(indented frontmatter)"],
-    "no keys": ["---\njust text\n---\n", "(unreadable frontmatter)"],
+    "indented keys": ["---\n  name: x\n  allowed-tools: Bash\n---\n", ONLY_PLAIN],
+    "a plain key, then indented ones": ["---\nname: x\n  allowed-tools: Bash\n---\n", ONLY_PLAIN],
+    "a block scalar": ["---\nname: x\ndescription: >\n  text\n---\n", ONLY_PLAIN],
+    "no keys": ["---\njust text\n---\n", ONLY_PLAIN],
+    "spaces after the opener": ["--- \nname: x\nallowed-tools: Bash\n---\n", "allowed-tools"],
   };
   for (const [name, [text, reported]] of Object.entries(rows)) {
     assert.deepEqual(problemsOf({ "skills/x/SKILL.md": text }), [
