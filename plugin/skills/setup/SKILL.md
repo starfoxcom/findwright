@@ -51,6 +51,20 @@ Only inside a git repo (`git rev-parse --show-toplevel`). Ask, "Fit FindWright's
 2. Read which file kinds and files yield no symbol. For each group the work cares about, propose an entry for `.findwright/config.json`: `kinds` maps globs to a built-in extractor (`{ "*.mdc": "markdown" }`); `rules` adds a pattern whose `name` group names a symbol (`{ "globs": ["**/*.sql"], "kind": "table", "pattern": "^create table (?<name>\\w+)" }`). Licenses, lock files and ignore lists need nothing: full-text search still covers them.
 3. Show the proposed file and write it on a yes, then run `coverage` again and say how many files gained symbols.
 
-## 6. Finish
+## 6. Anonymous usage counts
 
-Say in a few lines what is in place: the helper version, the registration, the hook, and for this project the config written or left out. Say that `/findwright:doctor` checks all of it, `/findwright:update` keeps the helper at the plugin's version, and `/findwright:remove` takes it back out.
+Asked once per computer: only when `node "<helper>/src/cli.mjs" counts status` prints `"asked": false`. Ask:
+
+- **Share anonymous usage counts?** Once a day, each project on this computer whose kind the user picks sends four numbers about FindWright's searches in its finished sessions (how many sessions searched, how many searches the session followed by opening a project file, how many of those answers named that file, and the answers' total size in bytes) and the start and end time of the span they cover, so the FindWright page can show results from real projects. A project goes in under a random id and a kind the user picks; no names, code, queries, file names, usernames or repo links leave the computer. The counter also keeps the country Cloudflare reads from the connection, and publishes only how many projects each country has. Offer "No" first and "Yes" second, neither marked recommended: it stays off unless they say yes.
+
+Save the answer with `node "<helper>/src/cli.mjs" counts share on` (or `share off`).
+
+Then, inside a git repo, when sharing is on and `counts status` run from the repo root prints `"kind": null`, ask:
+
+- **What kind of project is this?** The page lists the top projects by kind only. Game, business app, developer tool, mobile app, website, other, or "leave this project out".
+
+Save it from the repo root with `node "<helper>/src/cli.mjs" counts project <kind>`, the kind written `game`, `business-app`, `developer-tool`, `mobile-app`, `website` or `other`, or `none` to leave it out, which is remembered so no later run asks again. The counts cover the project's past sessions too, sent oldest first in daily batches.
+
+## 7. Finish
+
+Say in a few lines what is in place: the helper version, the registration, the hook, the counts on or off, and for this project the config written or left out and its kind for the counts. Say that `/findwright:doctor` checks all of it, `/findwright:update` keeps the helper at the plugin's version, and `/findwright:remove` takes it back out.
