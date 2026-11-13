@@ -12,19 +12,30 @@ import { checkOwnFolder } from "./store.mjs";
 const SEARCH_TOOL = /^mcp__findwright__(find|search)$/;
 const OPEN_TOOLS = { Read: "file_path", Edit: "file_path", Write: "file_path", MultiEdit: "file_path" };
 const WINDOW = 8;
+const ANSWER_BYTES = 65536;
 export const DEFAULT_GOAL = 90;
 const SESSIONS_BEFORE_ASSESS = 3;
 
+/**
+ * Every transcript of the CLI sessions that run in `root`. FINDWRIGHT_TRANSCRIPTS
+ * replaces the folder that holds them, for tests.
+ */
+export function transcriptsOf(root) {
+  const slug = resolve(root).replace(/[^A-Za-z0-9]/g, "-");
+  const folder = process.env.FINDWRIGHT_TRANSCRIPTS
+    ?? join(homedir(), ".claude", "projects", slug);
+  if (!existsSync(folder)) return [];
+  return readdirSync(folder).filter((f) => f.endsWith(".jsonl")).map((f) => join(folder, f));
+}
+
 /** The newest transcript of the CLI session that runs in `root`. */
 export function newestTranscript(root) {
-  const slug = resolve(root).replace(/[^A-Za-z0-9]/g, "-");
-  const folder = join(homedir(), ".claude", "projects", slug);
-  if (!existsSync(folder)) return null;
-  const files = readdirSync(folder).filter((f) => f.endsWith(".jsonl")).map((f) => join(folder, f));
+  const files = transcriptsOf(root);
   return files.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0] ?? null;
 }
 
-// The session's tool calls in order, each with its result text.
+// The session's tool calls in order, each with its result text and the time it was made
+// (whole epoch milliseconds, or null when the row has no readable timestamp).
 function calls(transcript) {
   const seq = [];
   const results = new Map();
@@ -34,7 +45,10 @@ function calls(transcript) {
     try { row = JSON.parse(line); } catch { continue; }
     if (row.isSidechain) continue;
     for (const part of row.message?.content ?? []) {
-      if (part?.type === "tool_use" && row.type === "assistant") seq.push({ id: part.id, name: part.name, input: part.input ?? {} });
+      if (part?.type === "tool_use" && row.type === "assistant") {
+        const at = Math.floor(Date.parse(row.timestamp));
+        seq.push({ id: part.id, name: part.name, input: part.input ?? {}, at: Number.isSafeInteger(at) ? at : null });
+      }
       if (part?.type === "tool_result") {
         const c = part.content;
         results.set(part.tool_use_id, Array.isArray(c) ? c.map((x) => x.text ?? "").join("\n") : String(c ?? ""));
@@ -52,10 +66,13 @@ const relativeTo = (root, path) => {
 // The project files an answer names: each line that starts with a path.
 const answered = (text) => new Set(text.split("\n").map((l) => l.trim().split(/\s|:/)[0]).filter((p) => p.includes(".")));
 
-/** Scores one session: `{ scored, hits, misses: [{ query, wanted }] }`. */
-export function scoreSession(transcript, root) {
+/**
+ * The session's scored searches in order: `[{ at, hit, bytes, query, wanted }]`. `at` is when the
+ * search ran (null without a timestamp); `bytes` is its answer's UTF-8 size, capped at ANSWER_BYTES.
+ */
+export function scoredSearches(transcript, root) {
   const seq = calls(transcript);
-  const out = { scored: 0, hits: 0, misses: [] };
+  const out = [];
   seq.forEach((call, i) => {
     if (!SEARCH_TOOL.test(call.name)) return;
     for (const next of seq.slice(i + 1, i + 1 + WINDOW)) {
@@ -63,13 +80,27 @@ export function scoreSession(transcript, root) {
       const key = OPEN_TOOLS[next.name];
       const wanted = key && relativeTo(root, next.input[key] ?? "");
       if (!wanted) continue;
-      out.scored++;
-      if (answered(call.result).has(wanted)) out.hits++;
-      else out.misses.push({ query: call.input.query ?? (call.input.patterns ?? []).join(" | "), wanted });
+      out.push({
+        at: call.at,
+        hit: answered(call.result).has(wanted),
+        bytes: Math.min(ANSWER_BYTES, Buffer.byteLength(call.result)),
+        query: call.input.query ?? (call.input.patterns ?? []).join(" | "),
+        wanted,
+      });
       return;
     }
   });
   return out;
+}
+
+/** Scores one session: `{ scored, hits, misses: [{ query, wanted }] }`. */
+export function scoreSession(transcript, root) {
+  const searches = scoredSearches(transcript, root);
+  return {
+    scored: searches.length,
+    hits: searches.filter((s) => s.hit).length,
+    misses: searches.filter((s) => !s.hit).map(({ query, wanted }) => ({ query, wanted })),
+  };
 }
 
 const logFile = (root) => join(root, ".findwright", "hits.jsonl");

@@ -2,12 +2,14 @@
 // FindWright's MCP server over stdio (JSON-RPC 2.0, one message per line).
 // Every tool call first brings the index level with the working tree.
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { fileURLToPath } from "node:url";
 import { globToRegExp, openIndex, readConfig, refresh } from "./store.mjs";
 import { coverage, outline, search, symbols } from "./query.mjs";
 import { find } from "./find.mjs";
 import { meaningModel } from "./meaning.mjs";
+import { status } from "./counts.mjs";
 
 // The repo the session runs in; outside a git repo every tool says so instead of indexing.
 function repoRoot() {
@@ -123,6 +125,18 @@ let queue = Promise.resolve();
 createInterface({ input: process.stdin }).on("line", (line) => {
   queue = queue.then(() => handle(line)).catch((error) => process.stderr.write(`findwright: ${error.message}\n`));
 });
+
+// The counts go out from a detached child, so a slow counter never delays an answer. Only the
+// computer-wide setting is read here, so nothing about the counts can stop the server starting.
+function sendCountsInBackground() {
+  if (!root || !status().share) return;
+  const cli = fileURLToPath(new URL("./cli.mjs", import.meta.url));
+  const child = spawn(process.execPath, [cli, "counts", "send"],
+    { cwd: root, detached: true, stdio: "ignore", windowsHide: true });
+  child.on("error", () => {}); // a launch that fails leaves the answers unaffected
+  child.unref();
+}
+sendCountsInBackground();
 
 async function handle(line) {
   if (!line.trim()) return;

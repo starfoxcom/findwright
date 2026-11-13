@@ -9,6 +9,7 @@
 //   findwright hits [transcript]   (score the newest session, record it, say when to assess)
 //   findwright assess              (why recorded searches missed, and what would fix it)
 //   findwright home status|install-hook|remove-hook   (the search hook in Claude Code's settings)
+//   findwright counts status|share on|share off|project <kind>|send   (opt-in usage counts)
 //   findwright model               (download the meaning model, check its pinned SHA-256, load it)
 // Runs from the repo root (or any folder inside it).
 
@@ -17,6 +18,7 @@ import { openIndex, readConfig, refresh } from "./store.mjs";
 import { coverage, outline, search, symbols } from "./query.mjs";
 import { find } from "./find.mjs";
 import { assess, DEFAULT_GOAL, recordSession } from "./hits.mjs";
+import { send, setProject, setShare, status } from "./counts.mjs";
 import { meaningModel } from "./meaning.mjs";
 import { ensureModel, loadModel, MODEL } from "./embed.mjs";
 import { runHome } from "./home.mjs";
@@ -53,6 +55,32 @@ function printHome(action) {
   process.exitCode = ok ? 0 : 1;
 }
 
+// The repo root, or null outside a git repository.
+function gitRootOrNull() {
+  try {
+    return execFileSync("git", ["rev-parse", "--show-toplevel"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return null;
+  }
+}
+
+async function countsAction(action, value) {
+  if (action === "status") return status(gitRootOrNull());
+  if (action === "share" && (value === "on" || value === "off")) return setShare(value === "on");
+  const root = gitRootOrNull();
+  if (!root) return { error: "counts project and send work inside a git repository" };
+  if (action === "project") return setProject(root, value);
+  if (action === "send") return send(root);
+  return { error: "usage: findwright counts status | share on|off | project <kind> | send" };
+}
+
+async function printCounts([action, value]) {
+  const result = await countsAction(action, value);
+  console.log(JSON.stringify(result));
+  if (result.error) process.exitCode = 1;
+}
+
 // Prints `{"model", "folder"}` once the model is on disk, checked and loadable, else `{"error"}`.
 async function installModel() {
   try {
@@ -67,8 +95,9 @@ async function installModel() {
 
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
-  // Home settings live outside any repo, so this runs before the repo lookup below.
+  // Home settings and counts live outside any repo, so these run before the repo lookup below.
   if (command === "home") return printHome(rest[0]);
+  if (command === "counts") return printCounts(rest);
   // The meaning model lives outside any repo too: setup installs it with this command.
   if (command === "model") return installModel();
   const root = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();

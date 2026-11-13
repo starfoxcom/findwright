@@ -31,6 +31,7 @@ findwright symbols <name> [--kind K]
 findwright outline <path>
 findwright coverage                        # files per kind, and files with no symbols
 findwright refresh                         # bring the index level with the working tree
+findwright counts status|share on|share off|project <kind>|send   # the opt-in usage counts
 ```
 
 `findwright-mcp` runs the same queries as an MCP server over stdio. Every call first re-reads the files whose size or modified time changed, so answers match the working tree.
@@ -48,11 +49,12 @@ The index lives in `.findwright/index.db`, in a folder that keeps itself out of 
 
 ## Privacy
 
-FindWright sends nothing about you or your code. Setup and the doctor make these network calls:
+FindWright sends nothing about you or your code. It makes these network calls:
 
 - **The helper install**: setup downloads the helper file the plugin pins from `github.com/starfoxcom/findwright/releases`.
 - **The Node check**: `/findwright:setup` and `/findwright:doctor` read Node's public release list from `nodejs.org/dist/index.json`, to find the newest security patch of your Node. On Windows, setup installs Node or its newest patch through winget when yours is missing or behind; elsewhere you run the installer from nodejs.org.
 - **The meaning model**: setup downloads its two files (32 MB) from Hugging Face, checked against pinned SHA-256 sums, into `~/.cache/findwright/models`. Find refuses to answer without it rather than rank worse.
+- **The usage counts**, only when you turn them on in setup: once a day, each project whose kind you pick posts four sums about its searches older than an hour (sessions that searched, searches the session followed by opening a file, how many of those answers named that file, and the answers' total bytes), the time span they cover, a random id and the kind to `findwright-counter.starfoxcom.workers.dev`. The counter keeps the country Cloudflare reads from the connection and publishes only projects per country. `findwright counts share off` stops every send.
 
 The index and any project settings stay in each project's `.findwright/` folder.
 
