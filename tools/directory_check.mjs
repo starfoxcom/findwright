@@ -2,7 +2,8 @@
 // The directory refuses such a plugin when it ships anything other than Markdown,
 // text, JSON, YAML or an image; a text file that is not UTF-8, holds a NUL byte or
 // starts with a shebang; a package manager's file; command hooks, mods or local MCP
-// servers; or a skill whose frontmatter carries keys outside the allowed list.
+// servers; a skill whose frontmatter carries keys outside the allowed list; or a line that
+// pairs a web address with a credential word or an environment variable.
 // The packer runs this on every pack, so a release never meets a refusal.
 //
 //   node tools/directory_check.mjs DIR   -> lists each problem, exit 1 on any
@@ -105,7 +106,21 @@ function textProblems(rel, data) {
     return [`${rel} is not UTF-8`];
   }
   if (text.replace(/^﻿+/, "").startsWith("#!")) return [`${rel} starts with #!`];
-  return [...skillProblems(rel, text), ...manifestProblems(rel, text)];
+  return [...skillProblems(rel, text), ...manifestProblems(rel, text), ...credentialLines(rel, text)];
+}
+
+// The directory holds a plugin as "uses a credential from the user's machine" when one line pairs
+// a web address or network command with a credential word or an environment variable. It reads
+// the text alone, so an example that never runs counts too.
+const NETWORK = /https?:\/\/|\b(curl|wget|Invoke-WebRequest|iwr)\b|\bgh api\b|--url\b/i;
+const VARIABLE = /\$\{?[A-Za-z_]\w*|\$env:\w+|%[A-Za-z_]\w*%/;
+const SECRET_WORD = /token|secret|passw(or)?d|credential|api[ _-]?key|bearer|authorization/i;
+
+function credentialLines(rel, text) {
+  const pairs = (line) => NETWORK.test(line) && (VARIABLE.test(line) || SECRET_WORD.test(line));
+  return text.split(/\r?\n/).flatMap((line, i) => (pairs(line)
+    ? [`${rel}:${i + 1} puts a web address or network command beside a credential word or an environment variable`]
+    : []));
 }
 
 function fileProblems(rel, data) {
