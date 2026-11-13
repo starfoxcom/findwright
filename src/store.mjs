@@ -219,7 +219,9 @@ function symbolsOf(text, path, kind, config) {
 }
 
 // Brings the index level with the working tree; returns what changed. A change to the config's
-// kinds or rules re-extracts every unchanged file's symbols, keeping its text and vectors.
+// kinds or rules re-extracts every other indexed file's symbols, keeping its text and vectors.
+// The stored settings are checked and every re-extraction is chosen under the write lock, so
+// whenever they are written, every file row in the index was extracted with them.
 export function refresh(db, root, config = readConfig(root)) {
   const extraction = JSON.stringify({ kinds: config.kinds, rules: config.rules });
   const indexedWith = storedExtraction(db);
@@ -227,7 +229,6 @@ export function refresh(db, root, config = readConfig(root)) {
   const known = new Map(db.prepare("SELECT path, size, mtime FROM files").all().map((r) => [r.path, r]));
   const seen = new Set();
   const changed = [];
-  const reextract = [];
   for (const path of listFiles(root, config)) {
     let stat;
     // Regular files only: a submodule, a nested repo or a symlink (which may point
@@ -237,15 +238,13 @@ export function refresh(db, root, config = readConfig(root)) {
     seen.add(path);
     const old = known.get(path);
     if (!old || old.size !== stat.size || old.mtime !== stat.mtimeMs) changed.push({ path, stat });
-    else if (!sameExtraction) reextract.push(path);
   }
   const removed = [...known.keys()].filter((path) => !seen.has(path));
-  const result = { changed: changed.length, reextracted: reextract.length, removed: removed.length, files: seen.size };
+  const result = { changed: changed.length, reextracted: 0, removed: removed.length, files: seen.size };
   // A refresh that finds nothing new writes nothing, so it takes no write lock.
   if (sameExtraction && !changed.length && !removed.length) return result;
   db.exec("BEGIN IMMEDIATE");
-  // Another process stored other settings since they were read above: its symbols would be mixed
-  // with this pass's, so start over from what it stored.
+  // Another process stored other settings since they were read above: start over from them.
   if (storedExtraction(db) !== indexedWith) {
     db.exec("ROLLBACK");
     return refresh(db, root, config);
@@ -253,8 +252,13 @@ export function refresh(db, root, config = readConfig(root)) {
   try {
     for (const path of removed) dropFile(db, path);
     for (const { path, stat } of changed) indexFile(db, root, path, stat, config);
-    for (const path of reextract) extractAgain(db, path, config);
-    if (!sameExtraction) db.prepare("INSERT OR REPLACE INTO settings VALUES ('extraction', ?)").run(extraction);
+    if (!sameExtraction) {
+      const fresh = new Set(changed.map((c) => c.path));
+      const others = db.prepare("SELECT path FROM files").all().map((r) => r.path).filter((p) => !fresh.has(p));
+      for (const path of others) extractAgain(db, path, config);
+      result.reextracted = others.length;
+      db.prepare("INSERT OR REPLACE INTO settings VALUES ('extraction', ?)").run(extraction);
+    }
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
