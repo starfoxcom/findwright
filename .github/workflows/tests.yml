@@ -1,0 +1,52 @@
+name: Tests
+
+# Runs the test suite on Linux and Windows on every pull request, since
+# FindWright reads paths and line endings that differ between the two. No
+# path filter: a required check must report on every PR.
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  test:
+    name: Tests (${{ matrix.os }}, Node ${{ matrix.node }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        # The newest patch of every line package.json supports (22.16+, 24, and the current LTS),
+        # so CI never runs on a release with known holes.
+        node: ["22", "24", "lts/*"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803  # v6 (v6.1.0)
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7 (v7.1.0)
+        with:
+          node-version: ${{ matrix.node }}
+          check-latest: true
+      - name: Run the tests
+        run: |
+          git config --global user.email "ci@example.invalid"
+          git config --global user.name "CI"
+          npm test
+      - name: Check the plugin against the directory's rules
+        run: |
+          node tools/pack.mjs --out "$RUNNER_TEMP/plugin"
+          node tools/directory_check.mjs "$RUNNER_TEMP/plugin"

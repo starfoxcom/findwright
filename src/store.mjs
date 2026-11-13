@@ -10,6 +10,16 @@ import { dirname, join, sep } from "node:path";
 import { EXTRACTORS, fromRules } from "./extract.mjs";
 import { linearRegExp } from "./linear.mjs";
 
+/** The root of the git repository the process runs in, or null outside one. */
+export function gitRoot() {
+  try {
+    return execFileSync("git", ["rev-parse", "--show-toplevel"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return null;
+  }
+}
+
 // Files past this size are listed but not read: they are data, not code.
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 
@@ -35,6 +45,17 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS chunks_path ON chunks (path);
   CREATE TABLE IF NOT EXISTS embedded (path TEXT PRIMARY KEY);
 `;
+
+// Node's SQLite has full-text search from 22.16 on the 22 line and from 24.0; 23 never had it.
+function createSchema(db) {
+  try {
+    db.exec(SCHEMA);
+  } catch (error) {
+    if (!String(error.message).includes("no such module: fts5")) throw error;
+    throw new Error("FindWright needs Node 22.16 or later (or Node 24 and up): "
+      + `the SQLite in Node ${process.version} has no full-text search.`);
+  }
+}
 
 const compiledGlobs = new Map();
 
@@ -62,7 +83,8 @@ function globSource(glob) {
 
 const matchesAny = (path, globs) => globs.some((g) => globToRegExp(g).test(path));
 
-const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+/** True for a plain JSON object: not null, not an array. */
+export const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 const strings = (value) => (Array.isArray(value) ? value.filter((v) => typeof v === "string") : []);
 
 // The config as the code reads it: a value of the wrong type is dropped, so a hand-edited or hostile
@@ -170,7 +192,7 @@ export function openIndex(root) {
   if (!process.env.FINDWRIGHT_DB && !existsSync(ignore)) writeFileSync(ignore, "*\n!config.json\n");
   const db = new DatabaseSync(file);
   db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA trusted_schema = OFF;");
-  db.exec(SCHEMA);
+  createSchema(db);
   return db;
 }
 

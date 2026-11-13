@@ -1,0 +1,28 @@
+// Deploys the opt-in usage counter. From this folder, signed in with
+// `npx wrangler@4.152.0 login`. First time only:
+//   npx wrangler@4.152.0 d1 create findwright-counter
+//   (paste the database_id it prints into database_id below)
+//   npx wrangler@4.152.0 d1 execute findwright-counter --remote --file schema.sql
+// Every time: npx wrangler@4.152.0 deploy
+{
+  "name": "findwright-counter",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "findwright-counter",
+      "database_id": "ccd5ecfa-3f60-4e18-96f3-6fbdb5508415"
+    }
+  ],
+  // Five sends a minute per IP, held by Cloudflare's limiter and not stored by the Worker.
+  "ratelimits": [
+    {
+      "name": "SENDS",
+      "namespace_id": "5521",
+      "simple": { "limit": 5, "period": 60 }
+    }
+  ],
+  "observability": { "enabled": false }
+}

@@ -6,7 +6,7 @@ Guidance for Claude Code in this repository. Rules in `.claude/rules/` load on t
 
 **findwright**: A code index and search tool that adapts to each project: regex search over every file, symbols from built-in extractors and per-project rules, served over MCP.
 
-- **Stack:** JavaScript (ES modules) on Node 22.13+, using the built-in `node:sqlite`; no runtime dependencies
+- **Stack:** JavaScript (ES modules) on Node 22.16+ or 24+ (Node 23 lacks SQLite full-text search), using the built-in `node:sqlite`; no runtime dependencies
 - **Repo:** https://github.com/starfoxcom/findwright
 - **Branches:** `main` holds tagged releases; `develop` is where work lands. See `.claude/rules/git.md`.
 - **Commands:** test `npm test`. There is no linter or type checker yet.
