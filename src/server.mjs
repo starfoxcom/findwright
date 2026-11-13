@@ -131,7 +131,7 @@ function sendCountsInBackground() {
   if (!root || !status(root).share) return;
   const cli = fileURLToPath(new URL("./cli.mjs", import.meta.url));
   const child = spawn(process.execPath, [cli, "counts", "send"],
-    { cwd: root, detached: true, stdio: "ignore" });
+    { cwd: root, detached: true, stdio: "ignore", windowsHide: true });
   child.on("error", () => {}); // a launch that fails leaves the answers unaffected
   child.unref();
 }

@@ -108,7 +108,7 @@ test("a kind outside the list is refused and stored nowhere", () => {
 
 test("one send sums sessions, searches, hits and bytes, and marks the sessions sent", async () => {
   const older = writeSession("older", [hitSearch, missSearch], 3 * HOUR);
-  writeSession("newer", [hitSearch], 2 * HOUR);
+  const newer = writeSession("newer", [hitSearch], 2 * HOUR);
   setShare(true);
   setProject(ctx.repo, "game");
   const result = await send(ctx.repo, { now: NOW });
@@ -122,10 +122,10 @@ test("one send sums sessions, searches, hits and bytes, and marks the sessions s
     hits: 2,
     bytes: 2 * Buffer.byteLength(HIT) + Buffer.byteLength(MISS),
     from: statSync(older).mtimeMs,
-    to: NOW,
+    to: statSync(newer).mtimeMs + 1,
   }]);
   assert.deepEqual([...project.sent].sort(), ["newer", "older"]);
-  assert.equal(project.coveredTo, NOW);
+  assert.equal(project.coveredTo, statSync(newer).mtimeMs + 1);
   assert.equal(project.lastSend, NOW);
 });
 
@@ -149,26 +149,30 @@ test("a session newer than an hour is left out until it is idle", async () => {
   assert.deepEqual(projectState().sent, ["idle"]);
 });
 
-test("a 409 moves the window to coveredTo and retries once", async () => {
-  const coveredTo = NOW - HOUR;
-  const session = writeSession("only", [hitSearch], 3 * HOUR);
-  replies.push({ status: 409, body: { coveredTo } }, { status: 200, body: { ok: true } });
-  setShare(true);
-  setProject(ctx.repo, "game");
-  assert.equal((await send(ctx.repo, { now: NOW })).sent, true);
-  assert.equal(received.length, 2);
-  assert.equal(received[0].from, statSync(session).mtimeMs);
-  assert.equal(received[1].from, coveredTo);
-  assert.equal(received[1].to, NOW);
-});
-
-test("a 409 on the retry as well gives up without a third request", async () => {
-  writeSession("only", [hitSearch], 3 * HOUR);
-  replies.push({ status: 409, body: { coveredTo: NOW - HOUR } }, { status: 409, body: {} });
+// A 409 answers a send whose earlier copy was counted though its reply was lost.
+test("a 409 resends nothing, and the next send counts only sessions after the counted window", async () => {
+  const older = writeSession("older", [hitSearch], 3 * HOUR);
+  const newer = writeSession("newer", [hitSearch, missSearch], 2 * HOUR);
+  replies.push({ status: 409, body: { coveredTo: statSync(older).mtimeMs + 1 } });
   setShare(true);
   setProject(ctx.repo, "game");
   assert.equal((await send(ctx.repo, { now: NOW })).sent, false);
-  assert.equal(received.length, 2);
+  assert.equal(received.length, 1);
+  assert.equal((await send(ctx.repo, { now: NOW })).sent, true);
+  assert.equal(received[1].sessions, 1);
+  assert.equal(received[1].searches, 2);
+  assert.equal(received[1].from, statSync(newer).mtimeMs);
+});
+
+test("a transcript time with a fraction of a millisecond goes out as whole milliseconds", async () => {
+  const file = writeSession("fraction", [hitSearch], 2 * HOUR);
+  const seconds = (NOW - 2 * HOUR + 0.4321) / 1000;
+  utimesSync(file, seconds, seconds);
+  setShare(true);
+  setProject(ctx.repo, "game");
+  assert.equal((await send(ctx.repo, { now: NOW })).sent, true);
+  assert.ok(Number.isSafeInteger(received[0].from) && Number.isSafeInteger(received[0].to));
+  assert.ok(received[0].from < received[0].to);
 });
 
 test("a 500 or an unreachable counter changes nothing", async () => {
