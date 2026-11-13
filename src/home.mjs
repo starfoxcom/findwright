@@ -6,6 +6,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isObject } from "./store.mjs";
 
 const MATCHER = "Grep|Glob|Bash|PowerShell";
 const HOOK_PATH = fileURLToPath(new URL("../hooks/findwright-first.mjs", import.meta.url));
@@ -93,10 +94,6 @@ function shapeProblem(settings) {
     return "has a hooks.PreToolUse that is not a list";
   }
   return null;
-}
-
-function isObject(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function pretoolEntries(settings) {

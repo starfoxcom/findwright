@@ -10,6 +10,16 @@ import { dirname, join, sep } from "node:path";
 import { EXTRACTORS, fromRules } from "./extract.mjs";
 import { linearRegExp } from "./linear.mjs";
 
+/** The root of the git repository the process runs in, or null outside one. */
+export function gitRoot() {
+  try {
+    return execFileSync("git", ["rev-parse", "--show-toplevel"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return null;
+  }
+}
+
 // Files past this size are listed but not read: they are data, not code.
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 
@@ -73,7 +83,8 @@ function globSource(glob) {
 
 const matchesAny = (path, globs) => globs.some((g) => globToRegExp(g).test(path));
 
-const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+/** True for a plain JSON object: not null, not an array. */
+export const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
 const strings = (value) => (Array.isArray(value) ? value.filter((v) => typeof v === "string") : []);
 
 // The config as the code reads it: a value of the wrong type is dropped, so a hand-edited or hostile
