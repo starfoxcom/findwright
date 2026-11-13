@@ -1,4 +1,4 @@
-// Replays harvested searches through tokensave (its CLI, against today's index)
+// Replays harvested searches through the baseline tool (its CLI, against today's index)
 // and through the code index prototype, and scores each answer against the files
 // the session went on to use.
 //   node replay.mjs events.jsonl results.jsonl
@@ -75,20 +75,22 @@ function filesIn(text, root, fileset) {
 }
 
 import { existsSync } from "node:fs";
+// baseline.local.json (git-ignored): { "cli": "<command>" }, the code-search tool compared against.
+const BASELINE = JSON.parse(readFileSync(new URL("./baseline.local.json", import.meta.url), "utf8"));
 const CACHE = existsSync("ts-cache.json") ? JSON.parse(readFileSync("ts-cache.json", "utf8")) : {};
-function tokensave(tool, input, root) {
+function baseline(tool, input, root) {
   const key = JSON.stringify([tool, input, root]);
   if (tool !== "ts_status" && CACHE[key]) return CACHE[key];
-  const res = tokensaveRun(tool, input, root);
+  const res = baselineRun(tool, input, root);
   if (tool !== "ts_status") CACHE[key] = res;
   return res;
 }
-function tokensaveRun(tool, input, root) {
+function baselineRun(tool, input, root) {
   const name = tool.replace("ts_", "");
   const args = { ...input };
   for (const key of ["graph_root", "graph_branch", "ids", "exclude_node_ids"]) delete args[key];
   const t = performance.now();
-  const run = spawnSync("tokensave", ["tool", name, "--project", root, "--args", JSON.stringify(args), "--json"],
+  const run = spawnSync(BASELINE.cli, ["tool", name, "--project", root, "--args", JSON.stringify(args), "--json"],
     { encoding: "utf8", timeout: 60000, maxBuffer: 1 << 26, cwd: root });
   const ms = performance.now() - t;
   let text = run.stdout ?? "";
@@ -251,7 +253,7 @@ function project(name, events, out) {
       if (truth.length > 10) truth = [];
     }
     if (!truth.length) continue;
-    const ts = tokensave(ev.tool, ev.input, root);
+    const ts = baseline(ev.tool, ev.input, root);
     const tsFiles = filesIn(ts.text, root, { has: known });
     const k = Math.max(tsFiles.length, ev.input.literal ? 1 : 5);
     const our = ours(db, ev, k);
@@ -286,9 +288,9 @@ function project(name, events, out) {
     });
     scored++;
   }
-  const spawn = [1, 2, 3].map(() => tokensave("ts_status", {}, root).ms).sort((a, b) => a - b)[1];
+  const spawn = [1, 2, 3].map(() => baseline("ts_status", {}, root).ms).sort((a, b) => a - b)[1];
   db.close();
-  console.log(`  scored ${scored}; tokensave start-up ${Math.round(spawn)} ms`);
+  console.log(`  scored ${scored}; baseline start-up ${Math.round(spawn)} ms`);
   return { name, files: built.files, bare, buildMs };
 }
 

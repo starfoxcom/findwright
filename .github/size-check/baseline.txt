@@ -4,8 +4,8 @@
 # path|construct|name|value
 bench/configs.mjs|line_length|-|5
 bench/harvest.py|line_length|-|1
-bench/replay.mjs|ccn|tokensaveRun|86
-bench/replay.mjs|function|tokensaveRun|203
+bench/replay.mjs|ccn|baselineRun|86
+bench/replay.mjs|function|baselineRun|203
 bench/replay.mjs|line_length|-|16
 bench/summarize.py|ccn|report|27
 bench/summarize.py|line_length|-|5
