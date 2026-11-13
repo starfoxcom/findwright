@@ -151,3 +151,19 @@ test("the command prints each problem and exits 1, or passes a clean folder", ()
   assert.equal(bad.status, 1);
   assert.equal(bad.stdout.trim(), "package.json is a package manager's file");
 });
+
+test("a line pairing a web address or network command with a credential or a variable is refused", () => {
+  const rows = {
+    "a variable beside curl": ["curl -o \"$HOME/x\" \"<url>\"", true],
+    "a credential word beside a link": ["take out tokens, then open https://example.com", true],
+    "a plugin root beside a link": ["see https://nodejs.org; fix: ${CLAUDE_PLUGIN_ROOT}/x", true],
+    "a link alone": ["open https://example.com/issues/new", false],
+    "a variable alone": ["delete $HOME/.findwright/helper", false],
+    "the two on separate lines": ["curl -o \"<home>/x\" \"<url>\"\ndelete $HOME/x", false],
+  };
+  for (const [name, [text, refused]] of Object.entries(rows)) {
+    const found = problemsOf({ "skills/x/SKILL.md": text });
+    assert.equal(found.length, refused ? 1 : 0, name);
+    if (refused) assert.match(found[0], /^skills\/x\/SKILL\.md:1 puts a web address/, name);
+  }
+});

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - With usage counts turned on, a session that stays open for days now sends them once a day. The send used to run only when a session started, so a long session sent nothing until the next one. The server now checks before each search whether a day has passed since the last try.
+- The plugin's skills no longer put an environment variable or a word like "tokens" on the same line as a web address or a download command. The plugin directory's scan reads such a line as using a credential from the user's computer and holds the plugin back. The pack now refuses those lines.
 
 ## [1.0.1] - 2026-11-13
 
