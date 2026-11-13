@@ -25,11 +25,12 @@ The tools themselves are `find` (the files that answer a question or hold a name
 
 ## Privacy
 
-FindWright sends nothing about you or your code. When you turn on the anonymous usage counts in setup, each project whose kind you pick sends, once a day, four sums about its finished sessions (sessions that searched, searches the session followed by opening a file, how many of those answers named that file, and the answers' total bytes), the span they cover, a random id and the kind. The counter keeps the country Cloudflare reads from the connection and publishes only projects per country. `/findwright:remove` turns them off. It makes three kinds of network call:
+FindWright sends nothing about you or your code. It makes these network calls:
 
 - **The helper install**, after your yes, downloads the helper file the plugin pins from `github.com/starfoxcom/findwright/releases`.
 - **The Node check**: `/findwright:setup` and `/findwright:doctor` read Node's public release list from `nodejs.org/dist/index.json`, to say when your Node is missing security fixes.
 - **The meaning model**, on the first search, downloads its two files (32 MB) from Hugging Face, checked against pinned SHA-256 sums, into `~/.cache/findwright/models`. Set `FINDWRIGHT_MEANING=off` to skip it; FindWright then ranks by words alone.
+- **The usage counts**, only when you turn them on in setup: once a day, each project whose kind you pick posts four sums about its finished sessions (sessions that searched, searches the session followed by opening a file, how many of those answers named that file, and the answers' total bytes), the span they cover, a random id and the kind to `findwright-counter.starfoxcom.workers.dev`. The counter keeps the country Cloudflare reads from the connection and publishes only projects per country. `/findwright:remove` turns them off.
 
 The index stays in each project's `.findwright/` folder, which keeps itself out of git.
 
