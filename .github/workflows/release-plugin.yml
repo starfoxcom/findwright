@@ -123,7 +123,9 @@ jobs:
         run: gh release upload "$TAG" "$ZIP" "$DIR"/*.tgz --clobber --repo "$GITHUB_REPOSITORY"
 
       # The plugin directory follows the `plugin` branch, whose root is the
-      # packed plugin of the newest release: one commit per release.
+      # packed plugin of the newest release: one commit per release, tagged
+      # findwright--vX.Y.Z so a marketplace that sources this branch can
+      # resolve a dependency's version range.
       - name: Publish the packed plugin to the plugin branch
         env:
           GH_TOKEN: ${{ github.token }}
@@ -148,10 +150,18 @@ jobs:
           git add -A
           if git diff --cached --quiet; then
             echo "::notice::The plugin branch already holds $TAG's plugin"
-            exit 0
+          else
+            git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "chore(release): plugin $TAG"
+            git -c http.extraheader="$auth" push -q "$url" plugin:plugin
+            echo "::notice::The plugin branch now holds $TAG's plugin"
           fi
-          git -c user.name="github-actions[bot]" \
-            -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
-            commit -q -m "chore(release): plugin $TAG"
-          git -c http.extraheader="$auth" push -q "$url" plugin:plugin
-          echo "::notice::The plugin branch now holds $TAG's plugin"
+          tag="findwright--$TAG"
+          if git -c http.extraheader="$auth" ls-remote --exit-code -q "$url" "refs/tags/$tag" >/dev/null; then
+            echo "::notice::$tag already exists"
+          else
+            git tag "$tag" HEAD
+            git -c http.extraheader="$auth" push -q "$url" "refs/tags/$tag"
+            echo "::notice::Tagged the plugin branch $tag"
+          fi
