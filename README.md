@@ -60,7 +60,7 @@ The index and any project settings stay in each project's `.findwright/` folder.
 
 ## Bench
 
-`bench/` replays real searches from past sessions through FindWright and a baseline tool, and scores each answer against the files the session used next. The baseline's command lives in the git-ignored `bench/baseline.local.json`. `bench/page_metrics.py` turns a replay into the page's numbers. See `docs/DESIGN.md` for the design.
+`bench/` replays real searches from past sessions through FindWright and a baseline tool, and scores each answer against the files the session used next. The baseline's command lives in the git-ignored `bench/baseline.local.json`. `bench/harvest.py` collects the searches, `bench/replay.mjs` replays them, and `bench/summarize4.py` turns a replay into hit rates. See `docs/DESIGN.md` for the design.
 
 ## Development
 
