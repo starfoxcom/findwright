@@ -67,6 +67,8 @@ afterEach(() => {
 const stateFile = () => join(ctx.home, "counts.json");
 const readState = () => JSON.parse(readFileSync(stateFile(), "utf8"));
 const projectState = () => Object.values(readState().projects)[0];
+// A transcript time as the sender reads it: whole milliseconds, as the counter takes.
+const mtimeOf = (file) => Math.floor(statSync(file).mtimeMs);
 
 // One search per entry: its answer, then a Read of the file `opens`. The Read follows the
 // search directly, so every search is scored.
@@ -121,11 +123,11 @@ test("one send sums sessions, searches, hits and bytes, and marks the sessions s
     searches: 3,
     hits: 2,
     bytes: 2 * Buffer.byteLength(HIT) + Buffer.byteLength(MISS),
-    from: statSync(older).mtimeMs,
-    to: statSync(newer).mtimeMs + 1,
+    from: mtimeOf(older),
+    to: mtimeOf(newer) + 1,
   }]);
   assert.deepEqual([...project.sent].sort(), ["newer", "older"]);
-  assert.equal(project.coveredTo, statSync(newer).mtimeMs + 1);
+  assert.equal(project.coveredTo, mtimeOf(newer) + 1);
   assert.equal(project.lastSend, NOW);
 });
 
@@ -153,7 +155,7 @@ test("a session newer than an hour is left out until it is idle", async () => {
 test("a 409 resends nothing, and the next send counts only sessions after the counted window", async () => {
   const older = writeSession("older", [hitSearch], 3 * HOUR);
   const newer = writeSession("newer", [hitSearch, missSearch], 2 * HOUR);
-  replies.push({ status: 409, body: { coveredTo: statSync(older).mtimeMs + 1 } });
+  replies.push({ status: 409, body: { coveredTo: mtimeOf(older) + 1 } });
   setShare(true);
   setProject(ctx.repo, "game");
   assert.equal((await send(ctx.repo, { now: NOW })).sent, false);
@@ -161,7 +163,7 @@ test("a 409 resends nothing, and the next send counts only sessions after the co
   assert.equal((await send(ctx.repo, { now: NOW })).sent, true);
   assert.equal(received[1].sessions, 1);
   assert.equal(received[1].searches, 2);
-  assert.equal(received[1].from, statSync(newer).mtimeMs);
+  assert.equal(received[1].from, mtimeOf(newer));
 });
 
 test("a transcript time with a fraction of a millisecond goes out as whole milliseconds", async () => {
