@@ -116,7 +116,8 @@ function fitToLimits(searches, to) {
 }
 
 // The body for a project at `now`, or null when nothing is new. The span starts where the last
-// counted one ended and stops an hour ago, so a search's follow-up calls are in its transcript.
+// counted one ended and stops an hour ago, which leaves a search an hour for its follow-up calls.
+// A search whose file is opened only after a send has passed it is never counted.
 function gather(root, project, now) {
   const from = project.coveredTo ?? 0;
   const fitted = fitToLimits(searchesIn(root, from, now - HOUR_MS), now - HOUR_MS);
@@ -129,11 +130,6 @@ function gather(root, project, now) {
     from,
     to: fitted.to,
   };
-}
-
-/** What `root` would send at `now`: `{ sessions, searches, hits, bytes, from, to }`, or null. */
-export function collect(root, now) {
-  return gather(root, projectOf(readState(), root) ?? {}, now);
 }
 
 // One POST with a 2 s limit. A timeout or a refused connection throws; the caller changes nothing.

@@ -6,7 +6,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { collect, LEFT_OUT, send, setProject, setShare, status } from "../src/counts.mjs";
+import { LEFT_OUT, send, setProject, setShare, status } from "../src/counts.mjs";
 
 const HOUR = 60 * 60 * 1000;
 const NOW = Date.now();
@@ -137,7 +137,7 @@ test("a second try within 24 hours sends nothing, even with a new search", async
   assert.equal(received.length, 1);
 });
 
-// A session goes on after a send: its later searches belong to the next span, never lost or doubled.
+// A session goes on after a send: its later searches belong to the next span, counted once.
 test("a search newer than an hour waits for the next send, also in a session already counted", async () => {
   writeSession("long", [{ ...hitSearch, ageMs: 3 * HOUR }, { ...missSearch, ageMs: HOUR / 2 }]);
   setShare(true);
@@ -182,8 +182,7 @@ test("a damaged counts.json reads as empty state", async () => {
   mkdirSync(ctx.home, { recursive: true });
   writeFileSync(stateFile(), "{ not json");
   assert.deepEqual(status(ctx.repo), { share: false, asked: false, kind: null });
-  assert.equal((await send(ctx.repo, { now: NOW })).sent, false);
-  assert.equal(collect(ctx.repo, NOW).sessions, 1);
+  assert.equal((await send(ctx.repo, { now: NOW })).reason, "sharing is off");
 });
 
 test("bytes count at most 65536 per answer", async () => {
