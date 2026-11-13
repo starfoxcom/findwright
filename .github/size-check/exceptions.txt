@@ -1,0 +1,6 @@
+# Size breaches this project accepts for good, each under one of the
+# exceptions in .claude/rules/code-size.md, with the reason. One per line:
+#   path|construct|name|reason
+# construct is file, line_length, function, ccn or params; name is the
+# function's name, "-" for the file rows, or "*" for every name in that file.
+# The reason may hold "|"; a name that holds one needs "*".
