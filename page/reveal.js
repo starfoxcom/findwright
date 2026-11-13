@@ -6,14 +6,19 @@ const root = document.documentElement;
 // How far a block must rise into the view before it shows: past the bottom 8%.
 const ENTER_MARGIN = "0px 0px -8% 0px";
 
-if (root.classList.contains("reveal")) {
+/** Runs `start` once, when `node` rises past the bottom 8% of the view: the moment it fades in. */
+export function onEnter(node, start) {
   const observer = new IntersectionObserver((entries) => {
-    for (const entry of entries.filter((e) => e.isIntersecting)) {
-      entry.target.classList.add("shown");
-      observer.unobserve(entry.target);
-    }
+    if (!entries.some((entry) => entry.isIntersecting)) return;
+    observer.disconnect();
+    start();
   }, { rootMargin: ENTER_MARGIN });
-  document.querySelectorAll("main > section:not(.hero) > *").forEach((block) => observer.observe(block));
+  observer.observe(node);
+}
+
+if (root.classList.contains("reveal")) {
+  document.querySelectorAll("main > section:not(.hero) > *")
+    .forEach((block) => onEnter(block, () => block.classList.add("shown")));
   // Tells the stylesheet the observer runs, which stops its show-everything fallback.
   root.classList.add("reveal-ready");
 }

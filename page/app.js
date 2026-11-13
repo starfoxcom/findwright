@@ -1,6 +1,8 @@
 // Fills the page's numbers from metrics.json, which bench/page_metrics.py writes, and runs the
 // install switch and the copy buttons. Without metrics.json the numbers written into the page stay.
 
+import { onEnter } from "./reveal.js";
+
 const COUNT_MS = 1200;
 
 const GROUPS = [
@@ -9,8 +11,12 @@ const GROUPS = [
   ["names", "Names and identifiers"],
 ];
 
-const COPY_ICON = '<svg class="ico-copy" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
-const CHECK_ICON = '<svg class="ico-check" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+// Both icons share one stroke style; each is drawn by its path data.
+const ICON_ATTRS = 'viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" '
+  + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+const COPY_ICON = `<svg class="ico-copy" ${ICON_ATTRS}><rect x="8" y="8" width="14" height="14" rx="2"/>`
+  + '<path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+const CHECK_ICON = `<svg class="ico-check" ${ICON_ATTRS}><path d="M20 6 9 17l-5-5"/></svg>`;
 
 function valueAt(metrics, path) {
   return path.split(".").reduce((node, key) => (node == null ? node : node[key]), metrics);
@@ -53,8 +59,8 @@ function barLine(className, rate) {
 function barRow(group, index) {
   const row = element("li", "bar-row");
   row.style.setProperty("--row", String(index));
-  row.setAttribute("aria-label",
-    `${group.label}, ${group.searches} searches: FindWright ${group.findwright.hitRate}%, previous tool ${group.baseline.hitRate}%`);
+  const rates = `FindWright ${group.findwright.hitRate}%, previous tool ${group.baseline.hitRate}%`;
+  row.setAttribute("aria-label", `${group.label}, ${group.searches} searches: ${rates}`);
   const name = element("div", "bar-name", group.label);
   name.append(element("small", "", `${formatNumber(group.searches)} searches`));
   const pair = element("div", "bar-pair");
@@ -66,7 +72,8 @@ function barRow(group, index) {
 
 function tableRow(group) {
   const row = document.createElement("tr");
-  const cells = [group.label, formatNumber(group.searches), `${group.findwright.hitRate}%`, `${group.baseline.hitRate}%`];
+  const rates = [`${group.findwright.hitRate}%`, `${group.baseline.hitRate}%`];
+  const cells = [group.label, formatNumber(group.searches), ...rates];
   cells.forEach((text, index) => {
     const cell = document.createElement(index === 0 ? "th" : "td");
     if (index === 0) cell.scope = "row";
@@ -92,16 +99,6 @@ async function loadMetrics() {
   } catch {
     // The numbers written into the page stay; nothing else depends on them.
   }
-}
-
-// Runs `start` once, when `node` rises past the bottom 8% of the view, as reveal.js fades it in.
-function onEnter(node, start) {
-  const observer = new IntersectionObserver((entries) => {
-    if (!entries.some((entry) => entry.isIntersecting)) return;
-    observer.disconnect();
-    start();
-  }, { rootMargin: "0px 0px -8% 0px" });
-  observer.observe(node);
 }
 
 // Counts a number up from zero to the value it shows, quick at first and slowing at the end.
