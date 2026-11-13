@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-13
+
 ### Fixed
 - A new rule or file kind in `.findwright/config.json` now applies to every file at the next search. It used to reach only files that changed afterwards, so setup's fit-the-index step showed no new symbols.
 
