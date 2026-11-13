@@ -24,7 +24,6 @@
   <a class="mark" href="./">FindWright</a>
   <nav aria-label="Site">
     <a href="#how">How it works</a>
-    <a href="#numbers">Numbers</a>
     <a href="#install">Install</a>
     <a href="https://github.com/starfoxcom/findwright">GitHub</a>
   </nav>
@@ -71,12 +70,12 @@
         <div class="card" data-card="search">
           <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg></span>One search</h3>
           <p>The question went in as plain words, and the files that answer it came back first.</p>
-          <span class="chip">38 ms, typical</span>
+          <span class="chip">Files, best first</span>
         </div>
         <div class="card" data-card="read">
           <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M9 11h6M9 15h6"/></svg></span>Only the part it needs</h3>
           <p>Claude read twenty lines of one file instead of opening files to guess.</p>
-          <span class="chip">240 bytes, typical answer</span>
+          <span class="chip">Line ranges</span>
         </div>
         <div class="card" data-card="current">
           <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg></span>Always current</h3>
@@ -133,50 +132,6 @@
     </div>
   </section>
 
-  <section class="evidence" id="numbers" aria-labelledby="numbers-title">
-    <h2 id="numbers-title">Measured on real sessions</h2>
-    <p class="section-note"><span data-field="all.searches">169</span> searches from past coding sessions on four projects, run again through FindWright and through the code-search tool it replaced. A search counts as found when its answer names a file the session went on to open or edit.</p>
-    <div class="stats">
-      <div class="stat">
-        <span class="stat-num"><span data-field="all.findwright.hitRate">69</span>%</span>
-        <p class="stat-label">of searches found the right file</p>
-        <p class="stat-was">Previous tool: <span data-field="all.baseline.hitRate">53</span>%</p>
-      </div>
-      <div class="stat">
-        <span class="stat-num"><span data-field="heldOut.findwright.hitRate">68</span>%</span>
-        <p class="stat-label">on projects it was never tuned on</p>
-        <p class="stat-was">Previous tool: <span data-field="heldOut.baseline.hitRate">49</span>%</p>
-      </div>
-      <div class="stat">
-        <span class="stat-num"><span data-field="all.findwright.medianMs">38</span><span class="unit"> ms</span></span>
-        <p class="stat-label">for a typical answer</p>
-        <p class="stat-was">Previous tool: <span data-field="all.baseline.medianMs">135</span> ms</p>
-      </div>
-      <div class="stat">
-        <span class="stat-num"><span data-field="all.findwright.medianBytes">240</span><span class="unit"> bytes</span></span>
-        <p class="stat-label">in a typical answer</p>
-        <p class="stat-was">Previous tool: <span data-field="all.baseline.medianBytes">1,515</span> bytes</p>
-      </div>
-    </div>
-
-    <p class="chart-title">Found the right file, by kind of search and by project</p>
-    <ul class="bars" data-bars></ul>
-    <ul class="legend" aria-hidden="true">
-      <li class="legend-item"><i class="swatch swatch-ours"></i>FindWright</li>
-      <li class="legend-item"><i class="swatch swatch-was"></i>Previous tool</li>
-    </ul>
-    <details class="as-table">
-      <summary>Show these numbers as a table</summary>
-      <table>
-        <thead>
-          <tr><th scope="col">Searches</th><th scope="col">Count</th><th scope="col">FindWright</th><th scope="col">Previous tool</th></tr>
-        </thead>
-        <tbody data-rows></tbody>
-      </table>
-    </details>
-    <p class="evidence-detail">Measured <span data-field="measured">2026-11-13</span>. The bench and its scoring are in <a href="https://github.com/starfoxcom/findwright/tree/main/bench">the bench folder</a>, so anyone can run it on their own sessions.</p>
-  </section>
-
   <section class="install" id="install" aria-labelledby="install-title">
     <div class="install-head">
       <h2 id="install-title">Install</h2>
@@ -224,7 +179,7 @@
       </div>
       <div class="ask-list">
         <h3>What it downloads</h3>
-        <p>Its helper from the GitHub release, after your yes, and on the first search a 32 MB meaning model from Hugging Face, both checked against pinned checksums. Set FINDWRIGHT_MEANING=off to skip the model.</p>
+        <p>During setup: its helper from the GitHub release and a 32 MB meaning model from Hugging Face, both checked against pinned checksums. Set FINDWRIGHT_MEANING=off to turn meaning search off.</p>
       </div>
       <div class="ask-list">
         <h3>What stays on your computer</h3>
