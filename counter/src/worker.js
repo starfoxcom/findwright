@@ -12,6 +12,7 @@ import {
   MAX_NEW_PROJECTS_PER_DAY,
   MIN_SEND_GAP_IN_MILLISECONDS,
   TOP_PROJECTS,
+  TOTALS_MAX_AGE_IN_SECONDS,
   checkSend,
   countryOf,
 } from "./rules.js";
@@ -20,7 +21,7 @@ import { D1Store } from "./store.js";
 const READ_HEADERS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET",
-  "cache-control": "public, max-age=300",
+  "cache-control": `public, max-age=${TOTALS_MAX_AGE_IN_SECONDS}`,
 };
 
 export default {
@@ -40,7 +41,12 @@ export default {
 export async function handle(request, { store, rateLimiter, timeInMilliseconds }) {
   const { pathname } = new URL(request.url);
   if (pathname === "/total" && request.method === "GET") {
-    return json(await store.totals(TOP_PROJECTS), 200, READ_HEADERS);
+    const totals = await store.totals({
+      topProjects: TOP_PROJECTS,
+      timeInMilliseconds,
+      maxAgeInMilliseconds: TOTALS_MAX_AGE_IN_SECONDS * 1000,
+    });
+    return json(totals, 200, READ_HEADERS);
   }
   if (pathname === "/total" && request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: READ_HEADERS });

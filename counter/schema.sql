@@ -16,6 +16,18 @@ CREATE TABLE IF NOT EXISTS projects (
 
 CREATE INDEX IF NOT EXISTS projects_by_searches ON projects (searches DESC, hits DESC);
 
+-- The last GET /total answer, so a read costs one row. The first read after
+-- rules.js TOTALS_MAX_AGE_IN_SECONDS claims the refresh by moving refreshed_at,
+-- so one request per period recomputes; every other read gets this copy.
+CREATE TABLE IF NOT EXISTS totals_copy (
+  id           INTEGER PRIMARY KEY CHECK (id = 1),
+  refreshed_at INTEGER NOT NULL,  -- milliseconds since the epoch, 0 before the first read
+  body         TEXT NOT NULL      -- the answer as JSON
+);
+
+INSERT OR IGNORE INTO totals_copy (id, refreshed_at, body) VALUES (1, 0,
+  '{"projects":0,"sessions":0,"searches":0,"hits":0,"bytes":0,"countries":[],"top":[]}');
+
 -- The projects first accepted on the current UTC day, for the daily cap.
 -- Earlier days are deleted on the next send.
 CREATE TABLE IF NOT EXISTS new_projects (

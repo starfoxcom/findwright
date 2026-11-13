@@ -33,6 +33,7 @@ All in `src/rules.js`:
 - At most 200 new projects a day across all senders.
 - Five sends a minute per IP through Cloudflare's rate limiter (`wrangler.jsonc`); the Worker never stores the IP.
 - Bodies over 1 KB are refused before parsing.
+- `GET /total` answers from a saved copy that one read every 5 minutes refreshes, so page loads never scan the projects table more often than that.
 
 These keep casual inflation out, but an anonymous counter cannot prove a count is real, so the page shows these numbers apart from the maintainer's own measurements.
 

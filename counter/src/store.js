@@ -76,8 +76,29 @@ export class D1Store {
     return { outcome: "too-soon" };
   }
 
-  /** The overall sums, projects per country and the top projects by searches, then hits. */
-  async totals(topProjects) {
+  /**
+   * The overall sums, projects per country and the top projects by searches, then hits,
+   * from the saved copy. The first call after `maxAgeInMilliseconds` claims the refresh in
+   * one conditional write, recomputes and saves; concurrent calls get the copy meanwhile.
+   */
+  async totals({ topProjects, timeInMilliseconds, maxAgeInMilliseconds }) {
+    const [claim] = await this._database.batch([
+      this._database
+        .prepare("UPDATE totals_copy SET refreshed_at = ?1 WHERE id = 1 AND refreshed_at <= ?1 - ?2")
+        .bind(timeInMilliseconds, maxAgeInMilliseconds),
+    ]);
+    if (claim.meta.changes === 0) {
+      const copy = await this._database.prepare("SELECT body FROM totals_copy WHERE id = 1").first();
+      return JSON.parse(copy.body);
+    }
+    const fresh = await this._computeTotals(topProjects);
+    await this._database.batch([
+      this._database.prepare("UPDATE totals_copy SET body = ?1 WHERE id = 1").bind(JSON.stringify(fresh)),
+    ]);
+    return fresh;
+  }
+
+  async _computeTotals(topProjects) {
     const [sums, countries, top] = await this._database.batch([
       this._database.prepare(
         `SELECT COUNT(*) AS projects, COALESCE(SUM(sessions), 0) AS sessions,

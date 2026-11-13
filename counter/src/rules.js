@@ -33,6 +33,12 @@ export const MAX_BODY_IN_BYTES = 1024;
 /** How many projects `GET /total` lists. */
 export const TOP_PROJECTS = 10;
 
+/**
+ * How long `GET /total` answers from its saved copy. Only one read per period recomputes
+ * the totals, so the scans of the projects table cost the same however often the page loads.
+ */
+export const TOTALS_MAX_AGE_IN_SECONDS = 300;
+
 const PROJECT_ID = /^[0-9a-f]{32}$/;
 
 /** The window a send covers: the sessions it counts ran from `from` up to `to`, in epoch ms. */

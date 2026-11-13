@@ -17,6 +17,7 @@ import {
   MAX_SESSIONS_PER_SEND,
   MIN_SEND_GAP_IN_MILLISECONDS,
   TOP_PROJECTS,
+  TOTALS_MAX_AGE_IN_SECONDS,
   checkSend,
   countryOf,
 } from "../counter/src/rules.js";
@@ -196,6 +197,16 @@ test("/total lists at most TOP_PROJECTS projects", async () => {
   const { body } = await run(new Request("https://counter.test/total"), { store });
   assert.equal(body.top.length, TOP_PROJECTS);
   assert.equal(body.top[0].searches, TOP_PROJECTS + 1);
+});
+
+test("/total answers from its saved copy until TOTALS_MAX_AGE_IN_SECONDS passes", async () => {
+  const { store } = newStore();
+  const total = new Request("https://counter.test/total");
+  assert.equal((await run(total, { store })).body.projects, 0, "the first read computes");
+  assert.equal((await run(post(send()), { store })).status, 200);
+  const maxAge = TOTALS_MAX_AGE_IN_SECONDS * 1000;
+  assert.equal((await run(total, { store, time: NOON + maxAge - 1 })).body.projects, 0, "still the copy");
+  assert.equal((await run(total, { store, time: NOON + maxAge })).body.projects, 1, "refreshed");
 });
 
 test("a project sends once per gap", async () => {
