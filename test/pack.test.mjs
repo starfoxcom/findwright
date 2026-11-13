@@ -49,7 +49,7 @@ const BASE = {
   "README.md": "# findwright\n",
   LICENSE: "MIT\n",
   "plugin/.claude-plugin/plugin.json": manifest("9.9.9"),
-  "plugin/skills/x/SKILL.md": "---\nname: x\ndescription: Test skill.\n---\n\nBody.\n",
+  "plugin/skills/x/SKILL.md": "---\nname: x\ndescription: \"Test skill.\"\n---\n\nBody.\n",
 };
 
 function baseRepo(overrides = {}) {

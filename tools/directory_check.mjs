@@ -43,26 +43,35 @@ function startsAt(data, offset, magic) {
   return data.subarray(offset, offset + magic.length).equals(magic);
 }
 
-const OPENER = /^---[ \t]*\n/;
-// The only frontmatter line this check reads: a top-level key with its value on the same line.
-const PLAIN_KEY_LINE = /^([A-Za-z][\w-]*):(?:[ \t].*)?$/;
+// The one frontmatter form this check accepts: `key: word` or `key: "JSON string"`, one per
+// line, which every YAML reader parses the same way. It reads no other YAML, so anything else
+// is a problem rather than a guess.
+const CANONICAL_LINE = /^([A-Za-z][A-Za-z-]*): ([A-Za-z0-9][\w.-]*|"[^"\\]*(?:\\.[^"\\]*)*")$/;
+const ODD_CHARACTERS = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u2028\u2029]/;
+const NOT_CANONICAL = ["(frontmatter not in the one-line key: value form)"];
 
-// Anything but plain one-line keys (indented lines, lists, block scalars) reports a pseudo-key,
-// so the check fails closed instead of passing keys it never read.
-function frontmatterKeys(rawText) {
-  const text = rawText.replace(/^﻿/, "");
-  const opener = text.match(OPENER);
-  if (!opener) return [];
-  const end = text.indexOf("\n---", opener[0].length - 1);
-  if (end === -1) return ["(unclosed frontmatter)"];
-  const lines = text.slice(opener[0].length, end).split("\n").filter((line) => line.trim());
-  const keys = [];
-  for (const line of lines) {
-    const match = line.match(PLAIN_KEY_LINE);
-    if (!match) return ["(frontmatter other than one-line keys)"];
-    keys.push(match[1]);
+function canonicalKey(line) {
+  const match = line.match(CANONICAL_LINE);
+  if (!match || ODD_CHARACTERS.test(line)) return null;
+  if (match[2].startsWith("\"")) {
+    try {
+      JSON.parse(match[2]);
+    } catch {
+      return null;
+    }
   }
-  return keys;
+  return match[1];
+}
+
+function frontmatterKeys(rawText) {
+  const text = rawText.replace(/^\uFEFF/, "");
+  if (!text.startsWith("---")) return [];
+  const lines = text.split("\n");
+  if (lines[0] !== "---") return NOT_CANONICAL;
+  const close = lines.indexOf("---", 1);
+  if (close === -1) return ["(unclosed frontmatter)"];
+  const keys = lines.slice(1, close).map(canonicalKey);
+  return keys.includes(null) ? NOT_CANONICAL : keys;
 }
 
 function skillProblems(rel, text) {

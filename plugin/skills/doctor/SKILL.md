@@ -1,6 +1,6 @@
 ---
 name: doctor
-description: Check that FindWright works on this computer and in this repo, and say in plain words what is wrong and how to fix each thing. Changes nothing.
+description: "Check that FindWright works on this computer and in this repo, and say in plain words what is wrong and how to fix each thing. Changes nothing."
 ---
 
 # /findwright:doctor

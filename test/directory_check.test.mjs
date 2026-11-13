@@ -76,7 +76,7 @@ test("a text file must not start with a shebang, with or without a byte order ma
 });
 
 test("a skill, agent or command may use only the allowed frontmatter keys", () => {
-  const allowed = "---\nname: x\ndescription: d\nargument-hint: <a>\n---\nBody\n";
+  const allowed = "---\nname: x\ndescription: \"d: e\"\nargument-hint: \"<a>\"\n---\nBody\n";
   const refused = "---\nname: x\nallowed-tools: Bash\n---\nBody\n";
   assert.deepEqual(problemsOf({ "skills/x/SKILL.md": allowed }), []);
   assert.deepEqual(problemsOf({ "skills/x/SKILL.md": refused }), [
@@ -87,7 +87,7 @@ test("a skill, agent or command may use only the allowed frontmatter keys", () =
   ]);
 });
 
-const ONLY_PLAIN = "(frontmatter other than one-line keys)";
+const ONLY_PLAIN = "(frontmatter not in the one-line key: value form)";
 
 test("frontmatter the check cannot read plainly fails closed", () => {
   const rows = {
@@ -96,7 +96,12 @@ test("frontmatter the check cannot read plainly fails closed", () => {
     "a plain key, then indented ones": ["---\nname: x\n  allowed-tools: Bash\n---\n", ONLY_PLAIN],
     "a block scalar": ["---\nname: x\ndescription: >\n  text\n---\n", ONLY_PLAIN],
     "no keys": ["---\njust text\n---\n", ONLY_PLAIN],
-    "spaces after the opener": ["--- \nname: x\nallowed-tools: Bash\n---\n", "allowed-tools"],
+    "spaces after the opener": ["--- \nname: x\nallowed-tools: Bash\n---\n", ONLY_PLAIN],
+    "a form feed after the opener": ["---\f\nname: x\nallowed-tools: Bash\n---\n", ONLY_PLAIN],
+    "a line starting ---": ["---\nname: x\n---: y\nallowed-tools: Bash\n---\n", ONLY_PLAIN],
+    "a next-line character": ["---\nname: x\u0085allowed-tools: Bash\n---\n", ONLY_PLAIN],
+    "an unquoted value with a colon": ["---\nname: x\ndescription: a: b\n---\n", ONLY_PLAIN],
+    "a quoted value JSON refuses": ["---\nname: \"x\\q\"\n---\n", ONLY_PLAIN],
   };
   for (const [name, [text, reported]] of Object.entries(rows)) {
     assert.deepEqual(problemsOf({ "skills/x/SKILL.md": text }), [

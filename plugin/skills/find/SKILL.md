@@ -1,6 +1,6 @@
 ---
 name: find
-description: Locate code before reading or editing it. Use whenever the user asks "where is X", "what calls Y", "find usages of Z", or whenever you need to find a symbol, function, type or pattern yourself.
+description: "Locate code before reading or editing it. Use whenever the user asks \"where is X\", \"what calls Y\", \"find usages of Z\", or whenever you need to find a symbol, function, type or pattern yourself."
 ---
 
 # /findwright:find

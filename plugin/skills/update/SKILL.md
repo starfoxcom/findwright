@@ -1,6 +1,6 @@
 ---
 name: update
-description: Bring FindWright's helper up to the plugin's version and check its registration and search hook. Use after the plugin updates, or when a notice says the helper is behind.
+description: "Bring FindWright's helper up to the plugin's version and check its registration and search hook. Use after the plugin updates, or when a notice says the helper is behind."
 ---
 
 # /findwright:update

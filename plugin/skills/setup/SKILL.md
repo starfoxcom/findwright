@@ -1,6 +1,6 @@
 ---
 name: setup
-description: Install FindWright on this computer, register it with Claude Code and, inside a project, fit its index to that project. Use when the user asks to set up or install FindWright, or when its tools are missing.
+description: "Install FindWright on this computer, register it with Claude Code and, inside a project, fit its index to that project. Use when the user asks to set up or install FindWright, or when its tools are missing."
 ---
 
 # /findwright:setup

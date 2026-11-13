@@ -1,6 +1,6 @@
 ---
 name: remove
-description: Take FindWright back out of this computer: the search hook, its registration with Claude Code and its helper, then the plugin. Each part on a yes.
+description: "Take FindWright back out of this computer: the search hook, its registration with Claude Code and its helper, then the plugin. Each part on a yes."
 ---
 
 # /findwright:remove
