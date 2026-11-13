@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- With usage counts turned on, a session that stays open for days now sends them once a day. The send used to run only when a session started, so a long session sent nothing until the next one. The server now checks before each search whether a day has passed since the last try.
+
 ## [1.0.1] - 2026-11-13
 
 ### Fixed
