@@ -1,0 +1,89 @@
+# Settings for the review gate (.github/scripts/review_gate.py). Every value
+# starts at the gate's default; delete a line to keep the default.
+# Unknown keys and bad values fail the gate instead of being ignored.
+# The workflows read this file from the PR's base branch, so a PR cannot
+# change the settings its own review runs under.
+
+# The "Review gate" check is always reported. "two" also keeps the older
+# "Claude On-Demand" check up to date, for branch rules that still require
+# it; "one" once they require "Review gate" alone.
+checks: one
+
+# The runner label (runs-on) for the review jobs; several labels, comma
+# separated, pick a self-hosted runner ("self-hosted, linux"). Run such a
+# runner under an account of its own with no Claude Code setup: the
+# reviewers load that account's user settings, hooks and instructions.
+# On a Linux runner (WSL counts) without a Linux Node 22 or newer and
+# npm, each review job downloads the
+# official Node build into its temp folder, checked against a pinned
+# checksum, to install the CLI.
+runner: ubuntu-latest
+
+# The review that runs on every PR with reviewable files. Its backup runs
+# once when the attempts on its own model fail, a usage limit included.
+routine:
+  model: claude-fable-5-2
+  effort: low
+  max_turns: 120
+  fallback_model: claude-opus-5-5
+  fallback_effort: high
+
+# The deeper review the routine one asks for on risky diffs.
+deep:
+  model: claude-fable-5-2
+  effort: medium
+  max_turns: 120
+  fallback_model: claude-opus-5-5
+  fallback_effort: high
+
+# The backup a tier uses when its own fallback_model or fallback_effort
+# line is left out.
+fallback:
+  model: claude-opus-5-5
+  effort: high
+
+# A folder of the project's own pre-screen checks (*.py and *.sh), run from
+# the base branch with the changed-file list; their output joins the review
+# context, and a check that exits non-zero is reported as a violation.
+# A check that runs the PR's code can fake its own report, and on a
+# self-hosted runner that is not wiped between jobs it can leave files or
+# processes behind for the review; keep such checks on hosted or one-job
+# runners. Empty: none.
+# attribution: on scans the lines a PR adds for AI-attribution markers
+# (co-author lines, "generated with" footers, session links), and the
+# reviewer checks the commits and the PR body for them; off skips both.
+prescreen:
+  dir:
+  attribution: on
+
+# The project's own deep-review triggers, on top of the gate's: path globs
+# (comma separated, any case; `*` crosses folders, a trailing `/` covers a
+# folder), and a Python regex matched against the lines a PR adds (no `#`,
+# which starts a comment here; one pair of outer quotes is dropped, so wrap a
+# regex that starts and ends with the same quote in another pair). They
+# apply to PRs the gate reviews: a PR of only skippable files (Markdown,
+# images, fonts outside the always-reviewed paths) passes without a review,
+# so a trigger on such a file never fires; list its path under
+# triage.always_review too. Empty: none.
+# auto: on lets the routine review ask for the deep review by itself: on
+# these triggers, on the gate's own files, and when it judges one needed.
+# off: it starts none by itself and the triggers are not used; a person
+# asks for one with `@claude review this PR` on each push that needs it,
+# or adds the needs-deep-review label so every later push gets one.
+escalate:
+  auto: on
+  paths:
+  patterns:
+
+# Paths that always get a review, whatever their file type, on top of the
+# gate's own (.github/scripts/, .github/review-guide.md, any .claude/
+# folder, any CLAUDE.md): globs as for escalate.paths. Without this, a PR
+# of only Markdown, images or fonts passes without a review.
+triage:
+  always_review:
+
+# Extra tools both reviewers may use, comma separated: Bash(...) patterns,
+# Read, Grep or Glob. A Bash pattern that runs the PR's code hands that code
+# the review's tokens; add one only when that is acceptable. Empty: none.
+reviewer:
+  allowed_tools:

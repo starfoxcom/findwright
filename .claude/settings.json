@@ -1,0 +1,69 @@
+{
+  "attribution": {
+    "commit": "",
+    "pr": "",
+    "sessionUrl": false
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'test -f \"$0\" || exit 0; exec sh \"$0\" no-ai-attribution' \"${CLAUDE_PROJECT_DIR}/.claude/hooks/run-hook.sh\"",
+            "timeout": 10,
+            "onFailure": "block"
+          },
+          {
+            "type": "command",
+            "command": "sh -c 'test -f \"$0\" || exit 0; exec sh \"$0\" push-guard' \"${CLAUDE_PROJECT_DIR}/.claude/hooks/run-hook.sh\"",
+            "timeout": 10,
+            "onFailure": "block"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git push --force)",
+      "Bash(git push --force *)",
+      "Bash(git push * --force)",
+      "Bash(git push * --force *)",
+      "Bash(git push -f*)",
+      "Bash(git push * -f*)",
+      "Bash(git push -uf*)",
+      "Bash(git push * -uf*)",
+      "Bash(git push * +*)",
+      "Bash(git push *--mirror*)",
+      "Bash(git fetch *--upl*)",
+      "Bash(git pull *--upl*)",
+      "Bash(git remote *--mi*)",
+      "Bash(gh repo sync *--force*)",
+      "Bash(git push * main)",
+      "Bash(git push * main *)",
+      "Bash(git push *:main)",
+      "Bash(git push *:main *)",
+      "Bash(git push * refs/heads/main)",
+      "Bash(git push * refs/heads/main *)",
+      "Bash(git push *:refs/heads/main)",
+      "Bash(git push *:refs/heads/main *)",
+      "Bash(git push * develop)",
+      "Bash(git push * develop *)",
+      "Bash(git push *:develop)",
+      "Bash(git push *:develop *)",
+      "Bash(git push * refs/heads/develop)",
+      "Bash(git push * refs/heads/develop *)",
+      "Bash(git push *:refs/heads/develop)",
+      "Bash(git push *:refs/heads/develop *)",
+      "Bash(git rebase -i*)",
+      "Bash(git rebase * -i*)",
+      "Bash(git rebase --interactive*)",
+      "Bash(git rebase * --interactive*)",
+      "Bash(gh pr merge *--admin*)"
+    ]
+  },
+  "$schema": "https://json.schemastore.org/claude-code-settings.json"
+}
