@@ -1,0 +1,41 @@
+{
+  "team": false,
+  "client": false,
+  "private": false,
+  "project": {
+    "name": "findwright",
+    "repoUrl": "https://github.com/starfoxcom/findwright",
+    "licenseHolder": "Jorge Alexandro Zamudio Arredondo",
+    "license": "MIT"
+  },
+  "advanced": {
+    "aiReview": true,
+    "deepEscalation": true,
+    "precommit": "none",
+    "uiRule": true,
+    "confidentiality": false,
+    "cleanRoom": false,
+    "plainWriting": true,
+    "codeResearch": "findwright",
+    "codeResearchCustom": null,
+    "branching": "gitflow",
+    "devIsDefault": false,
+    "mergeStyle": "merge",
+    "architecture": "none",
+    "hookLocation": "repo",
+    "attributionGuard": true,
+    "denyProfile": "standard",
+    "shippedTextPaths": null,
+    "codeSizeCheck": true,
+    "codeHost": "github",
+    "githubApps": true,
+    "localOnly": false,
+    "tracker": "github",
+    "trackerProject": "starfoxcom/10",
+    "trackerRepo": null,
+    "publicRoadmap": null,
+    "handoffFile": true,
+    "prReviewers": null,
+    "localReview": false
+  }
+}

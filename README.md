@@ -34,3 +34,11 @@ The index lives in `.findwright/index.db`; keep it out of git.
 ## Bench
 
 `bench/` replays real searches from past sessions through FindWright and the tool it replaces, and scores each answer against the files the session used next. See `docs/DESIGN.md` for the design and the numbers so far.
+
+## Development
+
+`main` holds tagged releases and `develop` is where work lands: branch from `develop` and open pull requests against it. Run the tests with `npm test`.
+
+## License
+
+MIT. See [`LICENSE`](./LICENSE).
