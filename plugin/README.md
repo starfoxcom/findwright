@@ -29,7 +29,7 @@ FindWright sends nothing about you or your code. Setup and the doctor make these
 
 - **The helper install**: setup downloads the helper file the plugin pins from `github.com/starfoxcom/findwright/releases`.
 - **The Node check**: `/findwright:setup` and `/findwright:doctor` read Node's public release list from `nodejs.org/dist/index.json`, to find the newest security patch of your Node. On Windows, setup installs Node or its newest patch through winget when yours is missing or behind; elsewhere you run the installer from nodejs.org.
-- **The meaning model**: setup downloads its two files (32 MB) from Hugging Face, checked against pinned SHA-256 sums, into `~/.cache/findwright/models`. Find refuses to answer without it rather than rank worse. Set `FINDWRIGHT_MEANING=off` in the registration to turn meaning search off.
+- **The meaning model**: setup downloads its two files (32 MB) from Hugging Face, checked against pinned SHA-256 sums, into `~/.cache/findwright/models`. Find refuses to answer without it rather than rank worse.
 
 The index stays in each project's `.findwright/` folder, which keeps itself out of git.
 

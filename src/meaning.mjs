@@ -4,15 +4,15 @@
 import { dot, installedModel, loadModel, packVector } from "./embed.mjs";
 
 const NOT_INSTALLED = "FindWright's meaning model is not installed or does not match its pinned checksum. "
-  + "Run /findwright:setup (or `findwright model` from a shell) to install it, "
-  + "or set FINDWRIGHT_MEANING=off to turn meaning search off.";
+  + "Run /findwright:setup (or `findwright model` from a shell) to install it.";
 
 let loaded = null;
 
 /**
- * The meaning model with the index's vectors brought up to date: `{ ready }`; `{ ready: null }`
- * when FINDWRIGHT_MEANING=off turns meaning search off; or `{ error }` when the model setup
- * installs is missing or will not load, since a search without it would quietly rank worse.
+ * The meaning model with the index's vectors brought up to date: `{ ready }`, or `{ error }`
+ * when the model setup installs is missing or will not load, since a search without it would
+ * quietly rank worse. FINDWRIGHT_MEANING=off gives `{ ready: null }` for the test suite only,
+ * which runs without the download; setup and the docs offer no such mode.
  */
 export function meaningModel(db) {
   if (process.env.FINDWRIGHT_MEANING === "off") return { ready: null };

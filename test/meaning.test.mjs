@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { meaningModel } from "../src/meaning.mjs";
 
 // Find must not quietly rank by words when the model setup installs is missing.
-test("without the model, find gets an error naming setup; with meaning off, no model and no error", (t) => {
+test("without the model, find gets an error naming setup; the test suite's off switch skips it", (t) => {
   const empty = mkdtempSync(join(tmpdir(), "findwright-models-"));
   const saved = { models: process.env.FINDWRIGHT_MODELS, meaning: process.env.FINDWRIGHT_MEANING };
   t.after(() => {
