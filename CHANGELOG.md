@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Each published release carries the plugin zip and the helper tarball, both rebuilt from the tag so their SHA-256 matches the pins, and writes the `plugin` branch the directory installs from.
 - Tests run on Linux and Windows for every pull request, on the newest patch of Node 22, Node 24 and the current LTS.
 - Setup and the doctor say when your Node is behind on security fixes or outside long-term support, and offer the upgrade.
+- Opt-in anonymous usage counts: setup asks once per computer, "No" first. Each project whose kind you pick sends four daily sums from its finished sessions (sessions that searched, scored searches, hits and answer bytes) under a random id to the `counter/` Worker, whose totals the page will show. `findwright counts share off` stops every send.
 - The project is set up with Bindwright: rules, session skills, review workflows and the size check.
 
 ### Changed
