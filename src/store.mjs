@@ -222,8 +222,8 @@ function symbolsOf(text, path, kind, config) {
 // kinds or rules re-extracts every unchanged file's symbols, keeping its text and vectors.
 export function refresh(db, root, config = readConfig(root)) {
   const extraction = JSON.stringify({ kinds: config.kinds, rules: config.rules });
-  const indexedWith = db.prepare("SELECT value FROM settings WHERE key = 'extraction'").get();
-  const sameExtraction = indexedWith?.value === extraction;
+  const indexedWith = storedExtraction(db);
+  const sameExtraction = indexedWith === extraction;
   const known = new Map(db.prepare("SELECT path, size, mtime FROM files").all().map((r) => [r.path, r]));
   const seen = new Set();
   const changed = [];
@@ -240,19 +240,32 @@ export function refresh(db, root, config = readConfig(root)) {
     else if (!sameExtraction) reextract.push(path);
   }
   const removed = [...known.keys()].filter((path) => !seen.has(path));
-  db.exec("BEGIN");
+  const result = { changed: changed.length, reextracted: reextract.length, removed: removed.length, files: seen.size };
+  // A refresh that finds nothing new writes nothing, so it takes no write lock.
+  if (sameExtraction && !changed.length && !removed.length) return result;
+  db.exec("BEGIN IMMEDIATE");
+  // Another process stored other settings since they were read above: its symbols would be mixed
+  // with this pass's, so start over from what it stored.
+  if (storedExtraction(db) !== indexedWith) {
+    db.exec("ROLLBACK");
+    return refresh(db, root, config);
+  }
   try {
     for (const path of removed) dropFile(db, path);
     for (const { path, stat } of changed) indexFile(db, root, path, stat, config);
     for (const path of reextract) extractAgain(db, path, config);
-    // Written only on a change, so a refresh that finds nothing new takes no write lock.
     if (!sameExtraction) db.prepare("INSERT OR REPLACE INTO settings VALUES ('extraction', ?)").run(extraction);
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;
   }
-  return { changed: changed.length, reextracted: reextract.length, removed: removed.length, files: seen.size };
+  return result;
+}
+
+// The config's kinds and rules the index was built with, as JSON, or undefined before the first build.
+function storedExtraction(db) {
+  return db.prepare("SELECT value FROM settings WHERE key = 'extraction'").get()?.value;
 }
 
 function dropFile(db, path) {
