@@ -1,0 +1,101 @@
+/* FindWright page. Dark by default, like the icon; light when the system asks. */
+:root {
+  --canvas: oklch(0.20 0.006 240);
+  --panel: oklch(0.245 0.007 240);
+  --rule: oklch(0.34 0.008 240);
+  --text: oklch(0.97 0 0);
+  --text-2: oklch(0.80 0.01 240);
+  --accent: oklch(0.80 0.12 148);
+  --on-accent: oklch(0.20 0.03 148);
+  color-scheme: dark light;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --canvas: oklch(0.985 0.002 240);
+    --panel: oklch(0.955 0.004 240);
+    --rule: oklch(0.86 0.006 240);
+    --text: oklch(0.22 0.01 240);
+    --text-2: oklch(0.42 0.01 240);
+    --accent: oklch(0.48 0.12 148);
+    --on-accent: oklch(0.98 0.01 148);
+  }
+}
+
+* { box-sizing: border-box; margin: 0; }
+
+body {
+  background: var(--canvas);
+  color: var(--text);
+  font: 400 16px/1.6 system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+
+.skip { position: absolute; left: -999px; }
+.skip:focus { left: 16px; top: 16px; background: var(--panel); padding: 8px 12px; }
+
+.top, main, .foot { max-width: 960px; margin: 0 auto; padding: 0 16px; }
+
+.top {
+  display: flex; flex-wrap: wrap; gap: 12px 24px;
+  align-items: center; justify-content: space-between;
+  padding-top: 20px; padding-bottom: 20px;
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 650; text-decoration: none; }
+.top nav { display: flex; flex-wrap: wrap; gap: 6px 20px; color: var(--text-2); }
+.top nav a { text-decoration: none; }
+.top nav a:hover { color: var(--text); }
+
+section { padding: 48px 0; border-top: 1px solid var(--rule); }
+.hero { border-top: 0; padding-top: 56px; }
+
+h1 { font-size: clamp(2rem, 6vw, 3.2rem); line-height: 1.12; letter-spacing: -0.02em; max-width: 18ch; }
+h2 { font-size: 1.6rem; line-height: 1.25; margin-bottom: 16px; }
+h3 { font-size: 0.95rem; font-weight: 600; color: var(--text-2); }
+p + p, p + pre, pre + p { margin-top: 14px; }
+
+.lede { margin-top: 20px; font-size: 1.15rem; color: var(--text-2); max-width: 62ch; }
+.cta { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: center; margin-top: 28px; }
+.button {
+  background: var(--accent); color: var(--on-accent);
+  padding: 10px 18px; border-radius: 8px; font-weight: 600; text-decoration: none;
+}
+.link { color: var(--text-2); }
+
+.note { color: var(--text-2); max-width: 70ch; }
+.note a { color: var(--text); }
+
+.tiles {
+  display: grid; gap: 12px; margin-top: 24px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+.tile {
+  display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; padding: 18px;
+}
+/* Pushed down so numbers line up across tiles whose titles wrap differently. */
+.hero-number { font-size: 2.2rem; font-weight: 700; line-height: 1.1; margin-top: auto; padding-top: 10px; }
+.compare { color: var(--text-2); margin-top: 6px; }
+
+.table-title { margin-top: 36px; margin-bottom: 12px; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--rule); border-radius: 12px; margin-bottom: 16px; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { padding: 10px 14px; text-align: right; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+th:first-child { text-align: left; white-space: normal; }
+thead th { color: var(--text-2); font-weight: 600; background: var(--panel); }
+tbody tr:last-child > * { border-bottom: 0; }
+tbody th { font-weight: 500; }
+
+.tools { display: grid; gap: 16px; margin-bottom: 20px; }
+.tools dt { font-family: ui-monospace, monospace; font-weight: 600; }
+.tools dd { color: var(--text-2); margin-top: 2px; }
+
+code { font-family: ui-monospace, monospace; font-size: 0.92em; }
+pre {
+  background: var(--panel); border: 1px solid var(--rule); border-radius: 10px;
+  padding: 14px 16px; overflow-x: auto;
+}
+
+.foot { padding-top: 32px; padding-bottom: 48px; color: var(--text-2); border-top: 1px solid var(--rule); }

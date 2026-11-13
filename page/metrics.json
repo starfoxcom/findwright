@@ -1,0 +1,99 @@
+{
+  "measured": "2026-11-13",
+  "all": {
+    "searches": 169,
+    "findwright": {
+      "hitRate": 69,
+      "medianMs": 38,
+      "medianBytes": 240
+    },
+    "baseline": {
+      "hitRate": 53,
+      "medianMs": 135,
+      "medianBytes": 1515
+    }
+  },
+  "heldOut": {
+    "searches": 136,
+    "findwright": {
+      "hitRate": 68,
+      "medianMs": 39,
+      "medianBytes": 226
+    },
+    "baseline": {
+      "hitRate": 49,
+      "medianMs": 138,
+      "medianBytes": 1514
+    }
+  },
+  "questions": {
+    "searches": 77,
+    "findwright": {
+      "hitRate": 61,
+      "medianMs": 108,
+      "medianBytes": 248
+    },
+    "baseline": {
+      "hitRate": 42,
+      "medianMs": 142,
+      "medianBytes": 2121
+    }
+  },
+  "names": {
+    "searches": 58,
+    "findwright": {
+      "hitRate": 71,
+      "medianMs": 6,
+      "medianBytes": 188
+    },
+    "baseline": {
+      "hitRate": 57,
+      "medianMs": 104,
+      "medianBytes": 862
+    }
+  },
+  "projects": [
+    {
+      "kind": "A game",
+      "searches": 121,
+      "findwright": {
+        "hitRate": 68,
+        "medianMs": 54,
+        "medianBytes": 223
+      },
+      "baseline": {
+        "hitRate": 50,
+        "medianMs": 140,
+        "medianBytes": 1515
+      }
+    },
+    {
+      "kind": "Bindwright, a developer tool",
+      "searches": 33,
+      "findwright": {
+        "hitRate": 73,
+        "medianMs": 36,
+        "medianBytes": 280
+      },
+      "baseline": {
+        "hitRate": 70,
+        "medianMs": 128,
+        "medianBytes": 1522
+      }
+    },
+    {
+      "kind": "A business app",
+      "searches": 14,
+      "findwright": {
+        "hitRate": 64,
+        "medianMs": 7,
+        "medianBytes": 258
+      },
+      "baseline": {
+        "hitRate": 43,
+        "medianMs": 108,
+        "medianBytes": 1217
+      }
+    }
+  ]
+}

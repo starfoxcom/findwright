@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FindWright</title>
+  <meta name="description" content="A code index that adapts to each project: plain-English questions, names and regex searches over every file the project tracks, served to Claude over MCP.">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to the content</a>
+  <header class="top">
+    <a class="brand" href="./"><img src="icon.svg" alt="" width="28" height="28"> FindWright</a>
+    <nav aria-label="Page">
+      <a href="#numbers">Numbers</a>
+      <a href="#install">Install</a>
+      <a href="#privacy">Privacy</a>
+      <a href="https://github.com/starfoxcom/findwright">GitHub</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero">
+      <h1>Code search that knows every file in your project.</h1>
+      <p class="lede">FindWright gives Claude a code index that adapts to each project. It reads every file the project tracks, code, docs and config alike, and answers plain-English questions, names and regex searches with short answers that point at the right lines.</p>
+      <div class="cta">
+        <a class="button" href="#install">Install the plugin</a>
+        <a class="link" href="https://github.com/starfoxcom/findwright">Read the source</a>
+      </div>
+    </section>
+
+    <section id="numbers" aria-labelledby="numbers-title">
+      <h2 id="numbers-title">Measured on real sessions</h2>
+      <p class="note"><span data-field="all.searches">--</span> real searches from past coding sessions on four projects, replayed through FindWright and through the code-search tool it replaced. A search counts as found when its answer names a file the session went on to open or edit.</p>
+      <div class="tiles">
+        <article class="tile">
+          <h3>Found the right file</h3>
+                    <p class="hero-number"><span data-field="all.findwright.hitRate">--</span>%</p>
+          <p class="compare">Previous tool: <span data-field="all.baseline.hitRate">--</span>%</p>
+        </article>
+        <article class="tile">
+          <h3>On projects it was not tuned on</h3>
+          <p class="hero-number"><span data-field="heldOut.findwright.hitRate">--</span>%</p>
+          <p class="compare">Previous tool: <span data-field="heldOut.baseline.hitRate">--</span>%</p>
+        </article>
+        <article class="tile">
+          <h3>Median answer time</h3>
+          <p class="hero-number"><span data-field="all.findwright.medianMs">--</span> ms</p>
+          <p class="compare">Previous tool: <span data-field="all.baseline.medianMs">--</span> ms</p>
+        </article>
+        <article class="tile">
+          <h3>Median answer size</h3>
+          <p class="hero-number"><span data-field="all.findwright.medianBytes">--</span> bytes</p>
+          <p class="compare">Previous tool: <span data-field="all.baseline.medianBytes">--</span> bytes</p>
+        </article>
+      </div>
+
+      <h3 class="table-title">By project and by kind of search</h3>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th scope="col">Searches</th><th scope="col">Count</th><th scope="col">FindWright</th><th scope="col">Previous tool</th></tr>
+          </thead>
+          <tbody data-rows></tbody>
+        </table>
+      </div>
+      <p class="note">Measured <span data-field="measured">--</span>. The bench, its replay and the scoring are in <a href="https://github.com/starfoxcom/findwright/tree/main/bench">bench/</a>; anyone can run it on their own sessions.</p>
+    </section>
+
+    <section id="how" aria-labelledby="how-title">
+      <h2 id="how-title">How Claude uses it</h2>
+      <dl class="tools">
+        <div><dt>find</dt><dd>A plain-English question, a name, or both: the files that answer it, best first.</dd></div>
+        <div><dt>search</dt><dd>Regexes over every tracked file, with globs and context lines, like <code>grep -n</code>. Each hit names the function, heading or key around it.</dd></div>
+        <div><dt>symbols and outline</dt><dd>Names by kind, and one file's parts with their line ranges, so Claude reads only the part it needs.</dd></div>
+      </dl>
+      <p>Every call first re-reads the files that changed, so answers match the working tree. A file format no built-in extractor knows gets a pattern rule in the project's <code>.findwright/config.json</code>, and setup offers to write those rules for you.</p>
+    </section>
+
+    <section id="install" aria-labelledby="install-title">
+      <h2 id="install-title">Install</h2>
+      <p>In a Claude Code session:</p>
+      <pre><code>/plugin marketplace add starfoxcom/findwright
+/plugin install findwright@findwright</code></pre>
+      <p>Then run <code>/findwright:setup</code>. It installs FindWright's helper, the part that runs on your computer, after checking it against the SHA-256 the plugin pins, registers FindWright for every project, offers a hook that sends searches to it, and fits the index to the project you are in. It needs Node 22.16 or later (or Node 24 and up).</p>
+    </section>
+
+    <section id="privacy" aria-labelledby="privacy-title">
+      <h2 id="privacy-title">Privacy</h2>
+      <p>FindWright sends nothing about you or your code. It downloads two things: the helper from its GitHub release, after your yes, and on the first search its meaning model (32 MB) from Hugging Face, checked against pinned SHA-256 sums. Setup and the doctor also read Node's public release list, to tell you when your Node is missing security fixes. Set <code>FINDWRIGHT_MEANING=off</code> to skip the model. The index stays in each project's <code>.findwright/</code> folder, which keeps itself out of git.</p>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <p>MIT licensed. <a href="https://github.com/starfoxcom/findwright">Source</a> · <a href="https://github.com/starfoxcom/findwright/issues">Issues</a> · <a href="https://github.com/starfoxcom/findwright/blob/main/CHANGELOG.md">Changelog</a></p>
+  </footer>
+</body>
+</html>
