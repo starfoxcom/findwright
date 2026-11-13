@@ -9,11 +9,13 @@
   },
   "files": [
     "src/",
+    "hooks/",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "engines": {
-    "node": ">=22.13"
+    "node": "^22.16 || >=24"
   },
   "scripts": {
     "test": "node --test \"test/*.test.mjs\""

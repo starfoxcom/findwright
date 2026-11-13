@@ -36,6 +36,17 @@ const SCHEMA = `
   CREATE TABLE IF NOT EXISTS embedded (path TEXT PRIMARY KEY);
 `;
 
+// Node's SQLite has full-text search from 22.16 on the 22 line and from 24.0; 23 never had it.
+function createSchema(db) {
+  try {
+    db.exec(SCHEMA);
+  } catch (error) {
+    if (!String(error.message).includes("no such module: fts5")) throw error;
+    throw new Error("FindWright needs Node 22.16 or later (or Node 24 and up): "
+      + `the SQLite in Node ${process.version} has no full-text search.`);
+  }
+}
+
 const compiledGlobs = new Map();
 
 // A glob as a RegExp over forward-slash paths: `**` spans folders, `*` and `?` stay within one.
@@ -170,7 +181,7 @@ export function openIndex(root) {
   if (!process.env.FINDWRIGHT_DB && !existsSync(ignore)) writeFileSync(ignore, "*\n!config.json\n");
   const db = new DatabaseSync(file);
   db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA trusted_schema = OFF;");
-  db.exec(SCHEMA);
+  createSchema(db);
   return db;
 }
 

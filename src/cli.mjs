@@ -8,6 +8,7 @@
 //   findwright find <question or name>
 //   findwright hits [transcript]   (score the newest session, record it, say when to assess)
 //   findwright assess              (why recorded searches missed, and what would fix it)
+//   findwright home status|install-hook|remove-hook   (the search hook in Claude Code's settings)
 // Runs from the repo root (or any folder inside it).
 
 import { execFileSync } from "node:child_process";
@@ -16,6 +17,7 @@ import { coverage, outline, search, symbols } from "./query.mjs";
 import { find } from "./find.mjs";
 import { assess, DEFAULT_GOAL, recordSession } from "./hits.mjs";
 import { meaningModel } from "./meaning.mjs";
+import { runHome } from "./home.mjs";
 
 function parse(argv) {
   const opts = { positional: [], globs: [], ignoreCase: false, context: 0, all: false };
@@ -43,8 +45,16 @@ function printSearch(result) {
   if (result.truncated) console.log("(more matches; narrow the search)");
 }
 
+function printHome(action) {
+  const { ok, json } = runHome(action);
+  console.log(JSON.stringify(json));
+  process.exitCode = ok ? 0 : 1;
+}
+
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
+  // Home settings live outside any repo, so this runs before the repo lookup below.
+  if (command === "home") return printHome(rest[0]);
   const root = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
   const opts = parse(rest);
   // Scoring reads the session's transcript, not the index, so it builds none.
