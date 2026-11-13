@@ -11,7 +11,9 @@ import sys
 
 # projects.local.json (git-ignored): {"<name>": {"root": "<repo>", "transcripts": "<CLI project folder>"}}
 PROJECTS = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "projects.local.json"), encoding="utf8"))
-TS = "mcp__tokensave__tokensave_"
+# baseline.local.json (git-ignored): {"mcpPrefix": "<the baseline's MCP tool prefix>"}
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "baseline.local.json"), encoding="utf8") as _fh:
+    TS = json.load(_fh)["mcpPrefix"]
 SEARCH_TOOLS = {TS + "search", TS + "context", "Grep", "Glob"}
 USE_TOOLS = {"Read": "file_path", "Edit": "file_path", "Write": "file_path",
              "MultiEdit": "file_path", TS + "read": "path"}
