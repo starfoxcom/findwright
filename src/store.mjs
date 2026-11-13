@@ -252,7 +252,7 @@ export function refresh(db, root, config = readConfig(root)) {
     db.exec("ROLLBACK");
     throw error;
   }
-  return { changed: changed.length, removed: removed.length, files: seen.size };
+  return { changed: changed.length, reextracted: reextract.length, removed: removed.length, files: seen.size };
 }
 
 function dropFile(db, path) {
