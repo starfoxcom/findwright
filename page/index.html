@@ -16,6 +16,7 @@
 <script type="module" src="app.js"></script>
 <script type="module" src="reveal.js"></script>
 <script type="module" src="scene.js"></script>
+<script type="module" src="live.js"></script>
 <script>if (!matchMedia("(prefers-reduced-motion: reduce)").matches) document.documentElement.classList.add("reveal");</script>
 </head>
 <body>
@@ -103,6 +104,37 @@
         <b>Answers match your files as they are now</b>
         <span>Each search first takes in the files that changed, so there is nothing to refresh by hand.</span></li>
     </ul>
+  </section>
+
+  <section class="live" id="live" aria-labelledby="live-title" hidden>
+    <h2 id="live-title">Live from real projects</h2>
+    <div id="live-counts">
+      <p class="section-note" id="live-note"></p>
+      <div class="stats">
+        <div class="stat">
+          <span class="stat-num stat-accent" data-total="rate">0%</span>
+          <p class="stat-label">of searches named the file Claude opened next</p>
+        </div>
+        <div class="stat">
+          <span class="stat-num" data-total="searches">0</span>
+          <p class="stat-label">searches counted, each one followed by opening a project file</p>
+        </div>
+        <div class="stat">
+          <span class="stat-num" data-total="sessions">0</span>
+          <p class="stat-label">sessions that searched</p>
+        </div>
+        <div class="stat">
+          <span class="stat-num" data-total="answer">0 KB</span>
+          <p class="stat-label">typical answer, so results leave room for the work</p>
+        </div>
+      </div>
+      <p class="chart-title">Each project: searches counted, and the share whose answer named the file opened next</p>
+      <ul class="projects" id="live-projects"></ul>
+      <ul class="legend">
+        <li class="legend-item"><i class="swatch seg-hit"></i>Named the file</li>
+        <li class="legend-item"><i class="swatch seg-miss"></i>Did not</li>
+      </ul>
+    </div>
   </section>
 
   <section class="how" id="how" aria-labelledby="how-title">
