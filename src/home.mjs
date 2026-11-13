@@ -134,23 +134,28 @@ function hookText(hook) {
   return [hook?.command, ...args].filter((part) => typeof part === "string").join(" ");
 }
 
-// Joins the existing matcher entry when there is one, so the hook sits beside its peers.
+// The hook gets an entry of its own, so installing never edits an entry someone else wrote.
 function addOurHook(settings) {
   settings.hooks ??= {};
   settings.hooks.PreToolUse ??= [];
-  const entry = settings.hooks.PreToolUse.find((candidate) => candidate?.matcher === MATCHER);
-  if (entry) entry.hooks = [...hooksOf(entry), OUR_HOOK];
-  else settings.hooks.PreToolUse.push({ matcher: MATCHER, hooks: [OUR_HOOK] });
+  settings.hooks.PreToolUse.push({ matcher: MATCHER, hooks: [OUR_HOOK] });
 }
 
-// Drops a matcher entry only when removing our hook is what left it empty.
+function isOurEntry(entry) {
+  const hooks = hooksOf(entry);
+  return entry?.matcher === MATCHER && hooks.length === 1 && isOurs(hooks[0])
+    && Object.keys(entry).length === 2;
+}
+
+// Deletes only the entry install wrote. Our hook moved into another entry by hand leaves that
+// entry in place, keys and all, with only our hook taken out.
 function removeOurHook(settings) {
   const kept = [];
   for (const entry of pretoolEntries(settings)) {
+    if (isOurEntry(entry)) continue;
     const hooks = hooksOf(entry);
     const rest = hooks.filter((hook) => !isOurs(hook));
-    if (rest.length === hooks.length) kept.push(entry);
-    else if (rest.length > 0) kept.push({ ...entry, hooks: rest });
+    kept.push(rest.length === hooks.length ? entry : { ...entry, hooks: rest });
   }
   settings.hooks.PreToolUse = kept;
 }

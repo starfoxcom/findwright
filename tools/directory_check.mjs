@@ -43,14 +43,19 @@ function startsAt(data, offset, magic) {
   return data.subarray(offset, offset + magic.length).equals(magic);
 }
 
-function frontmatterKeys(text) {
+// A block this reader cannot read as plain top-level keys reports a pseudo-key, so the check
+// fails closed instead of passing keys it never saw.
+function frontmatterKeys(rawText) {
+  const text = rawText.replace(/^﻿/, "");
   if (!text.startsWith("---\n")) return [];
   const end = text.indexOf("\n---", 4);
   if (end === -1) return ["(unclosed frontmatter)"];
-  return text.slice(4, end)
-    .split(/\r\n|\r|\n/)
-    .filter((line) => line && !/\s/.test(line[0]) && line.includes(":"))
+  const lines = text.slice(4, end).split(/\r\n|\r|\n/).filter((line) => line.trim());
+  if (lines.length && /\s/.test(lines[0][0])) return ["(indented frontmatter)"];
+  const keys = lines
+    .filter((line) => !/\s/.test(line[0]) && line.includes(":"))
     .map((line) => line.slice(0, line.indexOf(":")).trim());
+  return lines.length && !keys.length ? ["(unreadable frontmatter)"] : keys;
 }
 
 function skillProblems(rel, text) {

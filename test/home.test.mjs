@@ -80,7 +80,7 @@ test("install-hook keeps other keys, hooks and entries, and backs the file up fi
   });
   assert.equal(readText(`${file}.bak`), text);
   const expected = structuredClone(original);
-  expected.hooks.PreToolUse[1].hooks.push(OUR_HOOK);
+  expected.hooks.PreToolUse.push({ matcher: MATCHER, hooks: [OUR_HOOK] });
   assert.deepEqual(readJson(file), expected);
 });
 
@@ -102,6 +102,30 @@ test("remove-hook takes out our hook and the entry it leaves empty", () => {
     json: { settings: file, removed: true, backup: `${file}.bak` },
   });
   assert.deepEqual(readJson(file), { hooks: { PreToolUse: [] } });
+});
+
+test("install then remove leaves every existing entry as it was, whatever its shape", () => {
+  const shapes = {
+    "hooks not a list": { matcher: MATCHER, hooks: { command: "x" } },
+    "no hooks": { matcher: MATCHER },
+    "empty hooks": { matcher: MATCHER, hooks: [] },
+    "extra keys": { matcher: MATCHER, hooks: [{ type: "command", command: "y" }], note: "mine" },
+  };
+  for (const [name, entry] of Object.entries(shapes)) {
+    const original = { hooks: { PreToolUse: [entry] } };
+    const file = fileWith(`shape-${name.replaceAll(" ", "-")}`, JSON.stringify(original));
+    runHome("install-hook", envFor(file));
+    assert.deepEqual(readJson(file).hooks.PreToolUse[0], entry, `${name}: install`);
+    runHome("remove-hook", envFor(file));
+    assert.deepEqual(readJson(file), original, `${name}: remove`);
+  }
+});
+
+test("our hook moved by hand into another entry comes out without deleting that entry", () => {
+  const moved = { matcher: MATCHER, hooks: [OUR_HOOK], note: "mine" };
+  const file = fileWith("moved", JSON.stringify({ hooks: { PreToolUse: [moved] } }));
+  runHome("remove-hook", envFor(file));
+  assert.deepEqual(readJson(file), { hooks: { PreToolUse: [{ ...moved, hooks: [] }] } });
 });
 
 test("remove-hook keeps the other hooks in a shared matcher entry", () => {
