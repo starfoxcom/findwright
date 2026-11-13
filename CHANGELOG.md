@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Tests run on Linux and Windows for every pull request, on the newest patch of Node 22, Node 24 and the current LTS.
 - Setup and the doctor say when your Node is behind on security fixes, and setup installs the newest patch (with winget on Windows, through the nodejs.org installer elsewhere). A Node outside long-term support gets a note.
 - `findwright model` downloads the meaning model, checks it against its pinned SHA-256 and loads it; setup runs it.
+- Opt-in anonymous usage counts: setup asks once per computer, "No" first. Each project whose kind you pick sends four daily sums from its searches (sessions that searched, scored searches, hits and answer bytes) under a random id to the `counter/` Worker, whose totals the page will show. `findwright counts share off` stops every send.
 - The project is set up with Bindwright: rules, session skills, review workflows and the size check.
 
 ### Changed
