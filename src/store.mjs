@@ -44,6 +44,7 @@ const SCHEMA = `
   CREATE TABLE IF NOT EXISTS chunks (path TEXT, line INTEGER, end_line INTEGER, vec BLOB);
   CREATE INDEX IF NOT EXISTS chunks_path ON chunks (path);
   CREATE TABLE IF NOT EXISTS embedded (path TEXT PRIMARY KEY);
+  CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 `;
 
 // Node's SQLite has full-text search from 22.16 on the 22 line and from 24.0; 23 never had it.
@@ -145,12 +146,19 @@ function realInside(root, folder) {
 const insideRepo = (glob) => typeof glob === "string" && !/^([\\/]|[A-Za-z]:)/.test(glob)
   && !glob.split(/[\\/]/).includes("..");
 
+const WILDCARD = /[*?]/;
+// git ls-files output for the largest repos fits in 256 MB.
+const GIT_LIST_MAX_BYTES = 256 * 1024 * 1024;
+
 export function listFiles(root, config) {
-  const git = execFileSync("git", ["ls-files", "-co", "--exclude-standard", "-z"], { cwd: root, maxBuffer: 1 << 28 });
+  const git = execFileSync("git", ["ls-files", "-co", "--exclude-standard", "-z"],
+    { cwd: root, maxBuffer: GIT_LIST_MAX_BYTES });
   const files = new Set(git.toString("utf8").split("\0").filter(Boolean));
   for (const glob of (config.include ?? []).filter(insideRepo)) {
-    const base = glob.split("/").filter((part) => !/[*?]/.test(part));
-    const start = /[*?]/.test(glob) ? base.slice(0, glob.split("/").findIndex((p) => /[*?]/.test(p))).join("/") : glob;
+    const base = glob.split("/").filter((part) => !WILDCARD.test(part));
+    const start = WILDCARD.test(glob)
+      ? base.slice(0, glob.split("/").findIndex((p) => WILDCARD.test(p))).join("/")
+      : glob;
     const found = [];
     if (!realInside(root, start)) continue;
     // A glob that names one file includes that file; the rest walk their fixed folder.
@@ -210,9 +218,20 @@ function symbolsOf(text, path, kind, config) {
   return own.concat(fromRules(text, rules));
 }
 
-// Brings the index level with the working tree; returns what changed.
+// Each indexed file's size and mtime by path, or none when the index was built with other
+// kinds or rules.
+function filesIndexedWith(db, extraction) {
+  const indexedWith = db.prepare("SELECT value FROM settings WHERE key = 'extraction'").get();
+  if (indexedWith?.value !== extraction) return new Map();
+  return new Map(db.prepare("SELECT path, size, mtime FROM files").all().map((r) => [r.path, r]));
+}
+
+// Brings the index level with the working tree; returns what changed. A change to the config's
+// kinds or rules re-reads every file, since each file's symbols come from them.
 export function refresh(db, root, config = readConfig(root)) {
-  const known = new Map(db.prepare("SELECT path, size, mtime FROM files").all().map((r) => [r.path, r]));
+  const extraction = JSON.stringify({ kinds: config.kinds, rules: config.rules });
+  const known = filesIndexedWith(db, extraction);
+  const indexed = db.prepare("SELECT path FROM files").all().map((r) => r.path);
   const seen = new Set();
   const changed = [];
   for (const path of listFiles(root, config)) {
@@ -226,11 +245,12 @@ export function refresh(db, root, config = readConfig(root)) {
     if (old && old.size === stat.size && old.mtime === stat.mtimeMs) continue;
     changed.push({ path, stat });
   }
-  const removed = [...known.keys()].filter((path) => !seen.has(path));
+  const removed = indexed.filter((path) => !seen.has(path));
   db.exec("BEGIN");
   try {
     for (const path of removed) dropFile(db, path);
     for (const { path, stat } of changed) indexFile(db, root, path, stat, config);
+    db.prepare("INSERT OR REPLACE INTO settings VALUES ('extraction', ?)").run(extraction);
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");

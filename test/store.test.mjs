@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { checkOwnFolder, globToRegExp, listFiles, normalConfig } from "../src/store.mjs";
+import { checkOwnFolder, globToRegExp, listFiles, normalConfig, openIndex, refresh } from "../src/store.mjs";
 
 test("globs match paths the way their syntax says", () => {
   const cases = [
@@ -105,5 +105,20 @@ test("an include that names one file, or uses only ?, takes that file in", () =>
   writeFileSync(join(root, ".gitignore"), "gen/\n");
   const files = listFiles(root, normalConfig({ include: ["gen/types.d.ts", "gen/file?.ts"] }));
   assert.ok(files.includes("gen/types.d.ts") && files.includes("gen/file1.ts"), files.join(","));
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("a new rule or kind in the config re-reads files that did not change", () => {
+  const root = repo();
+  writeFileSync(join(root, "schema.sql"), "CREATE TABLE projects (id TEXT);\n");
+  const db = openIndex(root);
+  const tables = () => db.prepare("SELECT name FROM symbols WHERE kind = 'table'").all().map((r) => r.name);
+  refresh(db, root, normalConfig({}));
+  assert.deepEqual(tables(), []);
+  const rule = { globs: ["**/*.sql"], kind: "table", pattern: "^CREATE TABLE (?<name>\\w+)" };
+  refresh(db, root, normalConfig({ rules: [rule] }));
+  assert.deepEqual(tables(), ["projects"]);
+  assert.equal(refresh(db, root, normalConfig({ rules: [rule] })).changed, 0, "an unchanged config re-reads nothing");
+  db.close();
   rmSync(root, { recursive: true, force: true });
 });
