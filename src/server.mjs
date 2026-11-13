@@ -2,11 +2,11 @@
 // FindWright's MCP server over stdio (JSON-RPC 2.0, one message per line).
 // Every tool call first brings the index level with the working tree.
 
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { globToRegExp, openIndex, readConfig, refresh } from "./store.mjs";
+import { gitRoot, globToRegExp, openIndex, readConfig, refresh } from "./store.mjs";
 import { coverage, outline, search, symbols } from "./query.mjs";
 import { find } from "./find.mjs";
 import { meaningModel } from "./meaning.mjs";
@@ -15,15 +15,7 @@ import { status } from "./counts.mjs";
 const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
 // The repo the session runs in; outside a git repo every tool says so instead of indexing.
-function repoRoot() {
-  try {
-    return process.env.FINDWRIGHT_ROOT ?? execFileSync("git", ["rev-parse", "--show-toplevel"],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-  } catch {
-    return null;
-  }
-}
-const root = repoRoot();
+const root = process.env.FINDWRIGHT_ROOT ?? gitRoot();
 // Opened on the first tool call, so a session that never searches leaves the repo untouched.
 let db = null;
 

@@ -9,6 +9,7 @@ import {
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { scoredSearches, transcriptsOf } from "./hits.mjs";
+import { isObject } from "./store.mjs";
 
 /** The project kinds a person can pick. */
 const KINDS = ["game", "business-app", "developer-tool", "mobile-app", "website", "other"];
@@ -22,7 +23,6 @@ const MAX_SESSIONS = 2000;
 const TIMEOUT_MS = 2000;
 const DEFAULT_COUNTER_URL = "https://findwright-counter.starfoxcom.workers.dev";
 
-const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const emptyState = () => ({ asked: false, share: false, projects: {} });
 const stateFile = () =>
   join(process.env.FINDWRIGHT_HOME ?? join(homedir(), ".findwright"), "counts.json");

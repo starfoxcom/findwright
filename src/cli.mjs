@@ -13,8 +13,7 @@
 //   findwright model               (download the meaning model, check its pinned SHA-256, load it)
 // Runs from the repo root (or any folder inside it).
 
-import { execFileSync } from "node:child_process";
-import { openIndex, readConfig, refresh } from "./store.mjs";
+import { gitRoot, openIndex, readConfig, refresh } from "./store.mjs";
 import { coverage, outline, search, symbols } from "./query.mjs";
 import { find } from "./find.mjs";
 import { assess, DEFAULT_GOAL, recordSession } from "./hits.mjs";
@@ -55,20 +54,10 @@ function printHome(action) {
   process.exitCode = ok ? 0 : 1;
 }
 
-// The repo root, or null outside a git repository.
-function gitRootOrNull() {
-  try {
-    return execFileSync("git", ["rev-parse", "--show-toplevel"],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-  } catch {
-    return null;
-  }
-}
-
 async function countsAction(action, value) {
-  if (action === "status") return status(gitRootOrNull());
+  if (action === "status") return status(gitRoot());
   if (action === "share" && (value === "on" || value === "off")) return setShare(value === "on");
-  const root = gitRootOrNull();
+  const root = gitRoot();
   if (!root) return { error: "counts project and send work inside a git repository" };
   if (action === "project") return setProject(root, value);
   if (action === "send") return send(root);
@@ -100,7 +89,8 @@ async function main() {
   if (command === "counts") return printCounts(rest);
   // The meaning model lives outside any repo too: setup installs it with this command.
   if (command === "model") return installModel();
-  const root = execFileSync("git", ["rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
+  const root = gitRoot();
+  if (!root) throw new Error("findwright runs inside a git repository");
   const opts = parse(rest);
   // Scoring reads the session's transcript, not the index, so it builds none.
   if (command === "hits") {
