@@ -11,8 +11,8 @@ The design follows Bindwright's review counter, with fields for FindWright's sea
 
 What the counts mean:
 
-- `sessions`: sessions that ran at least one search.
-- `searches`: searches run.
+- `sessions`: sessions with at least one scored search.
+- `searches`: scored searches, the ones the session followed by opening a project file within its next few tool calls.
 - `hits`: searches whose answer named a file the session then opened within its next few tool calls, the hit rate FindWright scores on each session.
 - `bytes`: the sizes of the answers, each counted up to 65 536 bytes.
 

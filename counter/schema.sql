@@ -6,9 +6,9 @@ CREATE TABLE IF NOT EXISTS projects (
   id         TEXT PRIMARY KEY,  -- 32 lowercase hex characters, random
   kind       TEXT NOT NULL,     -- one of rules.js KINDS
   country    TEXT NOT NULL,     -- two-letter code Cloudflare derived from the last send, XX unknown
-  sessions   INTEGER NOT NULL DEFAULT 0,  -- sessions that ran at least one search, summed
-  searches   INTEGER NOT NULL DEFAULT 0,  -- searches run, summed
-  hits       INTEGER NOT NULL DEFAULT 0,  -- searches that returned at least one result, summed
+  sessions   INTEGER NOT NULL DEFAULT 0,  -- sessions with at least one scored search, summed
+  searches   INTEGER NOT NULL DEFAULT 0,  -- scored searches: ones the session followed by opening a file, summed
+  hits       INTEGER NOT NULL DEFAULT 0,  -- scored searches whose answer named the file opened, summed
   bytes      INTEGER NOT NULL DEFAULT 0,  -- answer sizes, summed; each answer capped in rules.js
   last_send  INTEGER NOT NULL,  -- milliseconds since the epoch
   covered_to INTEGER NOT NULL   -- end of the newest counted window, milliseconds since the epoch

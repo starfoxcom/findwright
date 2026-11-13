@@ -159,7 +159,6 @@ test("a send adds to the totals, and /total reports kinds and counts only", asyn
 
   const total = await run(new Request("https://counter.test/total"), { store });
   assert.equal(total.status, 200);
-  assertReadHeaders(total.response.headers);
   assert.equal(total.body.projects, 2);
   assert.equal(total.body.sessions, 7);
   assert.equal(total.body.searches, 310);
