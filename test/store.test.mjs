@@ -115,9 +115,11 @@ test("a new rule or kind in the config re-reads files that did not change", () =
   const tables = () => db.prepare("SELECT name FROM symbols WHERE kind = 'table'").all().map((r) => r.name);
   refresh(db, root, normalConfig({}));
   assert.deepEqual(tables(), []);
+  db.prepare("INSERT INTO embedded VALUES ('schema.sql')").run();
   const rule = { globs: ["**/*.sql"], kind: "table", pattern: "^CREATE TABLE (?<name>\\w+)" };
   refresh(db, root, normalConfig({ rules: [rule] }));
   assert.deepEqual(tables(), ["projects"]);
+  assert.ok(db.prepare("SELECT 1 FROM embedded WHERE path = 'schema.sql'").get(), "the file's vectors are kept");
   assert.equal(refresh(db, root, normalConfig({ rules: [rule] })).changed, 0, "an unchanged config re-reads nothing");
   db.close();
   rmSync(root, { recursive: true, force: true });

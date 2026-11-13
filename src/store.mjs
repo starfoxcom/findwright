@@ -218,22 +218,16 @@ function symbolsOf(text, path, kind, config) {
   return own.concat(fromRules(text, rules));
 }
 
-// Each indexed file's size and mtime by path, or none when the index was built with other
-// kinds or rules.
-function filesIndexedWith(db, extraction) {
-  const indexedWith = db.prepare("SELECT value FROM settings WHERE key = 'extraction'").get();
-  if (indexedWith?.value !== extraction) return new Map();
-  return new Map(db.prepare("SELECT path, size, mtime FROM files").all().map((r) => [r.path, r]));
-}
-
 // Brings the index level with the working tree; returns what changed. A change to the config's
-// kinds or rules re-reads every file, since each file's symbols come from them.
+// kinds or rules re-extracts every unchanged file's symbols, keeping its text and vectors.
 export function refresh(db, root, config = readConfig(root)) {
   const extraction = JSON.stringify({ kinds: config.kinds, rules: config.rules });
-  const known = filesIndexedWith(db, extraction);
-  const indexed = db.prepare("SELECT path FROM files").all().map((r) => r.path);
+  const indexedWith = db.prepare("SELECT value FROM settings WHERE key = 'extraction'").get();
+  const sameExtraction = indexedWith?.value === extraction;
+  const known = new Map(db.prepare("SELECT path, size, mtime FROM files").all().map((r) => [r.path, r]));
   const seen = new Set();
   const changed = [];
+  const reextract = [];
   for (const path of listFiles(root, config)) {
     let stat;
     // Regular files only: a submodule, a nested repo or a symlink (which may point
@@ -242,14 +236,15 @@ export function refresh(db, root, config = readConfig(root)) {
     if (!stat.isFile()) continue;
     seen.add(path);
     const old = known.get(path);
-    if (old && old.size === stat.size && old.mtime === stat.mtimeMs) continue;
-    changed.push({ path, stat });
+    if (!old || old.size !== stat.size || old.mtime !== stat.mtimeMs) changed.push({ path, stat });
+    else if (!sameExtraction) reextract.push(path);
   }
-  const removed = indexed.filter((path) => !seen.has(path));
+  const removed = [...known.keys()].filter((path) => !seen.has(path));
   db.exec("BEGIN");
   try {
     for (const path of removed) dropFile(db, path);
     for (const { path, stat } of changed) indexFile(db, root, path, stat, config);
+    for (const path of reextract) extractAgain(db, path, config);
     db.prepare("INSERT OR REPLACE INTO settings VALUES ('extraction', ?)").run(extraction);
     db.exec("COMMIT");
   } catch (error) {
@@ -276,6 +271,21 @@ function indexFile(db, root, path, stat, config) {
   db.prepare("INSERT INTO files VALUES (?, ?, ?, ?, ?)").run(path, stat.size, stat.mtimeMs, text === null ? "binary" : kind, symbols.length);
   if (text === null) return;
   db.prepare("INSERT INTO body (path, text) VALUES (?, ?)").run(path, text);
+  writeSymbols(db, path, symbols);
+}
+
+// Re-reads an unchanged text file's kind and symbols from its stored text; its vectors stay.
+function extractAgain(db, path, config) {
+  const stored = db.prepare("SELECT text FROM body WHERE path = ?").get(path);
+  if (!stored) return;
+  const kind = kindOf(path, config);
+  const symbols = symbolsOf(stored.text, path, kind, config);
+  db.prepare("DELETE FROM symbols WHERE path = ?").run(path);
+  db.prepare("UPDATE files SET kind = ?, symbols = ? WHERE path = ?").run(kind, symbols.length, path);
+  writeSymbols(db, path, symbols);
+}
+
+function writeSymbols(db, path, symbols) {
   const insert = db.prepare("INSERT INTO symbols VALUES (?, ?, ?, ?, ?)");
   for (const s of symbols) insert.run(path, s.name, s.kind, s.line, s.endLine);
 }
