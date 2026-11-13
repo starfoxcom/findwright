@@ -245,7 +245,8 @@ export function refresh(db, root, config = readConfig(root)) {
     for (const path of removed) dropFile(db, path);
     for (const { path, stat } of changed) indexFile(db, root, path, stat, config);
     for (const path of reextract) extractAgain(db, path, config);
-    db.prepare("INSERT OR REPLACE INTO settings VALUES ('extraction', ?)").run(extraction);
+    // Written only on a change, so a refresh that finds nothing new takes no write lock.
+    if (!sameExtraction) db.prepare("INSERT OR REPLACE INTO settings VALUES ('extraction', ?)").run(extraction);
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
