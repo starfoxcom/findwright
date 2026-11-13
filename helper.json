@@ -1,0 +1,8 @@
+{
+  "version": "1.0.0",
+  "node": {
+    "file": "findwright-1.0.0.tgz",
+    "url": "https://github.com/starfoxcom/findwright/releases/download/v1.0.0/findwright-1.0.0.tgz",
+    "sha256": "8a7af7a085c8d5b706b2c401c54d3320b78171ec2089668e237902d2fce207a9"
+  }
+}
