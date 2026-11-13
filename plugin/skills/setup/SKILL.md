@@ -7,7 +7,7 @@ description: "Install FindWright on this computer, register it with Claude Code 
 
 Sets FindWright up: a supported Node with every security fix, the helper (the part that runs on this computer), its meaning model and its registration with Claude Code, then offers the search hook and, inside a git repo, to fit the index to the project. Running setup is the yes to everything FindWright needs to work: say what each step installs, then install it, without asking again. FindWright is on only when all of it is in place. When a requirement cannot be installed, or the user does not want it, stop and say FindWright stays off until it is there; there is no half-working mode.
 
-`<helper>` is `$HOME/.findwright/helper/node_modules/findwright` in every FindWright skill, and `<plugin>` is `${CLAUDE_PLUGIN_ROOT}`.
+`<helper>` is `$HOME/.findwright/helper/node_modules/findwright` in every FindWright skill, and `<plugin>` is `${CLAUDE_PLUGIN_ROOT}`. `<home>` is the user's home folder, `$HOME`, written out in full in each command.
 
 ## 1. Node
 
@@ -23,7 +23,7 @@ Then check that this Node has every security fix. Read Node's public release lis
 
 The helper is ready when `node -p "require(process.argv[1]).version" "<helper>/package.json"` prints the `version` in `<plugin>/.claude-plugin/plugin.json`. When it is missing or holds another version, say in one line that the helper, the part that builds and searches the index, is being installed (or updated to <version>) for this user only, with no admin rights, then install exactly the file `<plugin>/helper.json` names under `node`, which the plugin pins by its SHA-256:
 
-1. Create `$HOME/.findwright/helper/` and download the entry's `url` into it under its `file` name: `curl -fsSL -o "$HOME/.findwright/helper/<file>" "<url>"`, typed `curl.exe` in Windows PowerShell, where `curl` names another command.
+1. Create `<home>/.findwright/helper/` and download the entry's `url` into it under its `file` name: `curl -fsSL -o "<home>/.findwright/helper/<file>" "<url>"`, typed `curl.exe` in Windows PowerShell, where `curl` names another command.
 2. Check that the download's SHA-256 is the entry's `sha256`: `sha256sum` on Linux and in Git Bash, `shasum -a 256` on macOS, `Get-FileHash -Algorithm SHA256` in PowerShell. When it differs, delete the file, say the download does not match the plugin, and stop.
 3. Install it with no install scripts, then delete the file: `npm install --prefix "$HOME/.findwright/helper" --no-save --ignore-scripts --no-audit --no-fund "$HOME/.findwright/helper/<file>"`.
 
