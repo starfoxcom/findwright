@@ -21,9 +21,10 @@ Then run `/findwright:setup`. It installs the helper, the part that runs on your
 
 ## Use from the shell
 
-Needs Node 22.16 or later (or Node 24 and up), for the full-text search in Node's built-in SQLite. Node 23 lacks it.
+Needs Node 22.16 or later (or Node 24 and up), for the full-text search in Node's built-in SQLite. Node 23 lacks it. Run `findwright model` once to download the meaning model `find` needs.
 
 ```
+findwright model                           # download and check the meaning model
 findwright find <question or name>         # the files that answer it, best first
 findwright search <regex> [--glob G] [-i] [-C N]
 findwright symbols <name> [--kind K]
@@ -50,10 +51,10 @@ The index lives in `.findwright/index.db`, in a folder that keeps itself out of 
 
 FindWright sends nothing about you or your code. It makes these network calls:
 
-- **The helper install**, after your yes in `/findwright:setup`, downloads the helper file the plugin pins from `github.com/starfoxcom/findwright/releases`.
-- **The Node check**: `/findwright:setup` and `/findwright:doctor` read Node's public release list from `nodejs.org/dist/index.json`, to say when your Node is missing security fixes.
-- **The meaning model**, on the first search, downloads its two files (32 MB) from Hugging Face, checked against pinned SHA-256 sums, into `~/.cache/findwright/models`. Set `FINDWRIGHT_MEANING=off` to skip it; FindWright then ranks by words alone.
-- **The usage counts**, only when you turn them on in setup: once a day, each project whose kind you pick posts four sums about its finished sessions (sessions that searched, searches the session followed by opening a file, how many of those answers named that file, and the answers' total bytes), the span they cover, a random id and the kind to `findwright-counter.starfoxcom.workers.dev`. The counter keeps the country Cloudflare reads from the connection and publishes only projects per country. `findwright counts share off` stops every send.
+- **The helper install**: setup downloads the helper file the plugin pins from `github.com/starfoxcom/findwright/releases`.
+- **The Node check**: `/findwright:setup` and `/findwright:doctor` read Node's public release list from `nodejs.org/dist/index.json`, to find the newest security patch of your Node. On Windows, setup installs Node or its newest patch through winget when yours is missing or behind; elsewhere you run the installer from nodejs.org.
+- **The meaning model**: setup downloads its two files (32 MB) from Hugging Face, checked against pinned SHA-256 sums, into `~/.cache/findwright/models`. Find refuses to answer without it rather than rank worse.
+- **The usage counts**, only when you turn them on in setup: once a day, each project whose kind you pick posts four sums about its searches older than an hour (sessions that searched, searches the session followed by opening a file, how many of those answers named that file, and the answers' total bytes), the time span they cover, a random id and the kind to `findwright-counter.starfoxcom.workers.dev`. The counter keeps the country Cloudflare reads from the connection and publishes only projects per country. `findwright counts share off` stops every send.
 
 The index and any project settings stay in each project's `.findwright/` folder.
 

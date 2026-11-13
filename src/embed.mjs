@@ -20,8 +20,20 @@ export const MODEL = {
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
+const modelsDir = () => process.env.FINDWRIGHT_MODELS ?? join(homedir(), ".cache", "findwright", "models");
+
+/** The model folder when every file is there and matches its pinned SHA-256, else null. */
+export function installedModel(dir = modelsDir()) {
+  const folder = join(dir, MODEL.name);
+  const intact = Object.entries(MODEL.files).every(([file, sum]) => {
+    const target = join(folder, file);
+    return existsSync(target) && sha256(readFileSync(target)) === sum;
+  });
+  return intact ? folder : null;
+}
+
 /** The model folder, downloading and checking each file the first time. */
-export async function ensureModel(dir = process.env.FINDWRIGHT_MODELS ?? join(homedir(), ".cache", "findwright", "models")) {
+export async function ensureModel(dir = modelsDir()) {
   const folder = join(dir, MODEL.name);
   mkdirSync(folder, { recursive: true });
   for (const [file, sum] of Object.entries(MODEL.files)) {

@@ -1,28 +1,28 @@
 // The meaning layer of the index: each text file split into overlapping windows
 // of lines, each window stored as an int8 vector of the static code model.
 
-import { dot, ensureModel, loadModel, packVector } from "./embed.mjs";
+import { dot, installedModel, loadModel, packVector } from "./embed.mjs";
 
-let loading = null;
+const NOT_INSTALLED = "FindWright's meaning model is not installed or does not match its pinned checksum. "
+  + "Run /findwright:setup (or `findwright model` from a shell) to install it.";
+
 let loaded = null;
-let failure = null;
 
 /**
- * The meaning model with the index's vectors brought up to date: `{ ready }`, or
- * `{ ready: null, note }` while it downloads or when it cannot load, so a search
- * still answers by words alone. Set FINDWRIGHT_MEANING=off to skip it.
+ * The meaning model with the index's vectors brought up to date: `{ ready }`, or `{ error }`
+ * when the model setup installs is missing or will not load, since a search without it would
+ * quietly rank worse.
  */
-export async function meaningModel(db, { wait = false } = {}) {
-  if (process.env.FINDWRIGHT_MEANING === "off") return { ready: null };
-  // The download runs in the background: until it lands, searches rank by words alone.
-  if (!loaded && !loading) {
-    failure = null;
-    loading = ensureModel().then(loadModel).then((model) => { loaded = model; }, (error) => { failure = error; loading = null; });
+export function meaningModel(db) {
+  if (!loaded) {
+    const folder = installedModel();
+    if (!folder) return { error: NOT_INSTALLED };
+    try {
+      loaded = loadModel(folder);
+    } catch (error) {
+      return { error: `FindWright's meaning model would not load (${error.message}). ${NOT_INSTALLED}` };
+    }
   }
-  // A one-shot caller (the CLI) waits; the server answers at once.
-  if (wait) await loading;
-  if (!loaded && failure) return { ready: null, note: `(meaning search is off: ${failure.message}; ranked by words only)` };
-  if (!loaded) return { ready: null, note: "(meaning model still downloading; ranked by words only)" };
   // A big repo's vectors are built over several calls, two seconds at a time.
   embedMissing(db, loaded, 2000);
   return { ready: loaded };

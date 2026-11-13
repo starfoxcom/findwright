@@ -19,11 +19,12 @@ The plugin directory accepts from an organization that is not Verified only Mark
 
 ## What setup does
 
-1. Checks Node 22.16 or later (or Node 24 and up), whose built-in SQLite has full-text search; Node 23 does not. It also reads `nodejs.org/dist/index.json` and offers the upgrade when a newer patch of the same line exists or the line is outside long-term support, since an old patch leaves known security holes open. Without it, says how to get it and stops.
-2. When `~/.findwright/helper/node_modules/findwright/package.json` is missing or holds another version than the plugin, asks, then downloads the file `helper.json` names, checks its SHA-256 and installs it as above.
-3. Registers the server for the user: `claude mcp add --scope user findwright -- node "<home>/.findwright/helper/node_modules/findwright/src/server.mjs"`. When a `findwright` server is registered already (Bindwright's copy), it says which copy runs now and offers to switch to the plugin's one, which is the newer.
-4. Offers the search hook, which sends Grep, Glob and shell searches to FindWright in repos that have an index: `findwright home install-hook` merges it into `~/.claude/settings.json` (backup first, refusing a file that is not valid JSON). When Bindwright's `findwright-first.py` is registered, it leaves that one in place, since two would answer every search twice.
-5. In a git repo, offers to fit the index to the project: runs `coverage`, and for file kinds with no symbols proposes `kinds` and `rules` for `.findwright/config.json`, written on a yes.
+1. Checks Node 22.16 or later (or Node 24 and up), whose built-in SQLite has full-text search; Node 23 does not. It also reads `nodejs.org/dist/index.json`, and when a newer patch of the same line exists, since an old patch leaves known security holes open, installs it with winget on Windows or gives the nodejs.org installer elsewhere. A line outside long-term support gets a note. A missing Node is installed the same way, then setup stops for a restart.
+2. When `~/.findwright/helper/node_modules/findwright/package.json` is missing or holds another version than the plugin, downloads the file `helper.json` names, checks its SHA-256 and installs it as above.
+3. Installs the meaning model with `findwright model`, which downloads it and checks the pinned SHA-256; find returns an error naming setup without it.
+4. Registers the server for the user: `claude mcp add --scope user findwright -- node "<home>/.findwright/helper/node_modules/findwright/src/server.mjs"`. When a `findwright` server is registered already (Bindwright's copy), it says which copy runs now and switches to the plugin's one, which is the newer.
+5. Offers the search hook, which sends Grep, Glob and shell searches to FindWright in repos that have an index: `findwright home install-hook` merges it into `~/.claude/settings.json` (backup first, refusing a file that is not valid JSON). When Bindwright's `findwright-first.py` is registered, it leaves that one in place, since two would answer every search twice.
+6. In a git repo, offers to fit the index to the project: runs `coverage`, and for file kinds with no symbols proposes `kinds` and `rules` for `.findwright/config.json`, written on a yes.
 
 `update` reinstalls the helper at the plugin's version, `doctor` checks Node, the helper version, the registration and the hook and says each fix, and `remove` takes out the hook, the registration and the helper folder, then the plugin, each on a yes. Indexes in projects (`.findwright/`) stay unless the user asks.
 
@@ -36,4 +37,4 @@ The plugin directory accepts from an organization that is not Verified only Mark
 
 ## Living beside Bindwright
 
-Both can register a server named `findwright`. Bindwright's setup registers its own copy; FindWright's setup offers to point the registration at its helper instead. The follow-up on Bindwright's side is to install FindWright from these releases (pinned version and SHA-256) instead of carrying a copy of `src/`, so the two never drift.
+Both can register a server named `findwright`. Bindwright's setup registers its own copy; FindWright's setup points the registration at its helper instead. The follow-up on Bindwright's side is to install FindWright from these releases (pinned version and SHA-256) instead of carrying a copy of `src/`, so the two never drift.

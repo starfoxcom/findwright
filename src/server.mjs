@@ -42,10 +42,10 @@ const TOOLS = {
     run: async (args) => {
       const globRes = (args.globs ?? []).map(globToRegExp);
       const keep = (p) => !globRes.length || globRes.some((g) => g.test(p));
-      const model = await meaningModel(db);
+      const model = meaningModel(db);
+      if (model.error) return { ...text(model.error), isError: true };
       const files = find(db, { query: args.query, keep, limit: args.limit ?? 12, model: model.ready, meaningWeight: 1 });
       const lines = files.map((f) => `${f.path}${f.symbol ? `   [${f.symbol}]` : ""}`);
-      if (model.note) lines.push(model.note);
       return text(lines.join("\n") || "No file matches.");
     },
   },

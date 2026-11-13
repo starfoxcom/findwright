@@ -167,7 +167,7 @@
       </li>
       <li>
         <p class="command-sub"><b>Run the setup</b>
-          <span>It changes nothing without your yes. In your next projects, FindWright is already there.</span></p>
+          <span>It installs what FindWright needs and asks only about the search hook and fitting the index to your project. In your next projects, FindWright is already there.</span></p>
         <div class="install-line"><code>/findwright:setup</code><button class="icon-copy" type="button" aria-label="Copy command" data-copy></button></div>
       </li>
     </ol>
@@ -175,15 +175,15 @@
     <div class="asks">
       <div class="ask-list">
         <h3>What it needs</h3>
-        <p>Claude Code, and Node 22.16 or later, or Node 24 and up. Setup checks your Node and tells you when it is missing security fixes.</p>
+        <p>Claude Code, and Node 22.16 or later, or Node 24 and up. Setup brings Node to its newest security patch: it installs it on Windows and hands you the installer elsewhere.</p>
       </div>
       <div class="ask-list">
         <h3>What it downloads</h3>
-        <p>Its helper from the GitHub release during setup, and a 32 MB meaning model from Hugging Face on the first search, both checked against pinned checksums. Setup and the doctor also read Node's public release list. Set FINDWRIGHT_MEANING=off to skip the model.</p>
+        <p>During setup, its helper from the GitHub release and a 32 MB meaning model from Hugging Face, both checked against pinned checksums. Setup and the doctor also read Node's public release list, and on Windows setup installs Node through winget.</p>
       </div>
       <div class="ask-list">
         <h3>What stays on your computer</h3>
-        <p>Your code, queries and file names. Each project's index lives in its own .findwright folder, which keeps itself out of git. If you turn on the anonymous usage counts, a project sends only four daily sums about its searches, under a random id and the kind you pick.</p>
+        <p>Your code, queries and file names. Each project's index lives in its own .findwright folder, which keeps itself out of git. If you turn on the anonymous usage counts, a project sends four daily sums about its searches and the time span they cover, under a random id and the kind you pick, and the counter keeps the country it reads from the connection.</p>
       </div>
     </div>
     <p class="asks-more"><a href="https://github.com/starfoxcom/findwright#readme">Read the full guide</a></p>
