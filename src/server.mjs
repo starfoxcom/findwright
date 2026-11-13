@@ -3,6 +3,7 @@
 // Every tool call first brings the index level with the working tree.
 
 import { execFileSync, spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { globToRegExp, openIndex, readConfig, refresh } from "./store.mjs";
@@ -10,6 +11,8 @@ import { coverage, outline, search, symbols } from "./query.mjs";
 import { find } from "./find.mjs";
 import { meaningModel } from "./meaning.mjs";
 import { status } from "./counts.mjs";
+
+const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
 // The repo the session runs in; outside a git repo every tool says so instead of indexing.
 function repoRoot() {
@@ -104,7 +107,7 @@ function formatSearch(result) {
 async function answer(message) {
   const { id, method, params } = message;
   if (method === "initialize") {
-    return { protocolVersion: params?.protocolVersion ?? "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "findwright", version: "0.1.0" } };
+    return { protocolVersion: params?.protocolVersion ?? "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "findwright", version: VERSION } };
   }
   if (method === "tools/list") {
     return { tools: Object.entries(TOOLS).map(([name, t]) => ({ name, description: t.description, inputSchema: t.inputSchema })) };
