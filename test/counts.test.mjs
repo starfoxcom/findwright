@@ -2,7 +2,7 @@ import { after, afterEach, before, beforeEach, test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import {
-  mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync,
+  mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -67,15 +67,14 @@ afterEach(() => {
 const stateFile = () => join(ctx.home, "counts.json");
 const readState = () => JSON.parse(readFileSync(stateFile(), "utf8"));
 const projectState = () => Object.values(readState().projects)[0];
-// A transcript time as the sender reads it: whole milliseconds, as the counter takes.
-const mtimeOf = (file) => Math.floor(statSync(file).mtimeMs);
 
 // One search per entry: its answer, then a Read of the file `opens`. The Read follows the
-// search directly, so every search is scored.
+// search directly, so every search is scored. Each search runs `entry.ageMs` (or `ageMs`) before NOW.
 function writeSession(name, entries, ageMs) {
   const rows = entries.flatMap((entry, i) => [
-    { type: "assistant", message: { content: [{ type: "tool_use", id: `${name}-s${i}`,
-      name: "mcp__findwright__find", input: { query: "where" } }] } },
+    { type: "assistant", timestamp: new Date(NOW - (entry.ageMs ?? ageMs)).toISOString(),
+      message: { content: [{ type: "tool_use", id: `${name}-s${i}`,
+        name: "mcp__findwright__find", input: { query: "where" } }] } },
     { type: "user", message: { content: [{ type: "tool_result", tool_use_id: `${name}-s${i}`,
       content: entry.answer }] } },
     { type: "assistant", message: { content: [{ type: "tool_use", id: `${name}-r${i}`,
@@ -83,8 +82,6 @@ function writeSession(name, entries, ageMs) {
   ]);
   const file = join(ctx.transcripts, `${name}.jsonl`);
   writeFileSync(file, rows.map((row) => JSON.stringify(row)).join("\n") + "\n");
-  const when = new Date(NOW - ageMs);
-  utimesSync(file, when, when);
   return file;
 }
 
@@ -108,9 +105,9 @@ test("a kind outside the list is refused and stored nowhere", () => {
   assert.equal(status(ctx.repo).kind, null);
 });
 
-test("one send sums sessions, searches, hits and bytes, and marks the sessions sent", async () => {
-  const older = writeSession("older", [hitSearch, missSearch], 3 * HOUR);
-  const newer = writeSession("newer", [hitSearch], 2 * HOUR);
+test("one send sums the searches older than an hour and covers the span up to then", async () => {
+  writeSession("older", [hitSearch, missSearch], 3 * HOUR);
+  writeSession("newer", [hitSearch], 2 * HOUR);
   setShare(true);
   setProject(ctx.repo, "game");
   const result = await send(ctx.repo, { now: NOW });
@@ -123,15 +120,14 @@ test("one send sums sessions, searches, hits and bytes, and marks the sessions s
     searches: 3,
     hits: 2,
     bytes: 2 * Buffer.byteLength(HIT) + Buffer.byteLength(MISS),
-    from: mtimeOf(older),
-    to: mtimeOf(newer) + 1,
+    from: 0,
+    to: NOW - HOUR,
   }]);
-  assert.deepEqual([...project.sent].sort(), ["newer", "older"]);
-  assert.equal(project.coveredTo, mtimeOf(newer) + 1);
-  assert.equal(project.lastSend, NOW);
+  assert.equal(project.coveredTo, NOW - HOUR);
+  assert.equal(project.lastTry, NOW);
 });
 
-test("a second send within 24 hours sends nothing, even with a new session", async () => {
+test("a second try within 24 hours sends nothing, even with a new search", async () => {
   writeSession("first", [hitSearch], 2 * HOUR);
   setShare(true);
   setProject(ctx.repo, "game");
@@ -141,53 +137,44 @@ test("a second send within 24 hours sends nothing, even with a new session", asy
   assert.equal(received.length, 1);
 });
 
-test("a session newer than an hour is left out until it is idle", async () => {
-  writeSession("idle", [hitSearch], 2 * HOUR);
-  writeSession("running", [hitSearch], HOUR / 2);
+// A session goes on after a send: its later searches belong to the next span, never lost or doubled.
+test("a search newer than an hour waits for the next send, also in a session already counted", async () => {
+  writeSession("long", [{ ...hitSearch, ageMs: 3 * HOUR }, { ...missSearch, ageMs: HOUR / 2 }]);
   setShare(true);
   setProject(ctx.repo, "game");
   await send(ctx.repo, { now: NOW });
-  assert.equal(received[0].sessions, 1);
-  assert.deepEqual(projectState().sent, ["idle"]);
+  assert.deepEqual([received[0].sessions, received[0].searches, received[0].hits], [1, 1, 1]);
+  await send(ctx.repo, { now: NOW + 25 * HOUR });
+  assert.deepEqual([received[1].sessions, received[1].searches, received[1].hits], [1, 1, 0]);
+  assert.equal(received[1].from, NOW - HOUR);
 });
 
 // A 409 answers a send whose earlier copy was counted though its reply was lost.
-test("a 409 resends nothing, and the next send counts only sessions after the counted window", async () => {
-  const older = writeSession("older", [hitSearch], 3 * HOUR);
-  const newer = writeSession("newer", [hitSearch, missSearch], 2 * HOUR);
-  replies.push({ status: 409, body: { coveredTo: mtimeOf(older) + 1 } });
+test("a 409 resends nothing, and the next send counts only searches after the counted span", async () => {
+  writeSession("older", [hitSearch], 3 * HOUR);
+  writeSession("newer", [hitSearch, missSearch], 2 * HOUR);
+  const coveredTo = NOW - 2.5 * HOUR;
+  replies.push({ status: 409, body: { coveredTo } });
   setShare(true);
   setProject(ctx.repo, "game");
   assert.equal((await send(ctx.repo, { now: NOW })).sent, false);
   assert.equal(received.length, 1);
   assert.equal((await send(ctx.repo, { now: NOW })).sent, true);
-  assert.equal(received[1].sessions, 1);
-  assert.equal(received[1].searches, 2);
-  assert.equal(received[1].from, mtimeOf(newer));
+  assert.deepEqual([received[1].sessions, received[1].searches, received[1].from], [1, 2, coveredTo]);
 });
 
-test("a transcript time with a fraction of a millisecond goes out as whole milliseconds", async () => {
-  const file = writeSession("fraction", [hitSearch], 2 * HOUR);
-  const seconds = (NOW - 2 * HOUR + 0.4321) / 1000;
-  utimesSync(file, seconds, seconds);
-  setShare(true);
-  setProject(ctx.repo, "game");
-  assert.equal((await send(ctx.repo, { now: NOW })).sent, true);
-  assert.ok(Number.isSafeInteger(received[0].from) && Number.isSafeInteger(received[0].to));
-  assert.ok(received[0].from < received[0].to);
-});
-
-test("a 500 or an unreachable counter changes nothing", async () => {
+test("a 500 or an unreachable counter covers nothing and waits a day", async () => {
   writeSession("only", [hitSearch], 2 * HOUR);
   setShare(true);
   setProject(ctx.repo, "game");
-  const stateBefore = readFileSync(stateFile(), "utf8");
   replies.push({ status: 500, body: {} });
   assert.equal((await send(ctx.repo, { now: NOW })).sent, false);
-  assert.equal(readFileSync(stateFile(), "utf8"), stateBefore);
+  assert.equal(projectState().coveredTo, undefined);
+  assert.equal((await send(ctx.repo, { now: NOW + HOUR })).reason, "tried within the last 24 hours");
   process.env.FINDWRIGHT_COUNTER_URL = "http://127.0.0.1:1";
-  assert.equal((await send(ctx.repo, { now: NOW })).sent, false);
-  assert.equal(readFileSync(stateFile(), "utf8"), stateBefore);
+  assert.equal((await send(ctx.repo, { now: NOW + 25 * HOUR })).sent, false);
+  assert.equal(projectState().coveredTo, undefined);
+  assert.equal(projectState().lastTry, NOW + 25 * HOUR);
 });
 
 test("a damaged counts.json reads as empty state", async () => {
@@ -196,7 +183,7 @@ test("a damaged counts.json reads as empty state", async () => {
   writeFileSync(stateFile(), "{ not json");
   assert.deepEqual(status(ctx.repo), { share: false, asked: false, kind: null });
   assert.equal((await send(ctx.repo, { now: NOW })).sent, false);
-  assert.equal(collect(ctx.repo, NOW).body.sessions, 1);
+  assert.equal(collect(ctx.repo, NOW).sessions, 1);
 });
 
 test("bytes count at most 65536 per answer", async () => {

@@ -34,7 +34,8 @@ export function newestTranscript(root) {
   return files.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0] ?? null;
 }
 
-// The session's tool calls in order, each with its result text.
+// The session's tool calls in order, each with its result text and the time it was made
+// (whole epoch milliseconds, or null when the row has no readable timestamp).
 function calls(transcript) {
   const seq = [];
   const results = new Map();
@@ -44,7 +45,10 @@ function calls(transcript) {
     try { row = JSON.parse(line); } catch { continue; }
     if (row.isSidechain) continue;
     for (const part of row.message?.content ?? []) {
-      if (part?.type === "tool_use" && row.type === "assistant") seq.push({ id: part.id, name: part.name, input: part.input ?? {} });
+      if (part?.type === "tool_use" && row.type === "assistant") {
+        const at = Math.floor(Date.parse(row.timestamp));
+        seq.push({ id: part.id, name: part.name, input: part.input ?? {}, at: Number.isSafeInteger(at) ? at : null });
+      }
       if (part?.type === "tool_result") {
         const c = part.content;
         results.set(part.tool_use_id, Array.isArray(c) ? c.map((x) => x.text ?? "").join("\n") : String(c ?? ""));
@@ -63,12 +67,12 @@ const relativeTo = (root, path) => {
 const answered = (text) => new Set(text.split("\n").map((l) => l.trim().split(/\s|:/)[0]).filter((p) => p.includes(".")));
 
 /**
- * Scores one session: `{ scored, hits, bytes, misses: [{ query, wanted }] }`. `bytes` is the
- * UTF-8 size of each scored search's answer, each capped at ANSWER_BYTES.
+ * The session's scored searches in order: `[{ at, hit, bytes, query, wanted }]`. `at` is when the
+ * search ran (null without a timestamp); `bytes` is its answer's UTF-8 size, capped at ANSWER_BYTES.
  */
-export function scoreSession(transcript, root) {
+export function scoredSearches(transcript, root) {
   const seq = calls(transcript);
-  const out = { scored: 0, hits: 0, bytes: 0, misses: [] };
+  const out = [];
   seq.forEach((call, i) => {
     if (!SEARCH_TOOL.test(call.name)) return;
     for (const next of seq.slice(i + 1, i + 1 + WINDOW)) {
@@ -76,14 +80,28 @@ export function scoreSession(transcript, root) {
       const key = OPEN_TOOLS[next.name];
       const wanted = key && relativeTo(root, next.input[key] ?? "");
       if (!wanted) continue;
-      out.scored++;
-      out.bytes += Math.min(ANSWER_BYTES, Buffer.byteLength(call.result));
-      if (answered(call.result).has(wanted)) out.hits++;
-      else out.misses.push({ query: call.input.query ?? (call.input.patterns ?? []).join(" | "), wanted });
+      out.push({
+        at: call.at,
+        hit: answered(call.result).has(wanted),
+        bytes: Math.min(ANSWER_BYTES, Buffer.byteLength(call.result)),
+        query: call.input.query ?? (call.input.patterns ?? []).join(" | "),
+        wanted,
+      });
       return;
     }
   });
   return out;
+}
+
+/** Scores one session: `{ scored, hits, bytes, misses: [{ query, wanted }] }`. */
+export function scoreSession(transcript, root) {
+  const searches = scoredSearches(transcript, root);
+  return {
+    scored: searches.length,
+    hits: searches.filter((s) => s.hit).length,
+    bytes: searches.reduce((sum, s) => sum + s.bytes, 0),
+    misses: searches.filter((s) => !s.hit).map(({ query, wanted }) => ({ query, wanted })),
+  };
 }
 
 const logFile = (root) => join(root, ".findwright", "hits.jsonl");

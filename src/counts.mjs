@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { scoreSession, transcriptsOf } from "./hits.mjs";
+import { scoredSearches, transcriptsOf } from "./hits.mjs";
 
 /** The project kinds a person can pick. */
 export const KINDS = ["game", "business-app", "developer-tool", "mobile-app", "website", "other"];
@@ -90,50 +90,48 @@ export function setProject(root, kind) {
   return { kind };
 }
 
-// The sessions not sent yet, last written at or after `coveredTo` and idle for an hour,
-// oldest first: a running session waits. Times are whole milliseconds, as the counter takes.
-function candidatesOf(root, sent, coveredTo, now) {
+// Every scored search of the project's sessions made in [from, to), oldest first, each with
+// its session. A transcript last written before `from` holds no such search and is not read.
+function searchesIn(root, from, to) {
   return transcriptsOf(root)
-    .map((file) => ({ file, id: basename(file, ".jsonl"), mtimeMs: Math.floor(statSync(file).mtimeMs) }))
-    .filter((candidate) => !sent.has(candidate.id) && candidate.mtimeMs >= coveredTo
-      && now - candidate.mtimeMs >= HOUR_MS)
-    .sort((a, b) => a.mtimeMs - b.mtimeMs);
+    .filter((file) => statSync(file).mtimeMs >= from)
+    .flatMap((file) => scoredSearches(file, root).map((search) => ({ ...search, session: basename(file) })))
+    .filter((search) => search.at !== null && search.at >= from && search.at < to)
+    .sort((a, b) => a.at - b.at);
 }
 
-// Adds the scored sessions, oldest first, and stops before one would pass a limit.
-function totalsOf(root, candidates) {
-  const totals = { sessions: 0, searches: 0, hits: 0, bytes: 0 };
-  const sessionIds = [];
-  let oldestMs = null;
-  let newestMs = null;
-  for (const candidate of candidates) {
-    const score = scoreSession(candidate.file, root);
-    if (score.scored === 0) continue;
-    if (totals.searches + score.scored > MAX_SEARCHES || totals.sessions + 1 > MAX_SESSIONS) break;
-    totals.sessions += 1;
-    totals.searches += score.scored;
-    totals.hits += score.hits;
-    totals.bytes += score.bytes;
-    sessionIds.push(candidate.id);
-    oldestMs ??= candidate.mtimeMs;
-    newestMs = candidate.mtimeMs;
+// The oldest searches that fit the counter's limits, and where the span they fill ends: at
+// `to`, or at the first search left out, together with any taken at that same millisecond.
+function fitToLimits(searches, to) {
+  const sessions = new Set();
+  let taken = 0;
+  for (; taken < searches.length; taken++) {
+    const session = searches[taken].session;
+    if (taken + 1 > MAX_SEARCHES || (!sessions.has(session) && sessions.size + 1 > MAX_SESSIONS)) break;
+    sessions.add(session);
   }
-  return sessionIds.length ? { totals, sessionIds, oldestMs, newestMs } : null;
+  if (taken === searches.length) return { searches, to };
+  const end = searches[taken].at;
+  return { searches: searches.slice(0, taken).filter((search) => search.at < end), to: end };
 }
 
-// The body for a project at `now`, with the session ids it covers; null when nothing is new.
-// The window ends just after its newest session, so a later session always starts a new one.
+// The body for a project at `now`, or null when nothing is new. The span starts where the last
+// counted one ended and stops an hour ago, so a search's follow-up calls are in its transcript.
 function gather(root, project, now) {
-  const coveredTo = project.coveredTo ?? 0;
-  const found = totalsOf(root, candidatesOf(root, new Set(project.sent ?? []), coveredTo, now));
-  if (!found) return null;
+  const from = project.coveredTo ?? 0;
+  const fitted = fitToLimits(searchesIn(root, from, now - HOUR_MS), now - HOUR_MS);
+  if (fitted.searches.length === 0 || fitted.to <= from) return null;
   return {
-    body: { ...found.totals, from: found.oldestMs, to: found.newestMs + 1 },
-    sessionIds: found.sessionIds,
+    sessions: new Set(fitted.searches.map((search) => search.session)).size,
+    searches: fitted.searches.length,
+    hits: fitted.searches.filter((search) => search.hit).length,
+    bytes: fitted.searches.reduce((sum, search) => sum + search.bytes, 0),
+    from,
+    to: fitted.to,
   };
 }
 
-/** What `root` would send at `now`: `{ body, sessionIds }`, or null when nothing is new. */
+/** What `root` would send at `now`: `{ sessions, searches, hits, bytes, from, to }`, or null. */
 export function collect(root, now) {
   return gather(root, projectOf(readState(), root) ?? {}, now);
 }
@@ -150,58 +148,59 @@ async function post(fetch, payload) {
   return { status: response.status, body: await response.json().catch(() => null) };
 }
 
-// A 409 means an earlier send was counted though its answer was lost: nothing is resent, and
-// counting resumes after the window the counter holds, so no session counts twice.
-async function deliver(pending, project, fetch) {
-  const reply = await post(fetch, { project: project.id, kind: project.kind, ...pending.body });
-  if (reply.status === 200) return { body: pending.body };
-  if (reply.status === 409 && Number.isSafeInteger(reply.body?.coveredTo)) {
-    return { coveredTo: reply.body.coveredTo };
-  }
-  return { reason: `the counter answered ${reply.status}` };
-}
-
 function blockedReason(state, project, now) {
   if (!state.share) return "sharing is off";
   if (!project || !KINDS.includes(project.kind)) return "the project has no kind";
-  if (project.lastSend !== undefined && now - project.lastSend < DAY_MS) {
-    return "sent within the last 24 hours";
-  }
+  if (project.lastTry !== undefined && now - project.lastTry < DAY_MS) return "tried within the last 24 hours";
   return null;
 }
 
-// After a 200 the sessions count as sent, the window as covered and the day's send as used;
-// after a 409 only the counter's coverage moves. A project removed meanwhile stays removed.
-function record(root, change) {
+// Moves what the counter holds forward and, unless the try is to run again at once, starts the
+// day's wait. A project removed meanwhile stays removed.
+function record(root, { coveredTo, lastTry }) {
   const state = readState();
   const project = projectOf(state, root);
   if (!project) return;
-  if (change.sessionIds) project.sent = [...(project.sent ?? []), ...change.sessionIds];
-  project.coveredTo = Math.max(project.coveredTo ?? 0, change.coveredTo);
-  if (change.lastSend !== undefined) project.lastSend = change.lastSend;
+  if (coveredTo !== undefined) project.coveredTo = Math.max(project.coveredTo ?? 0, coveredTo);
+  if (lastTry !== undefined) project.lastTry = lastTry;
   writeState(state);
 }
 
+// A 200 covers the span. A 409 means an earlier send was counted though its answer was lost:
+// nothing is resent, and the next try, at the next server start, begins where the counter's
+// count stops, so no search counts twice. Any other outcome waits a day.
 async function attempt(root, now, fetch) {
   const state = readState();
   const project = projectOf(state, root);
   const blocked = blockedReason(state, project, now);
   if (blocked) return { sent: false, reason: blocked };
-  const pending = gather(root, project, now);
-  if (!pending) return { sent: false, reason: "nothing new" };
-  const delivered = await deliver(pending, project, fetch);
-  if (delivered.coveredTo !== undefined) {
-    record(root, { coveredTo: delivered.coveredTo });
+  const body = gather(root, project, now);
+  if (!body) {
+    record(root, { lastTry: now });
+    return { sent: false, reason: "nothing new" };
+  }
+  let reply;
+  try {
+    reply = await post(fetch, { project: project.id, kind: project.kind, ...body });
+  } catch (error) {
+    record(root, { lastTry: now });
+    return { sent: false, reason: `not sent: ${error.message}` };
+  }
+  if (reply.status === 200) {
+    record(root, { coveredTo: body.to, lastTry: now });
+    return { sent: true, ...body };
+  }
+  if (reply.status === 409 && Number.isSafeInteger(reply.body?.coveredTo)) {
+    record(root, { coveredTo: reply.body.coveredTo });
     return { sent: false, reason: "already counted; the next send starts after it" };
   }
-  if (!delivered.body) return { sent: false, reason: delivered.reason };
-  record(root, { sessionIds: pending.sessionIds, coveredTo: delivered.body.to, lastSend: now });
-  return { sent: true, ...delivered.body };
+  record(root, { lastTry: now });
+  return { sent: false, reason: `the counter answered ${reply.status}` };
 }
 
 /**
  * Sends the pending counts of `root` when sharing is on, the project has a kind and the last
- * send was a day ago. Never throws: returns `{ sent: true, sessions, searches, hits, bytes,
+ * try was a day ago. Never throws: returns `{ sent: true, sessions, searches, hits, bytes,
  * from, to }` or `{ sent: false, reason }`.
  */
 export async function send(root, { now = Date.now(), fetch = globalThis.fetch } = {}) {
