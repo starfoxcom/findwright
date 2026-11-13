@@ -11,11 +11,9 @@ let loaded = null;
 /**
  * The meaning model with the index's vectors brought up to date: `{ ready }`, or `{ error }`
  * when the model setup installs is missing or will not load, since a search without it would
- * quietly rank worse. FINDWRIGHT_MEANING=off gives `{ ready: null }` for the test suite only,
- * which runs without the download; setup and the docs offer no such mode.
+ * quietly rank worse.
  */
 export function meaningModel(db) {
-  if (process.env.FINDWRIGHT_MEANING === "off") return { ready: null };
   if (!loaded) {
     const folder = installedModel();
     if (!folder) return { error: NOT_INSTALLED };
