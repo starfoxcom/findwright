@@ -28,8 +28,9 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        # The newest patch of each supported LTS line, so CI never runs on a release with known holes.
-        node: ["22", "lts/*"]
+        # The newest patch of every line package.json supports (22.16+, 24, and the current LTS),
+        # so CI never runs on a release with known holes.
+        node: ["22", "24", "lts/*"]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     env:
