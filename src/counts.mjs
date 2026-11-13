@@ -151,6 +151,12 @@ function blockedReason(state, project, now) {
   return null;
 }
 
+/** Whether a send for `root` would try at `now`: sharing on, a kind, and no try in the last day. */
+export function sendDue(root, now = Date.now()) {
+  const state = readState();
+  return blockedReason(state, projectOf(state, root), now) === null;
+}
+
 // Moves what the counter holds forward and, unless the try is to run again at once, starts the
 // day's wait. A project removed meanwhile stays removed.
 function record(root, { coveredTo, lastTry }) {
@@ -163,7 +169,7 @@ function record(root, { coveredTo, lastTry }) {
 }
 
 // A 200 covers the span. A 409 means an earlier send was counted though its answer was lost:
-// nothing is resent, and the next try, at the next server start, begins where the counter's
+// nothing is resent, and the next try begins where the counter's
 // count stops, so no search counts twice. Any other outcome waits a day.
 async function attempt(root, now, fetch) {
   const state = readState();
