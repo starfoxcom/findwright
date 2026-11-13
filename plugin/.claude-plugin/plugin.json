@@ -1,7 +1,7 @@
 {
   "name": "findwright",
   "displayName": "FindWright",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A code index that adapts to each project: plain-English questions, names and regex searches over every file the project tracks, served to Claude over MCP.",
   "author": {
     "name": "Jorge Alexandro Zamudio Arredondo",

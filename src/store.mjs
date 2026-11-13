@@ -44,6 +44,7 @@ const SCHEMA = `
   CREATE TABLE IF NOT EXISTS chunks (path TEXT, line INTEGER, end_line INTEGER, vec BLOB);
   CREATE INDEX IF NOT EXISTS chunks_path ON chunks (path);
   CREATE TABLE IF NOT EXISTS embedded (path TEXT PRIMARY KEY);
+  CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 `;
 
 // Node's SQLite has full-text search from 22.16 on the 22 line and from 24.0; 23 never had it.
@@ -145,12 +146,19 @@ function realInside(root, folder) {
 const insideRepo = (glob) => typeof glob === "string" && !/^([\\/]|[A-Za-z]:)/.test(glob)
   && !glob.split(/[\\/]/).includes("..");
 
+const WILDCARD = /[*?]/;
+// git ls-files output for the largest repos fits in 256 MB.
+const GIT_LIST_MAX_BYTES = 256 * 1024 * 1024;
+
 export function listFiles(root, config) {
-  const git = execFileSync("git", ["ls-files", "-co", "--exclude-standard", "-z"], { cwd: root, maxBuffer: 1 << 28 });
+  const git = execFileSync("git", ["ls-files", "-co", "--exclude-standard", "-z"],
+    { cwd: root, maxBuffer: GIT_LIST_MAX_BYTES });
   const files = new Set(git.toString("utf8").split("\0").filter(Boolean));
   for (const glob of (config.include ?? []).filter(insideRepo)) {
-    const base = glob.split("/").filter((part) => !/[*?]/.test(part));
-    const start = /[*?]/.test(glob) ? base.slice(0, glob.split("/").findIndex((p) => /[*?]/.test(p))).join("/") : glob;
+    const base = glob.split("/").filter((part) => !WILDCARD.test(part));
+    const start = WILDCARD.test(glob)
+      ? base.slice(0, glob.split("/").findIndex((p) => WILDCARD.test(p))).join("/")
+      : glob;
     const found = [];
     if (!realInside(root, start)) continue;
     // A glob that names one file includes that file; the rest walk their fixed folder.
@@ -210,8 +218,14 @@ function symbolsOf(text, path, kind, config) {
   return own.concat(fromRules(text, rules));
 }
 
-// Brings the index level with the working tree; returns what changed.
+// Brings the index level with the working tree; returns what changed. A change to the config's
+// kinds or rules sends every indexed file through indexFile again, the path a fresh index takes.
+// The stored settings are checked and those files chosen under the write lock, so whenever the
+// settings are written, every file row in the index was indexed with them.
 export function refresh(db, root, config = readConfig(root)) {
+  const extraction = JSON.stringify({ kinds: config.kinds, rules: config.rules });
+  const indexedWith = storedExtraction(db);
+  const sameExtraction = indexedWith === extraction;
   const known = new Map(db.prepare("SELECT path, size, mtime FROM files").all().map((r) => [r.path, r]));
   const seen = new Set();
   const changed = [];
@@ -223,39 +237,75 @@ export function refresh(db, root, config = readConfig(root)) {
     if (!stat.isFile()) continue;
     seen.add(path);
     const old = known.get(path);
-    if (old && old.size === stat.size && old.mtime === stat.mtimeMs) continue;
-    changed.push({ path, stat });
+    if (!old || old.size !== stat.size || old.mtime !== stat.mtimeMs) changed.push({ path, stat });
   }
   const removed = [...known.keys()].filter((path) => !seen.has(path));
-  db.exec("BEGIN");
+  const result = { changed: changed.length, reindexed: 0, removed: removed.length, files: seen.size };
+  // A refresh that finds nothing new writes nothing, so it takes no write lock.
+  if (sameExtraction && !changed.length && !removed.length) return result;
+  db.exec("BEGIN IMMEDIATE");
+  // Another process stored other settings since they were read above: start over from them.
+  if (storedExtraction(db) !== indexedWith) {
+    db.exec("ROLLBACK");
+    return refresh(db, root, config);
+  }
   try {
     for (const path of removed) dropFile(db, path);
     for (const { path, stat } of changed) indexFile(db, root, path, stat, config);
+    if (!sameExtraction) {
+      result.reindexed = reindexOthers(db, root, new Set(changed.map((c) => c.path)), config);
+      db.prepare("INSERT OR REPLACE INTO settings VALUES ('extraction', ?)").run(extraction);
+    }
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;
   }
-  return { changed: changed.length, removed: removed.length, files: seen.size };
+  return result;
 }
 
-function dropFile(db, path) {
+// Indexes every file row not in `done` again; returns how many. A file no longer a regular file is dropped.
+function reindexOthers(db, root, done, config) {
+  const others = db.prepare("SELECT path FROM files").all().map((r) => r.path).filter((p) => !done.has(p));
+  for (const path of others) {
+    let stat;
+    try { stat = lstatSync(join(root, path)); } catch { stat = null; }
+    if (stat?.isFile()) indexFile(db, root, path, stat, config);
+    else dropFile(db, path);
+  }
+  return others.length;
+}
+
+// The config's kinds and rules the index was built with, as JSON, or undefined before the first build.
+function storedExtraction(db) {
+  return db.prepare("SELECT value FROM settings WHERE key = 'extraction'").get()?.value;
+}
+
+function dropFile(db, path, { keepVectors = false } = {}) {
   db.prepare("DELETE FROM files WHERE path = ?").run(path);
   db.prepare("DELETE FROM body WHERE path = ?").run(path);
   db.prepare("DELETE FROM symbols WHERE path = ?").run(path);
+  if (keepVectors) return;
   db.prepare("DELETE FROM chunks WHERE path = ?").run(path);
   db.prepare("DELETE FROM embedded WHERE path = ?").run(path);
 }
 
+// A file whose size and mtime match its row keeps its meaning vectors, which come from its text alone.
 function indexFile(db, root, path, stat, config) {
-  dropFile(db, path);
-  const kind = kindOf(path, config);
+  const old = db.prepare("SELECT size, mtime FROM files WHERE path = ?").get(path);
   let text;
   try { text = readText(root, path, stat.size); } catch { text = null; }
+  const sameText = text !== null && old?.size === stat.size && old?.mtime === stat.mtimeMs;
+  dropFile(db, path, { keepVectors: sameText });
+  const kind = kindOf(path, config);
   const symbols = text === null ? [] : symbolsOf(text, path, kind, config);
   db.prepare("INSERT INTO files VALUES (?, ?, ?, ?, ?)").run(path, stat.size, stat.mtimeMs, text === null ? "binary" : kind, symbols.length);
   if (text === null) return;
   db.prepare("INSERT INTO body (path, text) VALUES (?, ?)").run(path, text);
+  writeSymbols(db, path, symbols);
+}
+
+function writeSymbols(db, path, symbols) {
   const insert = db.prepare("INSERT INTO symbols VALUES (?, ?, ?, ?, ?)");
   for (const s of symbols) insert.run(path, s.name, s.kind, s.line, s.endLine);
 }
