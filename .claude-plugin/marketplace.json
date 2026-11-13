@@ -1,0 +1,20 @@
+{
+  "name": "findwright",
+  "description": "The FindWright plugin, from its GitHub releases.",
+  "owner": {
+    "name": "starfoxcom",
+    "url": "https://github.com/starfoxcom"
+  },
+  "plugins": [
+    {
+      "name": "findwright",
+      "description": "A code index that adapts to each project: plain-English questions, names and regex searches over every file the project tracks, served to Claude over MCP.",
+      "version": "0.1.0",
+      "source": {
+        "source": "archive",
+        "url": "https://github.com/starfoxcom/findwright/releases/download/v0.1.0/findwright-0.1.0.zip",
+        "sha256": ""
+      }
+    }
+  ]
+}

@@ -8,7 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Initial project setup via Bindwright.
+- FindWright installs as a Claude Code plugin of its own, from its marketplace (`/plugin marketplace add starfoxcom/findwright`) and later from the plugin directory, without Bindwright. `/findwright:setup` installs the helper the plugin pins by SHA-256 into `~/.findwright/helper`, registers the server for every project, offers the search hook and fits the index to the project; `/findwright:update`, `/findwright:doctor` and `/findwright:remove` keep it current, check it and take it back out.
+- The search hook in Node (`hooks/findwright-first.mjs`) and `findwright home status|install-hook|remove-hook`, which add it to and take it out of the user's settings with a backup first.
+- Each published release carries the plugin zip and the helper tarball, both rebuilt from the tag so their SHA-256 matches the pins, and writes the `plugin` branch the directory installs from.
+- Tests run on Linux and Windows for every pull request.
+- The project is set up with Bindwright: rules, session skills, review workflows and the size check.
 
 ### Changed
 
