@@ -32,7 +32,7 @@ const projectId = (n) => String(n).padStart(32, "0");
 const isRead = (sql) => /^\s*(SELECT|WITH)\b/i.test(sql);
 
 /**
- * D1's prepare/bind/first/run/batch over node:sqlite. `batch` runs its statements in one
+ * D1's prepare/bind/first/batch over node:sqlite. `batch` runs its statements in one
  * transaction, as D1 does, and reports `meta.changes` per statement.
  */
 class SqliteD1 {
@@ -46,7 +46,6 @@ class SqliteD1 {
     const statement = (params) => ({
       bind: (...values) => statement(values),
       first: async () => database.sqlite.prepare(sql).get(...params) ?? null,
-      run: async () => database.execute(sql, params),
       execute: () => database.execute(sql, params),
     });
     return statement([]);
@@ -131,6 +130,7 @@ test("checkSend accepts a valid send and refuses each bad field", () => {
     ["bytes above the answer cap", send({ bytes: 10 * MAX_ANSWER_BYTES + 1 })],
     ["window missing", { ...send(), from: undefined }],
     ["window ending before it starts", send({ from: NOON, to: NOON - 1 })],
+    ["window ending where it starts", send({ from: NOON, to: NOON })],
     ["window as text", send({ to: String(NOON) })],
     ["hits above searches", send({ hits: 11 })],
     ["sessions above searches", send({ sessions: 11 })],
@@ -241,7 +241,7 @@ test("new projects stop at the daily cap, existing ones keep sending", async () 
   assert.equal(refused.status, 429);
   assert.equal(refused.body.error, "too many new projects today");
   assert.equal(rowOf(database, OTHER), undefined);
-  const known = await run(post(send({ from: NOON, to: NOON })), { store });
+  const known = await run(post(send({ from: NOON, to: NOON + 1 })), { store });
   assert.equal(known.status, 200, "a known project is not new");
 });
 
@@ -262,6 +262,28 @@ test("oversized, non-JSON and rate-limited sends are refused before they count",
   assert.equal((await run(post("{not json"), { store })).status, 400);
   const limiter = { limit: async () => ({ success: false }) };
   assert.equal((await run(post(send()), { store, rateLimiter: limiter })).status, 429);
+  assert.equal(rowOf(database, PROJECT), undefined);
+});
+
+test("an unsized body over the limit is refused before it is all read", async () => {
+  const { store, database } = newStore();
+  const chunk = new TextEncoder().encode(" ".repeat(512));
+  let pulled = 0;
+  const stream = new ReadableStream({
+    pull(controller) {
+      if (pulled === 1000) return controller.close();
+      pulled += 1;
+      return controller.enqueue(chunk);
+    },
+  });
+  const request = new Request("https://counter.test/increment", {
+    method: "POST", body: stream, duplex: "half",
+  });
+  assert.equal(request.headers.get("content-length"), null, "the case has no declared length");
+  const { status, body } = await run(request, { store });
+  assert.equal(status, 413);
+  assert.equal(body.error, "body too large");
+  assert.ok(pulled < 10, `read ${pulled} chunks of 1000 before refusing`);
   assert.equal(rowOf(database, PROJECT), undefined);
 });
 

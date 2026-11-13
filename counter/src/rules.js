@@ -61,9 +61,10 @@ export function checkSend(body) {
   }
   if (!KINDS.includes(body.kind)) return refuse("kind is not one of the listed kinds");
   const isTime = (value) => Number.isSafeInteger(value) && value >= 0;
-  if (!isTime(body.from) || !isTime(body.to) || body.from > body.to) {
-    return refuse("from and to must be times in milliseconds, from not after to");
+  if (!isTime(body.from) || !isTime(body.to)) {
+    return refuse("from and to must be times in milliseconds");
   }
+  if (body.from >= body.to) return refuse("from must be before to");
 
   const counts = {};
   for (const field of COUNT_FIELDS) {

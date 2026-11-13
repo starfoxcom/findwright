@@ -78,18 +78,42 @@ async function increment(request, { store, rateLimiter, timeInMilliseconds }) {
   return json({ ok: true }, 200);
 }
 
+const TOO_LARGE = { ok: false, status: 413, reason: "body too large" };
+
 async function readBody(request) {
   const declared = Number(request.headers.get("content-length") ?? 0);
-  if (declared > MAX_BODY_IN_BYTES) return { ok: false, status: 413, reason: "body too large" };
-  const text = await request.text();
-  if (new TextEncoder().encode(text).length > MAX_BODY_IN_BYTES) {
-    return { ok: false, status: 413, reason: "body too large" };
-  }
+  if (declared > MAX_BODY_IN_BYTES) return TOO_LARGE;
+  const bytes = await readAtMost(request.body, MAX_BODY_IN_BYTES);
+  if (bytes === null) return TOO_LARGE;
   try {
-    return { ok: true, body: JSON.parse(text) };
+    return { ok: true, body: JSON.parse(new TextDecoder().decode(bytes)) };
   } catch {
     return { ok: false, status: 400, reason: "body is not JSON" };
   }
+}
+
+// Collects the stream's bytes, or returns null as soon as they pass `limit`, so an
+// unbounded body never gets buffered. A missing body (null stream) reads as empty.
+async function readAtMost(stream, limit) {
+  if (stream === null) return new Uint8Array(0);
+  const reader = stream.getReader();
+  const chunks = [];
+  let total = 0;
+  for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+    total += chunk.value.byteLength;
+    if (total > limit) {
+      await reader.cancel();
+      return null;
+    }
+    chunks.push(chunk.value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const piece of chunks) {
+    bytes.set(piece, offset);
+    offset += piece.byteLength;
+  }
+  return bytes;
 }
 
 function json(value, status, headers = {}) {

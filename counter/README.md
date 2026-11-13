@@ -28,6 +28,7 @@ All in `src/rules.js`:
 - `hits` and `sessions` never exceed `searches`. `sessions` is at least 1 when `searches` is above 0.
 - `bytes` is at most 65 536 for each search.
 - A send with 0 searches is refused as nothing to add.
+- `from` must be before `to`, so every window covers some time.
 - A project sends at most once every 20 hours, and a window that overlaps one already counted is refused, so a send whose answer was lost and is sent again never counts twice.
 - At most 200 new projects a day across all senders.
 - Five sends a minute per IP through Cloudflare's rate limiter (`wrangler.jsonc`); the Worker never stores the IP.
