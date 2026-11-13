@@ -1,7 +1,7 @@
 /* FindWright page. Tokens and rules follow Bindwright's design system (its docs/v2/DESIGN.md),
    with FindWright's own hue. The accent has one job: it marks FindWright's results. */
 :root {
-  --hue: 225;
+  --hue: 215;
   --canvas: oklch(0.20 0.006 240);
   --panel: oklch(0.245 0.007 240);
   --key: oklch(0.29 0.008 240);
@@ -68,8 +68,8 @@ main { max-width: 1360px; margin: 0 auto; padding: 36px 40px 64px; }
 
 /* Wide screens: the pitch beside the scene. */
 @media (min-width: 1340px) {
-  .hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 660px); gap: 48px; align-items: center; }
-  .hero .scene { margin-top: 0; }
+  .hero { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 727px); gap: 48px; align-items: center; }
+  .hero .stage { margin-top: 0; }
   .hero h1 { font-size: clamp(40px, 3.8vw, 64px); }
 }
 
@@ -93,48 +93,34 @@ h1 {
 }
 .go:active { transform: translateY(2px); box-shadow: inset 0 -1px 0 var(--accent-deep); }
 
-/* The scene: one real search, from the question to the part Claude reads. */
-.scene {
-  display: grid; gap: 14px; margin-top: 48px; padding: 22px;
-  background: var(--panel); border-radius: 18px; box-shadow: inset 0 1px 0 oklch(1 0 0 / .06);
+/* What changes takes the biggest heading; the sections after it share the next size. */
+.changes, .evidence, .how, .install { margin-top: 120px; }
+.changes h2 {
+  margin-bottom: 36px; font-size: clamp(36px, 4vw, 56px); line-height: 1;
+  font-weight: 700; font-stretch: 112%; letter-spacing: -0.03em;
 }
-.scene-who { display: block; margin-bottom: 6px; font-size: 13px; color: var(--text-2); }
-.scene-ask p { font-size: 17px; font-weight: 600; }
-.scene pre {
-  padding: 12px 14px; border-radius: 12px; background: var(--canvas);
-  font-size: 13px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere;
-}
-.scene-call pre { color: var(--text-2); }
-.scene figcaption { font-size: 13px; color: var(--text-2); }
-
-/* The big section headings. */
-.changes, .evidence, .how, .install, .privacy { margin-top: 120px; }
-.changes h2 { margin-bottom: 36px; }
-.changes h2, .evidence h2, .how h2, .install h2, .privacy h2 {
+.evidence h2, .how h2, .install h2 {
   font-size: clamp(30px, 3.2vw, 44px); line-height: 1.05;
   font-weight: 700; font-stretch: 112%; letter-spacing: -0.03em;
 }
-.changes h2 { font-size: clamp(36px, 4vw, 56px); line-height: 1; }
+.evidence h2, .how h2 { margin-bottom: 14px; }
+.section-note { max-width: 72ch; font-size: 15px; color: var(--text-2); }
 
-.changes ul, .how ul {
+.changes ul {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 48px; padding: 0; list-style: none;
 }
-.changes li, .how li { padding: 22px 0; border-top: 1px solid var(--rule); font-size: 17px; color: var(--text-2); }
+.changes li { padding: 22px 0; border-top: 1px solid var(--rule); font-size: 17px; color: var(--text-2); }
 .changes .was {
   display: block; font-size: 15px; color: var(--del);
   text-decoration: line-through; text-decoration-color: oklch(0.72 0.15 25 / .55);
 }
-.changes li b, .how li b {
+.changes li b {
   display: block; margin: 10px 0 12px; font-size: clamp(24px, 2.2vw, 32px); line-height: 1.15;
   font-weight: 700; font-stretch: 112%; letter-spacing: -0.02em; color: var(--text);
 }
-.how ul { margin-top: 28px; }
-.how li b { margin-top: 0; font-size: clamp(20px, 1.8vw, 24px); }
 
 /* Numbers: four totals, then one pair of bars per kind of search and per project. */
-.evidence h2 { margin-bottom: 14px; }
-.evidence-note, .evidence-detail { max-width: 72ch; font-size: 15px; color: var(--text-2); }
-.evidence-detail { margin-top: 28px; }
+.evidence-detail { max-width: 72ch; margin-top: 28px; font-size: 15px; color: var(--text-2); }
 .evidence-detail a { color: var(--accent); text-underline-offset: 4px; }
 .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; margin-top: 36px; }
 .stat-num {
@@ -143,12 +129,12 @@ h1 {
   white-space: nowrap;
 }
 .stat-num .unit { font-size: 0.42em; font-weight: 650; letter-spacing: -0.01em; }
-.stat-label { margin-top: 12px; font-size: 17px; color: var(--text); }
+.stat-label { margin-top: 12px; font-size: 17px; color: var(--text-2); }
 .stat-was { margin-top: 6px; font-size: 15px; color: var(--text-2); font-variant-numeric: tabular-nums; }
 
 .chart-title { margin-top: 64px; font-size: 15px; color: var(--text-2); }
 .legend {
-  display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 12px; padding: 0; list-style: none;
+  display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 20px; padding: 0; list-style: none;
   font-size: 14px; color: var(--text-2);
 }
 .legend-item { display: flex; align-items: center; gap: 8px; }
@@ -156,7 +142,7 @@ h1 {
 .swatch-ours, .bar-ours { background: var(--mark); }
 .swatch-was, .bar-was { background: var(--was); }
 
-.bars { display: grid; gap: 22px; margin-top: 24px; padding: 0; list-style: none; }
+.bars { display: grid; gap: 22px; margin-top: 16px; padding: 0; list-style: none; }
 .bar-row { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 8px 24px; align-items: center; }
 .bar-name { font-size: 15px; color: var(--text); }
 .bar-name small { display: block; font-size: 13px; color: var(--text-2); }
@@ -197,7 +183,7 @@ h1 {
   .install-switch::before { transition: none; }
 }
 
-.command-steps { display: grid; gap: 24px; max-width: 880px; margin: 20px 0 0; padding: 0; list-style: none; counter-reset: step; }
+.command-steps { display: grid; gap: 24px; margin: 20px 0 0; padding: 0; list-style: none; counter-reset: step; }
 .command-steps > li { position: relative; counter-increment: step; }
 .command-steps > li::before {
   content: counter(step); position: absolute; left: 0; top: 0; display: grid; place-items: center;
@@ -225,17 +211,17 @@ h1 {
 .icon-copy.copied .ico-check { display: block; }
 .copy-status { min-height: 1lh; margin-top: 12px; font-size: 14px; color: var(--text-2); }
 
-.privacy p { max-width: 72ch; margin-top: 18px; font-size: 17px; color: var(--text-2); }
-.privacy code { font-size: 0.9em; color: var(--text); }
+.asks { display: grid; gap: 20px; margin-top: 32px; }
+.ask-list { padding-top: 22px; border-top: 1px solid var(--rule); }
+.ask-list h3 { font-size: 17px; font-weight: 650; }
+.ask-list p { margin-top: 8px; font-size: 15px; color: var(--text-2); }
+.asks-more { margin-top: 20px; font-size: 15px; }
+.asks-more a { color: var(--accent); text-underline-offset: 4px; }
 
 footer {
-  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 32px;
   max-width: 1360px; margin: 0 auto; padding: 24px 40px 40px;
   border-top: 1px solid var(--rule); font-size: 14px; color: var(--text-2);
 }
-footer nav { display: flex; flex-wrap: wrap; gap: 8px 24px; }
-footer a { text-underline-offset: 4px; }
-footer a:hover { color: var(--text); }
 
 @media (max-width: 900px) {
   header { padding: 16px; }
@@ -243,9 +229,16 @@ footer a:hover { color: var(--text); }
   main { padding: 16px 16px 48px; }
   footer { padding: 20px 16px 32px; }
   .hero h1 { font-size: clamp(32px, 9vw, 40px); }
-  .hero .scene { margin-top: 32px; }
-  .changes, .evidence, .how, .install, .privacy { margin-top: 88px; }
-  .changes ul, .how ul { grid-template-columns: minmax(0, 1fr); }
+  /* The window comes right after the headline, so a phone shows it before the button; the
+     cards follow the button. The hero takes over as the container the scene sizes from. */
+  .hero { display: flex; flex-direction: column; padding-top: 16px; container-type: inline-size; }
+  .pitch, .hero .stage { display: contents; }
+  .hero .caption { margin: 24px 0 0; }
+  .hero .lede, .hero .actions { order: 1; }
+  .hero .cards, .hero .scene-note { order: 2; }
+  .hero .stage .cards { margin-top: 32px; }
+  .changes, .evidence, .how, .install { margin-top: 88px; }
+  .changes ul { grid-template-columns: minmax(0, 1fr); }
   .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 36px 20px; }
   .bar-row { grid-template-columns: minmax(0, 1fr); }
 }

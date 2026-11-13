@@ -12,6 +12,7 @@
   href="https://fonts.googleapis.com/css2?family=Hubot+Sans:wdth,wght@75..125,200..900&family=Fragment+Mono&display=swap"
   rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="scene.css">
 <script type="module" src="app.js"></script>
 <script type="module" src="reveal.js"></script>
 <script>if (!matchMedia("(prefers-reduced-motion: reduce)").matches) document.documentElement.classList.add("reveal");</script>
@@ -21,45 +22,64 @@
 <header>
   <a class="mark" href="./">FindWright</a>
   <nav aria-label="Site">
+    <a href="#how">How it works</a>
     <a href="#numbers">Numbers</a>
     <a href="#install">Install</a>
-    <a href="#privacy">Privacy</a>
     <a href="https://github.com/starfoxcom/findwright">GitHub</a>
   </nav>
 </header>
 
 <main>
-  <section class="hero" aria-labelledby="hero-title">
+  <section class="hero">
     <div class="pitch">
-      <h1 id="hero-title">Claude finds the right file on the first search</h1>
-      <p class="lede">FindWright gives Claude an index of every file in your project, so a question in plain words comes back as the few files that answer it, in milliseconds.</p>
+      <h1>Claude finds the right file on the first search.</h1>
+      <p class="lede">FindWright gives Claude an index of every file in your project, so a question in plain words comes back as the few files that answer it, in milliseconds. One install, and it works in every project.</p>
       <div class="actions">
         <a class="go" href="#install">Install FindWright</a>
-        <a class="source" href="https://github.com/starfoxcom/findwright">Read the source</a>
+        <a class="source" href="https://github.com/starfoxcom/findwright">View on GitHub</a>
       </div>
     </div>
-    <figure class="scene">
-      <div class="scene-ask">
-        <span class="scene-who">You</span>
-        <p>Which check refuses skill frontmatter the plugin directory would reject?</p>
+    <div class="stage">
+      <h2 class="caption">One search, the right files</h2>
+      <div class="term" role="img"
+        aria-label="Claude Code's desktop app: a question in plain words, one FindWright search that returns four files, then Claude reading twenty lines of one of them">
+        <div class="desk-side" aria-hidden="true">
+          <span class="desk-new">New session</span>
+          <span class="desk-label">Recents</span>
+          <span class="desk-session on">Directory check</span>
+          <span class="desk-session">Release notes</span>
+          <span class="desk-session">Landing page numbers</span>
+        </div>
+        <div class="desk-title">Directory check</div>
+        <div class="pane">
+          <div class="user"><span class="bubble">Which check refuses skill frontmatter the plugin directory would reject?</span></div>
+          <div class="tool"><span class="dot"></span><span class="act">Searched with FindWright</span><span class="target">which check refuses skill frontmatter</span></div>
+          <div class="out">test/directory_check.test.mjs<br>tools/directory_check.mjs<br>.bindwright/pristine.json<br>.github/workflows/claude-code-review.yml</div>
+          <div class="tool"><span class="dot"></span><span class="act">Read</span><span class="target">tools/directory_check.mjs, lines 66 to 85</span></div>
+          <p class="reply">The directory check does it: <code>frontmatterKeys</code> reads each skill's frontmatter, and <code>skillProblems</code> reports any key outside the allowed list.</p>
+        </div>
+        <div class="input">Type / for commands</div>
+        <div class="desk-modes"><span>findwright</span><span>Auto</span></div>
       </div>
-      <div class="scene-call">
-        <span class="scene-who">Claude searches once</span>
-        <pre><code>find "which check refuses skill frontmatter the plugin directory would reject"
-
-test/directory_check.test.mjs
-tools/directory_check.mjs
-.bindwright/pristine.json
-.github/workflows/claude-code-review.yml</code></pre>
+      <div class="cards">
+        <div class="card">
+          <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg></span>One search</h3>
+          <p>The question went in as plain words, and the files that answer it came back first.</p>
+          <span class="chip">38 ms, typical</span>
+        </div>
+        <div class="card">
+          <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M9 11h6M9 15h6"/></svg></span>Only the part it needs</h3>
+          <p>Claude read twenty lines of one file instead of opening files to guess.</p>
+          <span class="chip">240 bytes, typical answer</span>
+        </div>
+        <div class="card">
+          <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg></span>Always current</h3>
+          <p>Every search first takes in the files that changed, so nothing needs a refresh.</p>
+          <span class="chip">Every search</span>
+        </div>
       </div>
-      <div class="scene-read">
-        <span class="scene-who">Then reads only the part it needs</span>
-        <pre><code>tools/directory_check.mjs, lines 66 to 85
-function frontmatterKeys(rawText) { ... }
-function skillProblems(rel, text) { ... }</code></pre>
-      </div>
-      <figcaption>A real search on FindWright's own code.</figcaption>
-    </figure>
+      <p class="scene-note">A real search on FindWright's own code.</p>
+    </div>
   </section>
 
   <section class="changes" aria-labelledby="changes-title">
@@ -80,9 +100,36 @@ function skillProblems(rel, text) { ... }</code></pre>
     </ul>
   </section>
 
+  <section class="how" id="how" aria-labelledby="how-title">
+    <h2 id="how-title">How Claude uses it</h2>
+    <p class="section-note">Four tools Claude calls on its own. You keep asking in your own words.</p>
+    <div class="boxes">
+      <div class="box">
+        <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg></span>Find</h3>
+        <p>A plain-English question, a name, or both: the files that answer it, best first.</p>
+        <span class="chip">Files, best first</span>
+      </div>
+      <div class="box">
+        <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/></svg></span>Search</h3>
+        <p>Patterns over every tracked file, with the lines around each hit and the function, heading or key it sits in.</p>
+        <span class="chip">Matching lines</span>
+      </div>
+      <div class="box">
+        <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg></span>Symbols and outline</h3>
+        <p>Names by kind, and one file's parts with their line ranges, so Claude reads only the part it needs.</p>
+        <span class="chip">Line ranges</span>
+      </div>
+      <div class="box">
+        <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="4"/></svg></span>Fits each project</h3>
+        <p>A file type no built-in reader knows gets a pattern rule in the project's settings, and setup offers to write those rules for you.</p>
+        <span class="chip">Pattern rules</span>
+      </div>
+    </div>
+  </section>
+
   <section class="evidence" id="numbers" aria-labelledby="numbers-title">
     <h2 id="numbers-title">Measured on real sessions</h2>
-    <p class="evidence-note"><span data-field="all.searches">169</span> searches from past coding sessions on four projects, run again through FindWright and through the code-search tool it replaced. A search counts as found when its answer names a file the session went on to open or edit.</p>
+    <p class="section-note"><span data-field="all.searches">169</span> searches from past coding sessions on four projects, run again through FindWright and through the code-search tool it replaced. A search counts as found when its answer names a file the session went on to open or edit.</p>
     <div class="stats">
       <div class="stat">
         <span class="stat-num"><span data-field="all.findwright.hitRate">69</span>%</span>
@@ -107,11 +154,11 @@ function skillProblems(rel, text) { ... }</code></pre>
     </div>
 
     <p class="chart-title">Found the right file, by kind of search and by project</p>
+    <ul class="bars" data-bars></ul>
     <ul class="legend" aria-hidden="true">
       <li class="legend-item"><i class="swatch swatch-ours"></i>FindWright</li>
       <li class="legend-item"><i class="swatch swatch-was"></i>Previous tool</li>
     </ul>
-    <ul class="bars" data-bars></ul>
     <details class="as-table">
       <summary>Show these numbers as a table</summary>
       <table>
@@ -124,44 +171,17 @@ function skillProblems(rel, text) { ... }</code></pre>
     <p class="evidence-detail">Measured <span data-field="measured">2026-11-13</span>. The bench and its scoring are in <a href="https://github.com/starfoxcom/findwright/tree/main/bench">the bench folder</a>, so anyone can run it on their own sessions.</p>
   </section>
 
-  <section class="how" aria-labelledby="how-title">
-    <h2 id="how-title">How Claude uses it</h2>
-    <ul>
-      <li><b>Find</b>
-        <span>A plain-English question, a name, or both: the files that answer it, best first.</span></li>
-      <li><b>Search</b>
-        <span>Patterns over every tracked file, with the lines around each hit and the function, heading or key it sits in.</span></li>
-      <li><b>Symbols and outline</b>
-        <span>Names by kind, and one file's parts with their line ranges, so Claude reads only the part it needs.</span></li>
-      <li><b>Fits each project</b>
-        <span>A file type no built-in reader knows gets a pattern rule in the project's settings, and setup offers to write those rules for you.</span></li>
-    </ul>
-  </section>
-
   <section class="install" id="install" aria-labelledby="install-title">
     <div class="install-head">
       <h2 id="install-title">Install</h2>
-      <div class="install-switch" role="tablist" aria-label="Where you use Claude Code" data-active="cli">
-        <button type="button" role="tab" id="install-tab-desktop" aria-selected="false" tabindex="-1"
+      <div class="install-switch" role="tablist" aria-label="Where you use Claude Code" data-active="desktop">
+        <button type="button" role="tab" id="install-tab-desktop" aria-selected="true"
           aria-controls="install-desktop">Desktop app</button>
-        <button type="button" role="tab" id="install-tab-cli" aria-selected="true"
+        <button type="button" role="tab" id="install-tab-cli" aria-selected="false" tabindex="-1"
           aria-controls="install-cli">Claude Code CLI</button>
       </div>
     </div>
-    <ol class="command-steps" id="install-cli" role="tabpanel" aria-labelledby="install-tab-cli">
-      <li>
-        <p class="command-sub"><b>On your computer, once</b>
-          <span>Adds the FindWright marketplace, then the plugin, for every project.</span></p>
-        <div class="install-line"><code>/plugin marketplace add starfoxcom/findwright</code><button class="icon-copy" type="button" aria-label="Copy command" data-copy></button></div>
-        <div class="install-line"><code>/plugin install findwright@findwright</code><button class="icon-copy" type="button" aria-label="Copy command" data-copy></button></div>
-      </li>
-      <li>
-        <p class="command-sub"><b>Then run the setup</b>
-          <span>It installs the part that runs on your computer after checking it against the plugin's pinned checksum, and changes nothing without your yes. It needs Node 22.16 or later, or Node 24 and up.</span></p>
-        <div class="install-line"><code>/findwright:setup</code><button class="icon-copy" type="button" aria-label="Copy command" data-copy></button></div>
-      </li>
-    </ol>
-    <ol class="command-steps" id="install-desktop" role="tabpanel" aria-labelledby="install-tab-desktop" hidden>
+    <ol class="command-steps" id="install-desktop" role="tabpanel" aria-labelledby="install-tab-desktop">
       <li>
         <p class="command-sub"><b>Open your project</b>
           <span>In the Code tab, start a new session in your project's folder.</span></p>
@@ -173,27 +193,44 @@ function skillProblems(rel, text) { ... }</code></pre>
       </li>
       <li>
         <p class="command-sub"><b>Run the setup</b>
-          <span>Start another new session in the same folder, so the plugin loads, and run this.</span></p>
+          <span>Start another new session in the same folder, so the plugin loads, and run this. In your next projects, FindWright is already there.</span></p>
+        <div class="install-line"><code>/findwright:setup</code><button class="icon-copy" type="button" aria-label="Copy command" data-copy></button></div>
+      </li>
+    </ol>
+    <ol class="command-steps" id="install-cli" role="tabpanel" aria-labelledby="install-tab-cli" hidden>
+      <li>
+        <p class="command-sub"><b>On your computer, once</b>
+          <span>Adds the FindWright marketplace, then the plugin, for every project.</span></p>
+        <div class="install-line"><code>/plugin marketplace add starfoxcom/findwright</code><button class="icon-copy" type="button" aria-label="Copy command" data-copy></button></div>
+        <div class="install-line"><code>/plugin install findwright@findwright</code><button class="icon-copy" type="button" aria-label="Copy command" data-copy></button></div>
+      </li>
+      <li>
+        <p class="command-sub"><b>Run the setup</b>
+          <span>It changes nothing without your yes. In your next projects, FindWright is already there.</span></p>
         <div class="install-line"><code>/findwright:setup</code><button class="icon-copy" type="button" aria-label="Copy command" data-copy></button></div>
       </li>
     </ol>
     <p class="copy-status" role="status" aria-live="polite"></p>
-  </section>
-
-  <section class="privacy" id="privacy" aria-labelledby="privacy-title">
-    <h2 id="privacy-title">Privacy</h2>
-    <p>FindWright sends nothing about you or your code. It downloads two things: its helper from the GitHub release, after your yes, and on the first search a 32 MB meaning model from Hugging Face, both checked against pinned checksums. Setup and the doctor also read Node's public release list, to tell you when your Node is missing security fixes. Set <code>FINDWRIGHT_MEANING=off</code> to skip the model. The index stays in each project's <code>.findwright/</code> folder, which keeps itself out of git.</p>
+    <div class="asks">
+      <div class="ask-list">
+        <h3>What it needs</h3>
+        <p>Claude Code, and Node 22.16 or later, or Node 24 and up. Setup checks your Node and tells you when it is missing security fixes.</p>
+      </div>
+      <div class="ask-list">
+        <h3>What it downloads</h3>
+        <p>Its helper from the GitHub release, after your yes, and on the first search a 32 MB meaning model from Hugging Face, both checked against pinned checksums. Set FINDWRIGHT_MEANING=off to skip the model.</p>
+      </div>
+      <div class="ask-list">
+        <h3>What stays on your computer</h3>
+        <p>Everything. FindWright sends nothing about you or your code, and each project's index lives in its own .findwright folder, which keeps itself out of git.</p>
+      </div>
+    </div>
+    <p class="asks-more"><a href="https://github.com/starfoxcom/findwright#readme">Read the full guide</a></p>
   </section>
 </main>
 
 <footer>
   <p>FindWright works with Claude Code. It is not made by, endorsed by or affiliated with Anthropic.</p>
-  <nav aria-label="Project">
-    <a href="https://github.com/starfoxcom/findwright">Source</a>
-    <a href="https://github.com/starfoxcom/findwright/issues">Issues</a>
-    <a href="https://github.com/starfoxcom/findwright/blob/main/CHANGELOG.md">Changelog</a>
-    <span>MIT licensed</span>
-  </nav>
 </footer>
 </body>
 </html>
