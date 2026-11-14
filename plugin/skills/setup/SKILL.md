@@ -25,7 +25,7 @@ The helper is ready when `node -p "require(process.argv[1]).version" "<helper>/p
 
 1. Create `<home>/.findwright/helper/` and download the entry's `url` into it under its `file` name: `curl -fsSL -o "<home>/.findwright/helper/<file>" "<url>"`, typed `curl.exe` in Windows PowerShell, where `curl` names another command.
 2. Check that the download's SHA-256 is the entry's `sha256`: `sha256sum` on Linux and in Git Bash, `shasum -a 256` on macOS, `Get-FileHash -Algorithm SHA256` in PowerShell. When it differs, delete the file, say the download does not match the plugin, and stop.
-3. Install it with no install scripts, then delete the file: `npm install --prefix "$HOME/.findwright/helper" --no-save --ignore-scripts --no-audit --no-fund "$HOME/.findwright/helper/<file>"`.
+3. Install it with no install scripts, then delete the file: `npm install --prefix "<home>/.findwright/helper" --no-save --ignore-scripts --no-audit --no-fund "<home>/.findwright/helper/<file>"`.
 
 Read the version again. When the install fails, show its last lines and stop: the rest needs the helper. When it could not reach the network, say to run setup again once online.
 
