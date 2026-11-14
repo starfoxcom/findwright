@@ -28,8 +28,8 @@ const MAX_LINE = 1000;
 const MAX_PATTERN = 300;
 // A nested name past this is dropped with everything under it, which keeps deep nesting linear.
 const MAX_NAME = 400;
-// Most lines one file's block ends (brace, value, indent, until) may scan in all; past it a
-// block ends on its first line.
+// Most lines one file's block ends and regions may scan in all; past it a block ends on its first
+// line and a region covers nothing.
 const SCAN_LINES = 200_000;
 const OPEN_WITHIN = 3;
 const MAX_SEPARATOR = 4;
@@ -104,20 +104,24 @@ function blockEnd(all, start, isInside, budget = null) {
   return end;
 }
 
-// The last line a region opened on `start` covers.
-function regionEnd(all, start, region) {
-  if (!region.until) return blockEnd(all, start, (line) => indentOf(line) > indentOf(all[start]));
-  for (let i = start + 1; i < all.length; i++) if (region.until.test(all[i])) return i;
+// The last line a region opened on `start` covers. Each line read spends the budget, and past it
+// the region covers nothing.
+function regionEnd(all, start, region, budget) {
+  if (!region.until) return blockEnd(all, start, (line) => indentOf(line) > indentOf(all[start]), budget);
+  for (let i = start + 1; i < all.length; i++) {
+    if (--budget.left < 0) return start;
+    if (region.until.test(all[i])) return i;
+  }
   return all.length - 1;
 }
 
 // Per line, whether it lies in one of the regions.
-function regionLines(all, region) {
+function regionLines(all, region, budget) {
   const covered = new Array(all.length).fill(false);
   for (let i = 0; i < all.length; i++) {
     if (region.first && i > 0) break;
     if (!region.start.test(all[i])) continue;
-    const end = regionEnd(all, i, region);
+    const end = regionEnd(all, i, region, budget);
     for (let j = i + 1; j <= end; j++) covered[j] = true;
     i = end;
   }
@@ -125,9 +129,9 @@ function regionLines(all, region) {
 }
 
 // Per line, whether the rule may match there.
-function allowedLines(all, rule) {
-  const inside = rule.inside ? regionLines(all, rule.inside) : null;
-  const outside = rule.outside.map((region) => regionLines(all, region));
+function allowedLines(all, rule, budget) {
+  const inside = rule.inside ? regionLines(all, rule.inside, budget) : null;
+  const outside = rule.outside.map((region) => regionLines(all, region, budget));
   return all.map((_, i) => (!inside || inside[i]) && !outside.some((covered) => covered[i]));
 }
 
@@ -139,8 +143,8 @@ function nameOf(match) {
   return key ? groups[key] : match[0];
 }
 
-function matchesOf(all, rule, taken) {
-  const allowed = allowedLines(all, rule);
+function matchesOf(all, rule, taken, budget) {
+  const allowed = allowedLines(all, rule, budget);
   const found = [];
   for (let i = 0; i < all.length; i++) {
     if (!allowed[i] || taken?.has(i)) continue;
@@ -280,7 +284,7 @@ export function fromRules(text, rules) {
     const compiled = normal && compile(normal, order);
     if (!compiled) return;
     if (compiled.group && !claimed.has(compiled.group)) claimed.set(compiled.group, new Set());
-    const found = matchesOf(all, compiled, claimed.get(compiled.group));
+    const found = matchesOf(all, compiled, claimed.get(compiled.group), budget);
     setEnds(all, compiled, found, budget);
     for (const symbol of found) symbols.push(symbol);
   });
