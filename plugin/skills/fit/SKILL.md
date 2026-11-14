@@ -55,7 +55,7 @@ For a kind of file no reference set covers, open three to five typical files, li
 - `except`: names to drop, such as `if`, `for` and `return` for a call-shaped pattern.
 - `inside` and `outside`: regions a rule matches only within, or never in, such as front matter or code fences: `{ "start": "<regex>", "end": "indent" | { "until": "<regex>" } }`, covering the lines after the start line; `"first": true` holds only for a region on line 1.
 
-Limits: patterns run on a linear-time engine, so back-references and lookarounds are not available (a rule that uses one is skipped); a pattern is at most 300 characters; a rule lists at most 8 `outside` regions; each line is read up to its first 1000 characters.
+Limits: patterns run on a linear-time engine, so back-references and lookarounds are not available (a rule that uses one is skipped); a pattern is at most 300 characters; a rule lists at most 8 `outside` regions.
 
 ## 4. Try the draft
 
