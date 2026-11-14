@@ -8,8 +8,9 @@ const spans = (text, rules) => fromRules(text, rules).map((s) => [s.name, s.line
 
 test("a rule names each match by its name group", () => {
   assert.deepEqual(names("#define FOX_WIN 1\n#define FOX_MAC 2", r`^#define\s+(?<name>\w+)`), ["FOX_WIN", "FOX_MAC"]);
-  // Alternatives may each carry a `name` group.
-  assert.deepEqual(names(`test("a b")\ntest('c')`, r`test\(\s*(?:'(?<name>[^']+)'|"(?<name>[^"]+)")`), ["a b", "c"]);
+  // Each alternative carries its own name group.
+  const pattern = r`test\(\s*(?:'(?<name>[^']+)'|"(?<name2>[^"]+)")`;
+  assert.deepEqual(names(`test("a b")\ntest('c')`, pattern), ["a b", "c"]);
 });
 
 // Patterns a cloned repo could carry to hang a backtracking engine, on the line that triggers each.
@@ -129,11 +130,18 @@ for (const [name, text, rule, expected] of regions) {
   });
 }
 
-test("blocks that never close cost no more than the scan budget", () => {
-  const start = performance.now();
-  fromRules("function f() {\n".repeat(140_000), [{ pattern: FUNCTION, kind: "function", end: "brace" }]);
-  assert.ok(performance.now() - start < 3000, `took ${Math.round(performance.now() - start)} ms`);
-});
+const unbounded = [
+  ["brace blocks that never close", "function f() {\n".repeat(140_000), { pattern: FUNCTION, end: "brace" }],
+  ["indent blocks that each run to the end", " x\n".repeat(700_000), { pattern: r`^(?<indent>)\s*x`, end: "indent" }],
+];
+
+for (const [name, text, rule] of unbounded) {
+  test(`block ends cost no more than the scan budget: ${name}`, () => {
+    const start = performance.now();
+    fromRules(text, [{ kind: "k", ...rule }]);
+    assert.ok(performance.now() - start < 3000, `took ${Math.round(performance.now() - start)} ms`);
+  });
+}
 
 test("a rule is read as far as it is right: a bad end is one line, a bad region drops the rule", () => {
   assert.equal(normalRule({ pattern: "x", kind: "k", end: "sideways" }).end, "line");

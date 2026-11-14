@@ -8,6 +8,7 @@
 //              "indent" the last line indented deeper than the match (an `indent` group sets the depth)
 //              "next"   the line before the rule's next match whose `level` group is no longer
 //              { until: <regex> }  the first later line the regex matches
+//   name     the `name` group names the symbol; alternatives can use `name2`, `name3` and so on
 //   nest     true (or a separator, "." by default): the symbol is named under the innermost
 //            nesting symbol whose block holds it (`jobs.review.steps`), and can hold others
 //   group    rules sharing a group claim lines: the first rule in the list to match a line takes it
@@ -27,14 +28,17 @@ const MAX_LINE = 1000;
 const MAX_PATTERN = 300;
 // A nested name past this is dropped with everything under it, which keeps deep nesting linear.
 const MAX_NAME = 400;
-// Most lines one file's brace and value blocks may scan in all; past it a block ends on its first line.
+// Most lines one file's block ends (brace, value, indent, until) may scan in all; past it a
+// block ends on its first line.
 const SCAN_LINES = 200_000;
 const OPEN_WITHIN = 3;
 const MAX_SEPARATOR = 4;
 const END_WORDS = new Set(["line", "brace", "value", "indent", "next"]);
 
-const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-const strings = (value) => (Array.isArray(value) ? value.filter((v) => typeof v === "string") : []);
+/** True for a plain JSON object: not null, not an array. */
+export const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+/** The strings of a JSON array, or none when it is not one. */
+export const strings = (value) => (Array.isArray(value) ? value.filter((v) => typeof v === "string") : []);
 const isPattern = (value) => typeof value === "string" && value.length <= MAX_PATTERN;
 
 const normalUntil = (end) => (isObject(end) && isPattern(end.until) ? { until: end.until } : null);
@@ -88,9 +92,11 @@ function compile(rule, order) {
 const indentOf = (line) => line.length - line.trimStart().length;
 
 // The last line (0-based) of the block that starts on `start` and runs while `isInside` holds; blank lines run on.
-function blockEnd(all, start, isInside) {
+// With a budget, each line read spends one, and past it the block ends on its first line.
+function blockEnd(all, start, isInside, budget = null) {
   let end = start;
   for (let i = start + 1; i < all.length; i++) {
+    if (budget && --budget.left < 0) return start;
     if (all[i].trim() === "") continue;
     if (!isInside(all[i])) break;
     end = i;
@@ -125,6 +131,14 @@ function allowedLines(all, rule) {
   return all.map((_, i) => (!inside || inside[i]) && !outside.some((covered) => covered[i]));
 }
 
+// The `name` group, else the first of `name2`, `name3` ... that took part (one per alternative),
+// else the whole match.
+function nameOf(match) {
+  const groups = match.groups ?? {};
+  const key = Object.keys(groups).find((k) => /^name\d*$/.test(k) && groups[k] !== undefined);
+  return key ? groups[key] : match[0];
+}
+
 function matchesOf(all, rule, taken) {
   const allowed = allowedLines(all, rule);
   const found = [];
@@ -132,7 +146,7 @@ function matchesOf(all, rule, taken) {
     if (!allowed[i] || taken?.has(i)) continue;
     let matched = false;
     for (const m of all[i].matchAll(rule.pattern)) {
-      const name = m.groups?.name ?? m[0];
+      const name = nameOf(m);
       if (!m[0] || rule.except.has(name)) continue;
       matched = true;
       const indent = m.groups?.indent === undefined ? indentOf(all[i]) : m.index + m.groups.indent.length;
@@ -151,35 +165,51 @@ function stringEnd(text, start) {
   return i;
 }
 
-const OPENERS = { brace: "{", value: "{[" };
-const CLOSERS = { brace: "}", value: "}]" };
+// Each code character of `text` from `from` as [index, character], up to a `//` comment. A string
+// comes out once, as its opening quote, so nothing inside it counts as a bracket.
+function* codeChars(text, from) {
+  for (let j = from; j < text.length; j++) {
+    const ch = text[j];
+    if (ch === "/" && text[j + 1] === "/") return;
+    yield [j, ch];
+    if (ch === '"' || ch === "'" || ch === "`") j = stringEnd(text, j);
+  }
+}
 
-// Where the block a symbol opens closes, as [line, col], or null when it opens none in reach.
-// "value" needs `{` or `[` as the first thing after the match and closes at its bracket, so
-// one-line JSON nests. "brace" counts `{` and `}` from the match's start and closes at the end
-// of the first line that leaves them balanced, so a `{}` inside a parameter list ends nothing;
-// a `;` before the first `{` ends the statement with no block.
-function bracketEnd(all, symbol, mode, budget) {
+// Where a "brace" block closes, as [line, col], or null when it opens none in reach. It counts `{`
+// and `}` from the match's start and closes at the end of the first line that leaves them balanced,
+// so a `{}` inside a parameter list ends nothing; a `;` before the first `{` (`int f();`) ends the
+// statement with no block.
+function braceEnd(all, symbol, budget) {
   let depth = 0;
   let opened = false;
   for (let i = symbol.line; i < all.length; i++) {
     if (--budget.left < 0) return null;
-    const text = all[i];
-    for (let j = i === symbol.line ? (mode === "value" ? symbol.matchEnd : symbol.col) : 0; j < text.length; j++) {
-      const ch = text[j];
-      if (mode === "value" && !opened && ch.trim() && !OPENERS.value.includes(ch)) return null;
-      // A statement that ends before its first brace (`int f();`, `const n = 1;`) opens no block.
-      if (mode === "brace" && !opened && ch === ";") return null;
-      if (ch === "/" && text[j + 1] === "/") break;
-      if (ch === '"' || ch === "'" || ch === "`") j = stringEnd(text, j);
-      else if (OPENERS[mode].includes(ch)) { depth++; opened = true; }
-      else if (CLOSERS[mode].includes(ch)) depth--;
-      if (mode === "value" && opened && depth === 0) return [i, j];
+    for (const [, ch] of codeChars(all[i], i === symbol.line ? symbol.col : 0)) {
+      if (ch === ";" && !opened) return null;
+      if (ch === "{") { depth++; opened = true; } else if (ch === "}") depth--;
     }
     if (opened && depth <= 0) return [i, Infinity];
     if (!opened && i >= symbol.line + OPEN_WITHIN - 1) return null;
   }
   return opened ? [all.length - 1, Infinity] : null;
+}
+
+// Where a "value" block closes, as [line, col], or null for a scalar value. The first thing after
+// the match must be `{` or `[`, and the block closes at its own bracket, so one-line JSON nests.
+function valueEnd(all, symbol, budget) {
+  let depth = 0;
+  for (let i = symbol.line; i < all.length; i++) {
+    if (--budget.left < 0) return null;
+    for (const [j, ch] of codeChars(all[i], i === symbol.line ? symbol.matchEnd : 0)) {
+      if (!ch.trim()) continue;
+      if (ch === "{" || ch === "[") depth++;
+      else if (depth === 0) return null;
+      else if ((ch === "}" || ch === "]") && --depth === 0) return [i, j];
+    }
+    if (depth === 0 && i >= symbol.line + OPEN_WITHIN - 1) return null;
+  }
+  return depth > 0 ? [all.length - 1, Infinity] : null;
 }
 
 // Closes each "next" block at the line before the rule's next match of the same or a lower level.
@@ -208,9 +238,10 @@ function setEnds(all, rule, symbols, budget) {
   if (rule.end === "next") return closeAtNext(all, symbols);
   for (const symbol of symbols) {
     const own = [symbol.line, symbol.matchEnd];
-    if (rule.end === "brace" || rule.end === "value") symbol.end = bracketEnd(all, symbol, rule.end, budget) ?? own;
+    if (rule.end === "brace") symbol.end = braceEnd(all, symbol, budget) ?? own;
+    else if (rule.end === "value") symbol.end = valueEnd(all, symbol, budget) ?? own;
     else if (rule.end === "indent") {
-      symbol.end = [blockEnd(all, symbol.line, (line) => indentOf(line) > symbol.indent), Infinity];
+      symbol.end = [blockEnd(all, symbol.line, (line) => indentOf(line) > symbol.indent, budget), Infinity];
     }
     else if (rule.until) symbol.end = untilEnd(all, symbol, rule.until, budget);
     else symbol.end = own;

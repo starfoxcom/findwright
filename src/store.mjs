@@ -8,7 +8,9 @@ import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
 import { EXTRACTORS } from "./extract.mjs";
-import { fromRules, normalRule } from "./rules.mjs";
+import { fromRules, isObject, normalRule, strings } from "./rules.mjs";
+
+export { isObject };
 import { linearRegExp } from "./linear.mjs";
 
 /** The root of the git repository the process runs in, or null outside one. */
@@ -96,9 +98,6 @@ export function globFilter(globs = []) {
 
 const matchesAny = (path, globs) => globs.some((g) => globToRegExp(g).test(path));
 
-/** True for a plain JSON object: not null, not an array. */
-export const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-const strings = (value) => (Array.isArray(value) ? value.filter((v) => typeof v === "string") : []);
 
 // The config as the code reads it: a value of the wrong type is dropped, so a hand-edited or hostile
 // config.json can make FindWright index less, never fail.
