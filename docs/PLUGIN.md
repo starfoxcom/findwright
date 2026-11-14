@@ -12,21 +12,23 @@ The plugin directory accepts from an organization that is not Verified only Mark
   - `.claude-plugin/plugin.json` and `.claude-plugin/icon.png`.
   - `README.md`.
   - `helper.json`: the helper tarball's file name, release URL and SHA-256, written by the packer.
-  - Skills: `setup`, `update`, `doctor`, `remove`, and `find` (the lookup sequence: `find`, then `search`, `symbols` and `outline`).
+  - Skills: `setup`, `update`, `doctor`, `remove`, `fit` (writes the project's rules, from the reference rule sets in `skills/fit/reference/`), and `find` (the lookup sequence: `find`, then `search`, `symbols` and `outline`).
 - **The helper** (`findwright-X.Y.Z.tgz`, attached to each release): `package.json`, `src/`, `hooks/findwright-first.mjs`, `README.md`, `LICENSE`, `CHANGELOG.md`. No dependencies and no install scripts. Setup installs it with `npm install --prefix ~/.findwright/helper --no-save --ignore-scripts --no-audit --no-fund <file>`, so it lands at `~/.findwright/helper/node_modules/findwright/`.
 - **The marketplace**: the shared `wrights` marketplace ([starfoxcom/wrights](https://github.com/starfoxcom/wrights)) lists `findwright` beside Bindwright, with an `archive` source naming the release zip and its SHA-256. Each release opens a pull request there that moves the entry.
 - **The `plugin` branch**: the packed plugin of the newest release at its root, one commit per release, which the directory listing follows. Each of those commits is tagged `findwright--vX.Y.Z`, so a marketplace that sources the branch can resolve a version range.
 
 ## What setup does
 
+Each skill's `SKILL.md` under `plugin/skills/` is the source for what it does; this list says what each setup step touches.
+
 1. Checks Node 22.16 or later (or Node 24 and up), whose built-in SQLite has full-text search; Node 23 does not. It also reads `nodejs.org/dist/index.json`, and when a newer patch of the same line exists, since an old patch leaves known security holes open, installs it with winget on Windows or gives the nodejs.org installer elsewhere. A line outside long-term support gets a note. A missing Node is installed the same way, then setup stops for a restart.
 2. When `~/.findwright/helper/node_modules/findwright/package.json` is missing or holds another version than the plugin, downloads the file `helper.json` names, checks its SHA-256 and installs it as above.
 3. Installs the meaning model with `findwright model`, which downloads it and checks the pinned SHA-256; find returns an error naming setup without it.
 4. Registers the server for the user: `claude mcp add --scope user findwright -- node "<home>/.findwright/helper/node_modules/findwright/src/server.mjs"`. When a `findwright` server is registered already (Bindwright's copy), it says which copy runs now and switches to the plugin's one, which is the newer.
 5. Offers the search hook, which sends Grep, Glob and shell searches to FindWright in repos that have an index: `findwright home install-hook` merges it into `~/.claude/settings.json` (backup first, refusing a file that is not valid JSON). When Bindwright's `findwright-first.py` is registered, it leaves that one in place, since two would answer every search twice.
-6. In a git repo, offers to fit the index to the project: runs `coverage`, and for file kinds with no symbols proposes `kinds` and `rules` for `.findwright/config.json`, written on a yes.
+6. In a git repo with no rules list in `.findwright/config.json`, fits the index to the project with the `fit` skill.
 
-`update` reinstalls the helper at the plugin's version, `doctor` checks Node, the helper version, the registration and the hook and says each fix, and `remove` takes out the hook, the registration and the helper folder, then the plugin, each on a yes. Indexes in projects (`.findwright/`) stay unless the user asks.
+`update` keeps the helper at the plugin's version and fits a repo that has no rules, `doctor` checks the parts and says each fix, and `remove` takes the parts back out, each on a yes. Indexes in projects (`.findwright/`) stay unless the user asks.
 
 ## Building and releasing
 
