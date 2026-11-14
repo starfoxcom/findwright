@@ -7,7 +7,10 @@ import { DatabaseSync } from "node:sqlite";
 import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
-import { EXTRACTORS, fromRules } from "./extract.mjs";
+import { EXTRACTORS } from "./extract.mjs";
+import { fromRules, isObject, normalRule, strings } from "./rules.mjs";
+
+export { isObject };
 import { linearRegExp } from "./linear.mjs";
 
 /** The root of the git repository the process runs in, or null outside one. */
@@ -95,9 +98,6 @@ export function globFilter(globs = []) {
 
 const matchesAny = (path, globs) => globs.some((g) => globToRegExp(g).test(path));
 
-/** True for a plain JSON object: not null, not an array. */
-export const isObject = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
-const strings = (value) => (Array.isArray(value) ? value.filter((v) => typeof v === "string") : []);
 
 // The config as the code reads it: a value of the wrong type is dropped, so a hand-edited or hostile
 // config.json can make FindWright index less, never fail.
@@ -105,9 +105,7 @@ export function normalConfig(raw) {
   const config = isObject(raw) ? raw : {};
   const kinds = Object.fromEntries(Object.entries(isObject(config.kinds) ? config.kinds : {})
     .filter(([, kind]) => typeof kind === "string"));
-  const rules = (Array.isArray(config.rules) ? config.rules : [])
-    .filter((r) => isObject(r) && typeof r.pattern === "string" && typeof r.kind === "string")
-    .map((r) => ({ pattern: r.pattern, kind: r.kind, globs: Array.isArray(r.globs) ? strings(r.globs) : ["**"] }));
+  const rules = (Array.isArray(config.rules) ? config.rules : []).map(normalRule).filter(Boolean);
   const goal = typeof config.goal === "number" && config.goal > 0 && config.goal <= 100 ? config.goal : undefined;
   return { include: strings(config.include), exclude: strings(config.exclude), kinds, rules, goal };
 }
@@ -229,13 +227,36 @@ function symbolsOf(text, path, kind, config) {
   return own.concat(fromRules(text, rules));
 }
 
+// This copy's version, stamped on the index with the config it read: a session can keep an older
+// copy running after an update, and that copy must not rebuild an index a newer one wrote.
+const ENGINE = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+
+const versionParts = (version) => version.split(".").map(Number);
+
+function isNewer(version, than) {
+  const [a, b] = [versionParts(version), versionParts(than)];
+  const differs = a.findIndex((part, i) => part !== b[i]);
+  return differs >= 0 && a[differs] > b[differs];
+}
+
+// Throws when a newer copy built the index, rather than rebuild it with older code.
+function refuseNewerIndex(stored) {
+  let engine;
+  try { engine = JSON.parse(stored ?? "{}").engine; } catch { return; }
+  if (typeof engine !== "string" || !/^\d+\.\d+\.\d+$/.test(engine) || !isNewer(engine, ENGINE)) return;
+  throw new Error(`FindWright ${engine} built this index, and this copy is ${ENGINE}: `
+    + "restart the session so it runs the new copy.");
+}
+
 // Brings the index level with the working tree; returns what changed. A change to the config's
-// kinds or rules sends every indexed file through indexFile again, the path a fresh index takes.
+// kinds or rules, or to this copy's version, sends every indexed file through indexFile again,
+// the path a fresh index takes.
 // The stored settings are checked and those files chosen under the write lock, so whenever the
 // settings are written, every file row in the index was indexed with them.
 export function refresh(db, root, config = readConfig(root)) {
-  const extraction = JSON.stringify({ kinds: config.kinds, rules: config.rules });
+  const extraction = JSON.stringify({ engine: ENGINE, kinds: config.kinds, rules: config.rules });
   const indexedWith = storedExtraction(db);
+  refuseNewerIndex(indexedWith);
   const sameExtraction = indexedWith === extraction;
   const known = new Map(db.prepare("SELECT path, size, mtime FROM files").all().map((r) => [r.path, r]));
   const seen = new Set();
@@ -287,7 +308,8 @@ function reindexOthers(db, root, done, config) {
   return others.length;
 }
 
-// The config's kinds and rules the index was built with, as JSON, or undefined before the first build.
+// The copy's version and the config's kinds and rules the index was built with, as JSON,
+// or undefined before the first build.
 function storedExtraction(db) {
   return db.prepare("SELECT value FROM settings WHERE key = 'extraction'").get()?.value;
 }

@@ -10,7 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Breaking
 - FindWright installs from the shared `wrights` marketplace: `/plugin marketplace add starfoxcom/wrights`, then `/plugin install findwright@wrights`. The `findwright` marketplace in this repo is gone, so a computer that installed `findwright@findwright` removes it (`/plugin uninstall findwright@findwright`, then `/plugin marketplace remove findwright`) and installs from `wrights` ([#45](https://github.com/starfoxcom/findwright/issues/45)).
 
+### Added
+- Rules in `.findwright/config.json` can give a symbol its structure: `end` says where its block ends (a closing brace, a JSON value's bracket, indentation, the next heading, or a closing pattern), so `outline` and search results show its range; `nest` names it under the symbol that holds it (`jobs.review.steps`, `Grid::build`); `group`, `except`, `inside` and `outside` keep a rule off lines it should not name ([#49](https://github.com/starfoxcom/findwright/issues/49)).
+
 ### Fixed
+- A session that kept running an older FindWright after an update no longer rebuilds the index a newer copy wrote with its old settings. The index records the version that built it, and an older copy refuses it with a note to restart the session ([#49](https://github.com/starfoxcom/findwright/issues/49)).
+- A rule reads every line in full instead of skipping a line longer than 400 characters, so a JSON file of long values keeps its keys. Block ends are found in one pass over the file, and the repeat matches on one line are limited, so a long or hostile file costs time in proportion to its size: a minified line yields its first matches only, and a nesting rule names nothing after the first line it cuts short, so a path is never wrong.
 - The setup skill's helper install line writes the home folder as a placeholder instead of an environment variable, since the plugin directory holds a plugin whose skill text puts a variable beside a network command. The directory check now counts `npm`, `npx` and `fetch` as network commands and "key" and "auth" as credential words, so a line like that fails the pack.
 - The plugin's homepage points at the README while the FindWright page is not published, so its listing links to a page that exists.
 

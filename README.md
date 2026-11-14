@@ -47,7 +47,12 @@ A glob starting with `!` leaves out the files it matches, as in ripgrep: `--glob
 - `include`: globs for files git ignores that the work still reads, such as generated typings.
 - `exclude`: globs to leave out.
 - `kinds`: which extractor reads which files, e.g. `{ "*.mdc": "markdown" }`.
-- `rules`: pattern rules for anything else, each `{ "globs": [...], "kind": "function", "pattern": "^\s*func\s+(?<name>\w+)" }`; the `name` group is the symbol's name.
+- `rules`: pattern rules for anything else, each `{ "globs": [...], "kind": "function", "pattern": "^\s*func\s+(?<name>\w+)" }`; the `name` group is the symbol's name. Optional fields give a symbol its structure:
+  - `end`: where its block ends, so `outline` shows the range: `"brace"` (the closing `}`), `"value"` (the bracket closing a JSON value), `"indent"` (the last line indented deeper; an `indent` group sets the depth), `"next"` (the line before the rule's next match whose `level` group is no longer, as headings do), or `{ "until": "<regex>" }`. Without it the symbol is its own line.
+  - `nest`: `true`, or a separator such as `"::"`: the symbol is named under the nesting symbol whose block holds it (`jobs.review.steps`).
+  - `group`: rules in the same group share each line, and the first in the list to match it takes it.
+  - `except`: names to drop, such as `if` and `for` for a method pattern.
+  - `inside` and `outside`: regions the rule matches only within, or never in, each `{ "start": "<regex>", "end": "indent" | { "until": "<regex>" } }` covering the lines after its start; `"first": true` holds only for a region that starts on line 1, such as front matter. A rule lists at most 8 `outside` regions; one with more is dropped.
 
 The index lives in `.findwright/index.db`, in a folder that keeps itself out of git.
 

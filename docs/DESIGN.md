@@ -18,7 +18,7 @@ The code-research tool Bindwright installed before FindWright parses a fixed lis
   - `include`: git-ignored files the work reads (generated typings).
   - `exclude`: files to leave out.
   - `kinds`: globs mapped to an extractor (`*.additions` as Markdown).
-  - `rules`: regexes whose `name` group names a symbol of a project kind (i18n text keys, template placeholders, toggles, SQL tables, environment variables).
+  - `rules`: regexes whose `name` group names a symbol of a project kind (i18n text keys, template placeholders, toggles, SQL tables, environment variables). A rule can also say where its block ends (a brace, a JSON value, indentation, the next heading, or a closing pattern), nest its symbols into paths, share lines with other rules in a group, and match only inside or outside regions such as front matter and code fences, so rules give everything the built-in extractors give.
 - **The adapting loop.** At project setup the session runs `coverage`, reads which kinds and files yield no symbol, and adds kinds or rules until every file it cares about has structure. The searches that still go to plain grep get logged, so a later session extends the config.
 
 ## Tools (MCP, stdio)
