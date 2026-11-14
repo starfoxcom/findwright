@@ -92,15 +92,14 @@ function compile(rule, order) {
   return { ...rule, order, pattern, until, inside, outside, except: new Set(rule.except ?? []) };
 }
 
-/** How far a line is indented, in characters. */
-export const indentOf = (line) => line.length - line.trimStart().length;
+const indentOf = (line) => line.length - line.trimStart().length;
 
-/** The last line (0-based) of the block that starts on `start` and runs while `isInside` holds; blank lines run on.
-// With a budget, each line read spends one, and past it the block ends on its first line. */
-export function blockEnd(all, start, isInside, budget = null) {
+// The last line (0-based) of the block that starts on `start` and runs while `isInside` holds; blank
+// lines run on. Each line read spends the budget, and past it the block ends on its first line.
+function blockEnd(all, start, isInside, budget) {
   let end = start;
   for (let i = start + 1; i < all.length; i++) {
-    if (budget && --budget.left < 0) return start;
+    if (--budget.left < 0) return start;
     if (all[i].trim() === "") continue;
     if (!isInside(all[i])) break;
     end = i;
