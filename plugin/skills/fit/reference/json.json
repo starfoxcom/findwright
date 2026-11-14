@@ -1,5 +1,5 @@
 {
- "description": "JSON: every object key named by its path (hooks.PreToolUse), each running to the end of its value. A very long line, such as minified JSON, can lose its later keys.",
+ "description": "JSON: every object key named by its path (hooks.PreToolUse), each running to the end of its value. A very long line packed with keys, such as minified JSON, leaves out every key from that point in the file on.",
  "rules": [
   {
    "globs": [
