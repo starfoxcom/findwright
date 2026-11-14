@@ -1,9 +1,27 @@
 {
   "rules": [
-    {
-      "globs": ["**/*.sql"],
-      "kind": "table",
-      "pattern": "^CREATE TABLE (?:IF NOT EXISTS )?(?<name>\\w+)"
-    }
+    {"globs":["**/*.md","**/*.mdx"],"kind":"front-matter","pattern":"^(?<name>[A-Za-z][\\w-]*):","inside":{"start":"^---\\s*$","end":{"until":"^---\\s*$"},"first":true}},
+    {"globs":["**/*.md","**/*.mdx"],"kind":"heading","pattern":"^(?<level>#{1,6})\\s+(?<name>.+?)\\s*#*\\s*$","end":"next","outside":[{"start":"^\\s*(```|~~~)","end":{"until":"^\\s*(```|~~~)"}}]},
+    {"globs":["**/*.yml","**/*.yaml"],"kind":"item","pattern":"^(?<indent>\\s*)-\\s+name:\\s*[\"']?(?<name>.+?)[\"']?\\s*$","end":"indent","outside":[{"start":":\\s*[|>][-+]?\\s*$","end":"indent"}]},
+    {"globs":["**/*.yml","**/*.yaml"],"kind":"key","pattern":"^(?<indent>\\s*(?:-\\s+)?)[\"']?(?<name>[\\w.$/@-]+)[\"']?\\s*:(?:\\s|$)","end":"indent","nest":true,"outside":[{"start":":\\s*[|>][-+]?\\s*$","end":"indent"}]},
+    {"globs":["**/*.json","**/*.jsonc"],"kind":"key","pattern":"\"(?<name>(?:[^\"\\\\]|\\\\.)*)\"\\s*:\\s*","end":"value","nest":true},
+    {"globs":["**/*.js","**/*.mjs","**/*.cjs","**/*.ts","**/*.tsx","**/*.jsx","**/*.mts"],"group":"js","kind":"function","end":"brace","pattern":"^\\s*(?:export\\s+)?(?:default\\s+)?(?:async\\s+)?function\\s*\\*?\\s*(?<name>[A-Za-z_$][\\w$]*)"},
+    {"globs":["**/*.js","**/*.mjs","**/*.cjs","**/*.ts","**/*.tsx","**/*.jsx","**/*.mts"],"group":"js","kind":"class","end":"brace","pattern":"^\\s*(?:export\\s+)?(?:default\\s+)?(?:abstract\\s+)?class\\s+(?<name>[A-Za-z_$][\\w$]*)"},
+    {"globs":["**/*.js","**/*.mjs","**/*.cjs","**/*.ts","**/*.tsx","**/*.jsx","**/*.mts"],"group":"js","kind":"type","end":"brace","pattern":"^\\s*(?:export\\s+)?(?:declare\\s+)?(?:interface|type|enum)\\s+(?<name>[A-Za-z_$][\\w$]*)"},
+    {"globs":["**/*.js","**/*.mjs","**/*.cjs","**/*.ts","**/*.tsx","**/*.jsx","**/*.mts"],"group":"js","kind":"function","end":"brace","pattern":"^(?:export\\s+)?(?:const|let|var)\\s+(?<name>[A-Za-z_$][\\w$]*)\\s*(?::[^=]+)?=\\s*(?:async\\s*)?(?:\\([^)]*\\)|[A-Za-z_$][\\w$]*)\\s*(?::[^=]+)?=>"},
+    {"globs":["**/*.js","**/*.mjs","**/*.cjs","**/*.ts","**/*.tsx","**/*.jsx","**/*.mts"],"group":"js","kind":"const","end":"brace","pattern":"^(?:export\\s+)?(?:const|let|var)\\s+(?<name>[A-Za-z_$][\\w$]*)"},
+    {"globs":["**/*.js","**/*.mjs","**/*.cjs","**/*.ts","**/*.tsx","**/*.jsx","**/*.mts"],"group":"js","kind":"method","end":"brace","except":["if","for","while","switch","catch","return","function","else"],"pattern":"^\\s+(?:static\\s+|async\\s+|get\\s+|set\\s+|private\\s+|public\\s+|protected\\s+|readonly\\s+)*(?<name>[A-Za-z_$][\\w$]*)\\s*\\([^)]*\\)\\s*(?::[^{]+)?\\{\\s*$"},
+    {"globs":["**/*.js","**/*.mjs","**/*.cjs","**/*.ts","**/*.tsx","**/*.jsx","**/*.mts"],"group":"js","kind":"hook","end":"brace","pattern":"^\\s*on\\(\\s*['\"](?<name>[\\w.]+)['\"]"},
+    {"globs":["**/*.js","**/*.mjs","**/*.cjs","**/*.ts","**/*.tsx","**/*.jsx","**/*.mts"],"group":"js","kind":"test","end":"brace","pattern":"^\\s*test\\(\\s*(?:'(?<name>[^']+)'|\"(?<name2>[^\"]+)\"|`(?<name3>[^`]+)`)"},
+    {"globs":["**/*.py"],"kind":"class","pattern":"^\\s*class\\s+(?<name>[A-Za-z_]\\w*)","end":"indent"},
+    {"globs":["**/*.py"],"kind":"function","pattern":"^(?:async\\s+)?def\\s+(?<name>[A-Za-z_]\\w*)","end":"indent"},
+    {"globs":["**/*.py"],"kind":"method","pattern":"^\\s+(?:async\\s+)?def\\s+(?<name>[A-Za-z_]\\w*)","end":"indent"},
+    {"globs":["**/*.py"],"kind":"const","pattern":"^(?<name>[A-Z_][A-Z0-9_]*)\\s*="},
+    {"globs":["**/*.css"],"kind":"selector","pattern":"^\\s*(?<name>[^{}/@][^{}]*?)\\s*\\{","end":"brace"},
+    {"globs":["**/*.css"],"kind":"property","pattern":"^\\s*(?<name>--[\\w-]+)\\s*:"},
+    {"globs":["**/*.html","**/*.htm"],"kind":"id","pattern":"\\bid=\"(?<name>[^\"]+)\""},
+    {"globs":["**/*.html","**/*.htm"],"kind":"text-key","pattern":"\\bdata-i18n(?:-[\\w-]+)?=\"(?<name>[^\"]+)\""},
+    {"globs":["**/*.sh","**/*.bash"],"kind":"function","pattern":"^\\s*(?:function\\s+)?(?<name>[A-Za-z_][\\w-]*)\\s*\\(\\)\\s*\\{?","end":"brace"},
+    {"globs":["**/*.sql"],"kind":"table","pattern":"^CREATE TABLE (?:IF NOT EXISTS )?(?<name>\\w+)"}
   ]
 }
