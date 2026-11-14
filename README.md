@@ -11,9 +11,11 @@ On 169 searches replayed from real coding sessions on four projects, the file th
 FindWright is a Claude Code plugin of its own; it needs nothing else. In a Claude Code session:
 
 ```
-/plugin marketplace add starfoxcom/findwright
-/plugin install findwright@findwright
+/plugin marketplace add starfoxcom/wrights
+/plugin install findwright@wrights
 ```
+
+The `wrights` marketplace ([starfoxcom/wrights](https://github.com/starfoxcom/wrights)) lists FindWright and Bindwright, each pinned to its own release.
 
 Then run `/findwright:setup`. It installs the helper, the part that runs on your computer, from the plugin's GitHub release after checking it against the SHA-256 the plugin pins, into `~/.findwright/helper` for your user only. It then registers FindWright for every project, offers a hook that sends searches to it in indexed repos, and fits the index to the project you are in. `/findwright:update` keeps the helper at the plugin's version, `/findwright:doctor` checks the setup and `/findwright:remove` takes it back out.
 

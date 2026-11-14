@@ -7,8 +7,8 @@ FindWright gives Claude a code index that adapts to each project. It indexes eve
 From the plugin directory: in Claude Code, run `/plugin`, open Discover and install FindWright. Or from FindWright's own marketplace, in a Claude Code session:
 
 ```
-/plugin marketplace add starfoxcom/findwright
-/plugin install findwright@findwright
+/plugin marketplace add starfoxcom/wrights
+/plugin install findwright@wrights
 ```
 
 Then run `/findwright:setup`. Running it is your yes to everything FindWright needs, so it installs each part and says what it installs: Node when yours is missing or behind on security fixes (on Windows; elsewhere it gives you the installer), the helper (the part that runs on your computer, the file attached to the plugin's GitHub release, checked against the SHA-256 the plugin pins, into `~/.findwright/helper` for your user only), the 32 MB meaning model, and the registration with Claude Code for every project. It asks only about the hook that sends searches to FindWright in indexed repos and, inside a project, about fitting the index to that project. When a part cannot be installed, setup stops and FindWright stays off.
