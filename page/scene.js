@@ -4,8 +4,12 @@
 // them and shows them in turn. With reduced motion, or without this script, the finished
 // session shows as it is. The loop pauses while the scene is off screen or the tab is hidden.
 
+import { onEnter } from "./reveal.js";
+
 const stage = document.querySelector(".hero .stage");
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+// Matches the stylesheet's phone layout, where the cards sit below the button, away from the window.
+const stacked = matchMedia("(max-width: 900px)");
 const STEP_MS = 40;
 const TYPE_MS = 28;
 const CAPTIONS = [
@@ -35,6 +39,10 @@ function hold(ms) {
 
 const part = (name) => stage.querySelector(`[data-step="${name}"]`);
 const show = (node) => node.classList.add("on");
+// Beside the window a card pops in with its step; stacked, each one pops in as it scrolls into view.
+const popCard = (name) => {
+  if (!stacked.matches) show(stage.querySelector(`.card[data-card="${name}"]`));
+};
 
 async function caption(number, text) {
   const node = stage.querySelector(".caption");
@@ -71,7 +79,8 @@ async function runTool(name, ms) {
 }
 
 async function story() {
-  stage.querySelectorAll("[data-step], .card").forEach((node) => node.classList.remove("on"));
+  stage.querySelectorAll(stacked.matches ? "[data-step]" : "[data-step], .card")
+    .forEach((node) => node.classList.remove("on"));
   await caption(1, CAPTIONS[0]);
   await typeQuestion();
   await hold(600);
@@ -81,16 +90,16 @@ async function story() {
     show(file);
     await hold(160);
   }
-  show(stage.querySelector('.card[data-card="search"]'));
+  popCard("search");
   await hold(1600);
   await caption(3, CAPTIONS[2]);
   await runTool("read", 800);
   await hold(500);
   show(part("reply"));
-  show(stage.querySelector('.card[data-card="read"]'));
+  popCard("read");
   await hold(2200);
   await caption(4, CAPTIONS[3]);
-  show(stage.querySelector('.card[data-card="current"]'));
+  popCard("current");
   await hold(4200);
 }
 
@@ -110,5 +119,8 @@ if (stage && !reduce) {
     sync();
   }).observe(stage.querySelector(".term"));
   document.addEventListener("visibilitychange", sync);
+  const cards = stage.querySelectorAll(".card");
+  cards.forEach((card) => onEnter(card, () => stacked.matches && show(card)));
+  stacked.addEventListener("change", () => stacked.matches && cards.forEach(show));
   loop();
 }
