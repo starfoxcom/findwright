@@ -6,7 +6,8 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { gitRoot, globFilter, openIndex, readConfig, refresh } from "./store.mjs";
+import { checkOwnFolder, gitRoot, globFilter, hasRules, openIndex, readConfig, refresh } from "./store.mjs";
+import { DEFAULT_GOAL, fellShort, history, sinceFit } from "./hits.mjs";
 import { coverage, outline, search, symbols } from "./query.mjs";
 import { find } from "./find.mjs";
 import { meaningModel } from "./meaning.mjs";
@@ -98,7 +99,7 @@ function formatSearch(result) {
 async function answer(message) {
   const { id, method, params } = message;
   if (method === "initialize") {
-    const instructions = countsNotice();
+    const instructions = [fitNotice(), countsNotice()].filter(Boolean).join("\n") || undefined;
     return { protocolVersion: params?.protocolVersion ?? "2025-06-18", capabilities: { tools: {} },
       serverInfo: { name: "findwright", version: VERSION }, ...(instructions && { instructions }) };
   }
@@ -160,6 +161,27 @@ function countsNotice() {
   const day = new Date(failedAt).toLocaleDateString("en-CA");
   return `Tell the user in one line: this computer shares FindWright's usage counts, but this repo's last `
     + `send failed (${day}). The server tries again once a day; if this keeps showing, check the network.`;
+}
+
+// The session-start notice that sends the session to /findwright:fit: the repo has no rules yet,
+// or its last few sessions since the config last changed all found the file less often than the goal.
+function fitNotice() {
+  if (!root) return undefined;
+  try {
+    // A cloned repo's .findwright/ is refused here too, before any of its files is read.
+    checkOwnFolder(root);
+    if (!hasRules(root)) {
+      return "This repo has not been fitted for FindWright yet, so searches can miss its code by name. Before the first "
+        + "search, run /findwright:fit, and tell the user in one line that it is fitting FindWright to the project.";
+    }
+    if (fellShort(sinceFit(root, history(root)), readConfig(root).goal ?? DEFAULT_GOAL)) {
+      return "FindWright's last few sessions here found the file less often than the goal. Run /findwright:fit "
+        + "to extend the rules where searches missed, and tell the user in one line why.";
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
 }
 
 async function handle(line) {

@@ -111,6 +111,25 @@ export function normalConfig(raw) {
   return { include: strings(config.include), exclude: strings(config.exclude), kinds, rules, goal };
 }
 
+/** True when the repo's config lists rules, an empty list included: a project fitted with no
+ * rules says so with `"rules": []`, so it is not sent to the fit again. */
+export function hasRules(root) {
+  try {
+    return Array.isArray(JSON.parse(readFileSync(join(root, ".findwright", "config.json"), "utf8")).rules);
+  } catch {
+    return false;
+  }
+}
+
+/** When the repo's config last changed, in milliseconds since the epoch, or 0 when it has none. */
+export function configChangedAt(root) {
+  try {
+    return statSync(join(root, ".findwright", "config.json")).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
 export function readConfig(root) {
   try {
     return normalConfig(JSON.parse(readFileSync(join(root, ".findwright", "config.json"), "utf8")));
