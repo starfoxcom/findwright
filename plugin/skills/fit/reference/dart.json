@@ -29,7 +29,10 @@
    "end": "brace",
    "nest": true,
    "group": "decl",
-   "pattern": "^\\s*extension\\s+(?:type\\s+)?(?<name>[A-Za-z_$][\\w$]*)"
+   "pattern": "^\\s*extension\\s+(?:type\\s+)?(?<name>[A-Za-z_$][\\w$]*)",
+   "except": [
+    "on"
+   ]
   },
   {
    "globs": [
@@ -77,7 +80,11 @@
    "end": "brace",
    "nest": true,
    "group": "decl",
-   "pattern": "^  (?:const\\s+|factory\\s+)*(?<name>_?[A-Z][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)?)\\s*\\("
+   "pattern": "^  (?:const\\s+|factory\\s+)*(?<name>_?[A-Z][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)?)\\s*\\(",
+   "inside": {
+    "start": "^(?:(?:abstract|base|final|interface|sealed|mixin)\\s+)*(?:class|enum)\\s",
+    "end": "indent"
+   }
   },
   {
    "globs": [
@@ -102,7 +109,7 @@
     "throw",
     "print"
    ],
-   "pattern": "^\\s*(?:@\\w+\\s+)?(?:(?:static|external|abstract|override)\\s+)*(?:Future|Stream|FutureOr|void|[A-Za-z_$][\\w$]*)(?:<[^()]*?>)?\\??\\s+(?<name>_?[a-z$][\\w$]*)\\s*(?:<[^()]*>)?\\s*\\("
+   "pattern": "^\\s*(?:@\\w+\\s+)?(?:(?:static|external|abstract|override)\\s+)*(?:void|dynamic|int|double|num|bool|[A-Z_$][\\w$]*)(?:<[^()]*?>)?\\??\\s+(?<name>_?[a-z$][\\w$]*)\\s*(?:<[^()]*>)?\\s*\\("
   },
   {
    "globs": [

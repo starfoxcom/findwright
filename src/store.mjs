@@ -84,7 +84,8 @@ export function globFilter(globs = []) {
   return (path) => (!plain.length || plain.some((g) => g.test(path))) && !left.some((g) => g.test(path));
 }
 
-const matchesAny = (path, globs) => globs.some((g) => globToRegExp(g).test(path));
+/** True when `path` matches any of `globs`. */
+export const matchesAny = (path, globs) => globs.some((g) => globToRegExp(g).test(path));
 
 
 // The config as the code reads it: a value of the wrong type is dropped, so a hand-edited or hostile
