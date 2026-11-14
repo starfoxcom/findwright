@@ -107,6 +107,15 @@ export function hasRules(root) {
   }
 }
 
+/** When the repo's config last changed, in milliseconds since the epoch, or 0 when it has none. */
+export function configChangedAt(root) {
+  try {
+    return statSync(join(root, ".findwright", "config.json")).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
 export function readConfig(root) {
   try {
     return normalConfig(JSON.parse(readFileSync(join(root, ".findwright", "config.json"), "utf8")));

@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { gitRoot, globFilter, hasRules, openIndex, readConfig, refresh } from "./store.mjs";
-import { DEFAULT_GOAL, fellShort, history } from "./hits.mjs";
+import { DEFAULT_GOAL, fellShort, history, sinceFit } from "./hits.mjs";
 import { coverage, outline, search, symbols } from "./query.mjs";
 import { find } from "./find.mjs";
 import { meaningModel } from "./meaning.mjs";
@@ -164,7 +164,7 @@ function countsNotice() {
 }
 
 // The session-start notice that sends the session to /findwright:fit: the repo has no rules yet,
-// or its last few sessions all found the file less often than the goal.
+// or its last few sessions since the config last changed all found the file less often than the goal.
 function fitNotice() {
   if (!root) return undefined;
   try {
@@ -172,7 +172,7 @@ function fitNotice() {
       return "This repo has no FindWright rules yet, so searches cannot find its code by name. Before the first "
         + "search, run /findwright:fit, and tell the user in one line that it is fitting FindWright to the project.";
     }
-    if (fellShort(history(root), readConfig(root).goal ?? DEFAULT_GOAL)) {
+    if (fellShort(sinceFit(root, history(root)), readConfig(root).goal ?? DEFAULT_GOAL)) {
       return "FindWright's last few sessions here found the file less often than the goal. Run /findwright:fit "
         + "to extend the rules where searches missed, and tell the user in one line why.";
     }
