@@ -14,7 +14,7 @@ The plugin directory accepts from an organization that is not Verified only Mark
   - `helper.json`: the helper tarball's file name, release URL and SHA-256, written by the packer.
   - Skills: `setup`, `update`, `doctor`, `remove`, and `find` (the lookup sequence: `find`, then `search`, `symbols` and `outline`).
 - **The helper** (`findwright-X.Y.Z.tgz`, attached to each release): `package.json`, `src/`, `hooks/findwright-first.mjs`, `README.md`, `LICENSE`, `CHANGELOG.md`. No dependencies and no install scripts. Setup installs it with `npm install --prefix ~/.findwright/helper --no-save --ignore-scripts --no-audit --no-fund <file>`, so it lands at `~/.findwright/helper/node_modules/findwright/`.
-- **The marketplace** (`.claude-plugin/marketplace.json` at the repo root): one plugin, `findwright`, with an `archive` source naming the release zip and its SHA-256.
+- **The marketplace**: the shared `wrights` marketplace ([starfoxcom/wrights](https://github.com/starfoxcom/wrights)) lists `findwright` beside Bindwright, with an `archive` source naming the release zip and its SHA-256. Each release opens a pull request there that moves the entry.
 - **The `plugin` branch**: the packed plugin of the newest release at its root, one commit per release, which the directory listing follows. Each of those commits is tagged `findwright--vX.Y.Z`, so a marketplace that sources the branch can resolve a version range.
 
 ## What setup does
@@ -30,11 +30,11 @@ The plugin directory accepts from an organization that is not Verified only Mark
 
 ## Building and releasing
 
-- `tools/pack.mjs` builds the zip and the tarball from the files git stores at a ref, never the working tree, so every machine and CI get the same bytes whatever the line endings. Entries are stored uncompressed with fixed dates and modes, so zlib versions cannot change the bytes. `--marketplace` rewrites the marketplace pin for HEAD's zip.
+- `tools/pack.mjs` builds the zip and the tarball from the files git stores at a ref, never the working tree, so every machine and CI get the same bytes whatever the line endings. Entries are stored uncompressed with fixed dates and modes, so zlib versions cannot change the bytes. `--marketplace FILE` rewrites the `findwright` entry of a marketplace file, a checkout of the wrights repo, to pin the ref's zip.
 - `tools/directory_check.mjs` replays the directory's rules on every pack, so a release never meets a refusal.
-- `.github/workflows/release-plugin.yml`, on a published release: rebuilds the zip and tarball from the tag, refuses when the zip's SHA-256 differs from the default branch's marketplace pin or the tarball differs from the zip's `helper.json`, attaches both to the release, and writes the `plugin` branch.
-- Versions: one SemVer number for `package.json`, `plugin.json`, the marketplace entry and the tag. `CHANGELOG.md` keeps one section per release.
+- `.github/workflows/release-plugin.yml`, on a published release: rebuilds the zip and tarball from the tag, refuses when the zip's SHA-256 differs from the pin on the wrights marketplace's main branch or the tarball differs from the zip's `helper.json`, attaches both to the release, and writes the `plugin` branch.
+- Versions: one SemVer number for `package.json`, `plugin.json`, the wrights marketplace entry and the tag. `CHANGELOG.md` keeps one section per release.
 
 ## Living beside Bindwright
 
-Both can register a server named `findwright`. Bindwright's setup registers its own copy; FindWright's setup points the registration at its helper instead. The follow-up on Bindwright's side is to install FindWright from these releases (pinned version and SHA-256) instead of carrying a copy of `src/`, so the two never drift.
+Bindwright installs this plugin from the `wrights` marketplace and leaves the registration to `/findwright:setup`, so the two never carry different copies. An older Bindwright registered its own copy under the name `findwright`; FindWright's setup switches that registration to its helper.
