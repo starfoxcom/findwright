@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -62,19 +62,39 @@ test("a server open past the day's wait tries the counts send again on its next 
   }
 });
 
-test("a session started after a failed counts send is told once a day", () => {
-  const home = mkdtempSync(join(tmpdir(), "findwright-home-"));
+// A git repo, with `.findwright/config.json` holding `config` when one is given.
+function fittedRepo(config) {
   const repo = mkdtempSync(join(tmpdir(), "findwright-repo-"));
   spawnSync("git", ["init", "-q"], { cwd: repo });
+  if (config) {
+    mkdirSync(join(repo, ".findwright"));
+    writeFileSync(join(repo, ".findwright", "config.json"), JSON.stringify(config));
+  }
+  return repo;
+}
+
+function instructionsAt(repo, home = env.FINDWRIGHT_HOME) {
+  const input = `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })}\n`;
+  const run = spawnSync(process.execPath, [server],
+    { input, encoding: "utf8", timeout: 10_000, env: { ...env, FINDWRIGHT_HOME: home, FINDWRIGHT_ROOT: repo } });
+  return JSON.parse(run.stdout.trim()).result.instructions;
+}
+
+test("a session is sent to /findwright:fit when the repo has no rules, or its last sessions fell short", () => {
+  assert.match(instructionsAt(fittedRepo()), /findwright:fit/, "no config");
+  assert.equal(instructionsAt(fittedRepo({ rules: [] })), undefined, "fitted with no rules");
+  const short = fittedRepo({ rules: [], goal: 90 });
+  const session = (n) => JSON.stringify({ session: `s${n}`, scored: 10, hits: 5, misses: [] });
+  writeFileSync(join(short, ".findwright", "hits.jsonl"), [1, 2, 3].map(session).join("\n") + "\n");
+  assert.match(instructionsAt(short), /less often than the goal/, "three sessions at 50%");
+});
+
+test("a session started after a failed counts send is told once a day", () => {
+  const home = mkdtempSync(join(tmpdir(), "findwright-home-"));
+  const repo = fittedRepo({ rules: [] });
   const project = { id: "a".repeat(32), kind: "game", lastTry: Date.now(), failedAt: Date.now() };
   writeFileSync(join(home, "counts.json"), JSON.stringify({ asked: true, share: true,
     projects: { [realpathSync.native(repo)]: project } }));
-  const start = () => {
-    const input = `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })}\n`;
-    const run = spawnSync(process.execPath, [server],
-      { input, encoding: "utf8", timeout: 10_000, env: { ...env, FINDWRIGHT_HOME: home, FINDWRIGHT_ROOT: repo } });
-    return JSON.parse(run.stdout.trim()).result.instructions;
-  };
-  assert.match(start(), /last send failed/);
-  assert.equal(start(), undefined, "a second session the same day");
+  assert.match(instructionsAt(repo, home), /last send failed/);
+  assert.equal(instructionsAt(repo, home), undefined, "a second session the same day");
 });
