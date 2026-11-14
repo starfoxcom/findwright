@@ -61,7 +61,7 @@ const TOOLS = {
     run: (args) => text(formatSearch(search(db, args))),
   },
   symbols: {
-    description: "Find symbols by name (a regex or a substring): functions, classes, Markdown headings, YAML and JSON keys, and the project's own kinds (template placeholders, text keys).",
+    description: "Find symbols by name (a regex or a substring): whatever the project's rules name, such as functions, classes, headings, config keys, tests and text keys.",
     inputSchema: {
       type: "object",
       properties: { query: { type: "string" }, kind: { type: "string" }, globs, limit: { type: "number" } },

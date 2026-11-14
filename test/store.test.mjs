@@ -73,7 +73,7 @@ test("a config of the wrong shape is read as far as it is right, never thrown on
     ["rules as an object", { rules: {} }],
     ["a null rule", { rules: [null, { pattern: "x", kind: "k" }] }],
     ["rule globs as a string", { rules: [{ pattern: "x", kind: "k", globs: "*.md" }] }],
-    ["an object kind", { kinds: { "*.js": {} }, rules: [{ pattern: "x", kind: {} }] }],
+    ["an object kind", { rules: [{ pattern: "x", kind: {} }] }],
     ["a goal out of range", { goal: 500 }],
   ];
   for (const [name, raw] of cases) {
@@ -81,7 +81,6 @@ test("a config of the wrong shape is read as far as it is right, never thrown on
     assert.ok(Array.isArray(config.include) && config.include.every((g) => typeof g === "string"), name);
     assert.ok(config.exclude.every((g) => typeof g === "string"), name);
     assert.ok(config.rules.every((r) => typeof r.kind === "string" && Array.isArray(r.globs)), name);
-    assert.ok(Object.values(config.kinds).every((k) => typeof k === "string"), name);
     assert.ok(config.goal === undefined || (config.goal > 0 && config.goal <= 100), name);
   }
   assert.deepEqual(normalConfig({ exclude: [5, "dist/**"] }).exclude, ["dist/**"]);
@@ -108,7 +107,7 @@ test("an include that names one file, or uses only ?, takes that file in", () =>
   rmSync(root, { recursive: true, force: true });
 });
 
-test("a new rule or kind in the config re-reads files that did not change", () => {
+test("a new rule in the config re-reads files that did not change", () => {
   const root = repo();
   writeFileSync(join(root, "schema.sql"), "CREATE TABLE projects (id TEXT);\n");
   const db = openIndex(root);
@@ -132,7 +131,7 @@ test("an index a newer copy built is refused, and one an older copy built is reb
   const db = openIndex(root);
   refresh(db, root, normalConfig({}));
   const stamp = (engine) => db.prepare("UPDATE settings SET value = ? WHERE key = 'extraction'")
-    .run(JSON.stringify({ engine, kinds: {}, rules: [] }));
+    .run(JSON.stringify({ engine, rules: [] }));
   stamp("999.0.0");
   assert.throws(() => refresh(db, root, normalConfig({})), /restart the session/);
   assert.match(db.prepare("SELECT value FROM settings WHERE key = 'extraction'").get().value, /999\.0\.0/);
