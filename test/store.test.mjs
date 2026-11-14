@@ -125,3 +125,19 @@ test("a new rule or kind in the config re-reads files that did not change", () =
   db.close();
   rmSync(root, { recursive: true, force: true });
 });
+
+test("an index a newer copy built is refused, and one an older copy built is rebuilt", () => {
+  const root = repo();
+  writeFileSync(join(root, "a.md"), "# A\n");
+  const db = openIndex(root);
+  refresh(db, root, normalConfig({}));
+  const stamp = (engine) => db.prepare("UPDATE settings SET value = ? WHERE key = 'extraction'")
+    .run(JSON.stringify({ engine, kinds: {}, rules: [] }));
+  stamp("999.0.0");
+  assert.throws(() => refresh(db, root, normalConfig({})), /restart the session/);
+  assert.match(db.prepare("SELECT value FROM settings WHERE key = 'extraction'").get().value, /999\.0\.0/);
+  stamp("0.0.1");
+  assert.equal(refresh(db, root, normalConfig({})).reindexed, 1);
+  db.close();
+  rmSync(root, { recursive: true, force: true });
+});

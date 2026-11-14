@@ -229,13 +229,36 @@ function symbolsOf(text, path, kind, config) {
   return own.concat(fromRules(text, rules));
 }
 
+// This copy's version, stamped on the index with the config it read: a session can keep an older
+// copy running after an update, and that copy must not rebuild an index a newer one wrote.
+const ENGINE = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+
+const versionParts = (version) => version.split(".").map(Number);
+
+function isNewer(version, than) {
+  const [a, b] = [versionParts(version), versionParts(than)];
+  const differs = a.findIndex((part, i) => part !== b[i]);
+  return differs >= 0 && a[differs] > b[differs];
+}
+
+// Throws when a newer copy built the index, rather than rebuild it with older code.
+function refuseNewerIndex(stored) {
+  let engine;
+  try { engine = JSON.parse(stored ?? "{}").engine; } catch { return; }
+  if (typeof engine !== "string" || !/^\d+\.\d+\.\d+$/.test(engine) || !isNewer(engine, ENGINE)) return;
+  throw new Error(`FindWright ${engine} built this index, and this copy is ${ENGINE}: `
+    + "restart the session so it runs the new copy.");
+}
+
 // Brings the index level with the working tree; returns what changed. A change to the config's
-// kinds or rules sends every indexed file through indexFile again, the path a fresh index takes.
+// kinds or rules, or to this copy's version, sends every indexed file through indexFile again,
+// the path a fresh index takes.
 // The stored settings are checked and those files chosen under the write lock, so whenever the
 // settings are written, every file row in the index was indexed with them.
 export function refresh(db, root, config = readConfig(root)) {
-  const extraction = JSON.stringify({ kinds: config.kinds, rules: config.rules });
+  const extraction = JSON.stringify({ engine: ENGINE, kinds: config.kinds, rules: config.rules });
   const indexedWith = storedExtraction(db);
+  refuseNewerIndex(indexedWith);
   const sameExtraction = indexedWith === extraction;
   const known = new Map(db.prepare("SELECT path, size, mtime FROM files").all().map((r) => [r.path, r]));
   const seen = new Set();
@@ -287,7 +310,8 @@ function reindexOthers(db, root, done, config) {
   return others.length;
 }
 
-// The config's kinds and rules the index was built with, as JSON, or undefined before the first build.
+// The copy's version and the config's kinds and rules the index was built with, as JSON,
+// or undefined before the first build.
 function storedExtraction(db) {
   return db.prepare("SELECT value FROM settings WHERE key = 'extraction'").get()?.value;
 }
