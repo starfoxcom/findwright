@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - A session that kept running an older FindWright after an update no longer rebuilds the index a newer copy wrote with its old settings. The index records the version that built it, and an older copy refuses it with a note to restart the session ([#49](https://github.com/starfoxcom/findwright/issues/49)).
-- A rule reads every line in full instead of skipping a line longer than 400 characters, so a JSON file of long values keeps its keys. Each file's block scans share a budget of characters, so a long or hostile file still costs a bounded time.
+- A rule reads every line in full instead of skipping a line longer than 400 characters, so a JSON file of long values keeps its keys. Each file's block scans and repeat matches on a line share a budget of characters, so a long or hostile file still costs a bounded time.
 - The setup skill's helper install line writes the home folder as a placeholder instead of an environment variable, since the plugin directory holds a plugin whose skill text puts a variable beside a network command. The directory check now counts `npm`, `npx` and `fetch` as network commands and "key" and "auth" as credential words, so a line like that fails the pack.
 - The plugin's homepage points at the README while the FindWright page is not published, so its listing links to a page that exists.
 
