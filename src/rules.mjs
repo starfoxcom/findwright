@@ -134,9 +134,12 @@ function nameOf(match) {
   return key ? groups[key] : match[0];
 }
 
+// The rule's symbols in file order, and where its first line was cut short by REPEAT_READS (or
+// null), as [line, col].
 function matchesOf(all, rule, taken, allowed) {
   markAllowed(all, rule, allowed);
   const found = [];
+  let cutAt = null;
   for (let i = 0; i < all.length; i++) {
     if (!allowed[i] || taken?.has(i)) continue;
     let matched = false;
@@ -151,11 +154,14 @@ function matchesOf(all, rule, taken, allowed) {
       }
       // The next search can read the rest of the line, so each one after the first spends it.
       reads -= all[i].length - matchEnd;
-      if (reads < 0) break;
+      if (reads < 0) {
+        cutAt ??= [i, matchEnd];
+        break;
+      }
     }
     if (matched) taken?.add(i);
   }
-  return found;
+  return { found, cutAt };
 }
 
 // Skips the string that opens at `start` on `text`; returns the index of its closing quote.
@@ -371,13 +377,15 @@ function setEnds(all, rule, symbols) {
 const before = (a, b) => a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]);
 
 // Names each nesting rule's symbol under the innermost nesting symbol whose block holds its start.
-function nestNames(symbols) {
+// A nesting symbol from `cutAt` on is dropped: a key the cut left out could hold it.
+function nestNames(symbols, cutAt) {
   symbols.sort((a, b) => a.line - b.line || a.col - b.col || a.rule.order - b.rule.order);
   const open = [];
   const kept = [];
   for (const symbol of symbols) {
     const start = [symbol.line, symbol.col];
     while (open.length && !before(start, open.at(-1).end)) open.pop();
+    if (symbol.rule.nest && cutAt && !before(start, cutAt)) continue;
     if (symbol.rule.nest) {
       const parent = open.at(-1);
       const name = parent ? `${parent.fullName}${symbol.rule.nest}${symbol.name}` : symbol.name;
@@ -401,15 +409,17 @@ export function fromRules(text, rules) {
   const allowed = new Uint8Array(all.length);
   const claimed = new Map();
   const symbols = [];
+  let cutAt = null;
   rules.forEach((rule, order) => {
     const normal = normalRule(rule);
     const compiled = normal && compile(normal, order);
     if (!compiled) return;
     if (compiled.group && !claimed.has(compiled.group)) claimed.set(compiled.group, new Set());
-    const found = matchesOf(all, compiled, claimed.get(compiled.group), allowed);
+    const { found, cutAt: cut } = matchesOf(all, compiled, claimed.get(compiled.group), allowed);
+    if (compiled.nest && cut && (!cutAt || before(cut, cutAt))) cutAt = cut;
     setEnds(all, compiled, found);
     for (const symbol of found) symbols.push(symbol);
   });
-  return nestNames(symbols)
+  return nestNames(symbols, cutAt)
     .map((s) => ({ name: s.fullName, kind: s.rule.kind, line: s.line + 1, endLine: s.end[0] + 1 }));
 }
