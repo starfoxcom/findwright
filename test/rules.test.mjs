@@ -133,6 +133,10 @@ for (const [name, text, rule, expected] of regions) {
 const unbounded = [
   ["brace blocks that never close", "function f() {\n".repeat(140_000), { pattern: FUNCTION, end: "brace" }],
   ["indent blocks that each run to the end", " x\n".repeat(700_000), { pattern: r`^(?<indent>)\s*x`, end: "indent" }],
+  ["indent regions over blank lines", "\n".repeat(1_000_000),
+    { pattern: "x", outside: [{ start: "^$", end: "indent" }] }],
+  ["until regions that never close", "a\n".repeat(700_000),
+    { pattern: "x", outside: [{ start: "^a", end: { until: "^b" } }] }],
 ];
 
 for (const [name, text, rule] of unbounded) {
