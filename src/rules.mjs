@@ -25,10 +25,9 @@ import { linearRegExp } from "./linear.mjs";
 const MAX_PATTERN = 300;
 // A nested name past this is dropped with everything under it, which keeps deep nesting linear.
 const MAX_NAME = 400;
-// Most characters one file's block ends, regions and repeat matches on a line may scan in all,
-// every line read in full; past it a block ends on its first line, a region covers nothing and a
-// rule takes only its first match on a line.
-const SCAN_CHARACTERS = 8_000_000;
+// The searches after a rule's first on a line may read this many times the line's length in all:
+// each can read to the end of the line, so this keeps matching linear in the file's size.
+const REPEAT_READS = 32;
 const OPEN_WITHIN = 3;
 const MAX_SEPARATOR = 4;
 // Most `outside` regions one rule may list; a rule past it is dropped, so a config cannot make
@@ -90,44 +89,29 @@ function compile(rule, order) {
   return { ...rule, order, pattern, until, inside, outside, except: new Set(rule.except ?? []) };
 }
 
-// Spends one line's characters from the scan budget; true once the budget is gone.
-function spend(budget, line) {
-  budget.left -= line.length + 1;
-  return budget.left < 0;
-}
-
 const indentOf = (line) => line.length - line.trimStart().length;
 
-// The last line (0-based) of the block that starts on `start` and runs while `isInside` holds; blank
-// lines run on. Each line read spends the budget, and past it the block ends on its first line.
-function blockEnd(all, start, isInside, budget) {
-  let end = start;
-  for (let i = start + 1; i < all.length; i++) {
-    if (spend(budget, all[i])) return start;
-    if (all[i].trim() === "") continue;
-    if (!isInside(all[i])) break;
-    end = i;
-  }
-  return end;
-}
+const isBlank = (line) => line.trim() === "";
 
-// The last line a region opened on `start` covers. Each line read spends the budget, and past it
-// the region covers nothing.
-function regionEnd(all, start, region, budget) {
-  if (!region.until) return blockEnd(all, start, (line) => indentOf(line) > indentOf(all[start]), budget);
+// The last line a region opened on `start` covers: its `until` line, or for "indent" the line
+// before the first filled line indented no deeper than the start (blank lines before it included).
+function regionEnd(all, start, region) {
+  const depth = indentOf(all[start]);
   for (let i = start + 1; i < all.length; i++) {
-    if (spend(budget, all[i])) return start;
-    if (region.until.test(all[i])) return i;
+    if (region.until ? region.until.test(all[i]) : !isBlank(all[i]) && indentOf(all[i]) <= depth) {
+      return region.until ? i : i - 1;
+    }
   }
   return all.length - 1;
 }
 
-// Sets `mask` to `value` on every line the region covers.
-function markRegion(all, region, budget, mask, value) {
+// Sets `mask` to `value` on every line the region covers. The search for the next start resumes
+// after each region, so every line is read once per region.
+function markRegion(all, region, mask, value) {
   for (let i = 0; i < all.length; i++) {
     if (region.first && i > 0) break;
     if (!region.start.test(all[i])) continue;
-    const end = regionEnd(all, i, region, budget);
+    const end = regionEnd(all, i, region);
     mask.fill(value, i + 1, end + 1);
     i = end;
   }
@@ -136,10 +120,10 @@ function markRegion(all, region, budget, mask, value) {
 // Fills `mask`, one entry per line, with whether the rule may match there: inside its `inside`
 // region (anywhere without one) and in none of its `outside` regions. One mask serves every rule
 // of a file in turn, so memory stays one byte per line however many rules and regions there are.
-function markAllowed(all, rule, budget, mask) {
+function markAllowed(all, rule, mask) {
   mask.fill(rule.inside ? 0 : 1);
-  if (rule.inside) markRegion(all, rule.inside, budget, mask, 1);
-  for (const region of rule.outside) markRegion(all, region, budget, mask, 0);
+  if (rule.inside) markRegion(all, rule.inside, mask, 1);
+  for (const region of rule.outside) markRegion(all, region, mask, 0);
 }
 
 // The `name` group, else the first of `name2`, `name3` ... that took part (one per alternative),
@@ -150,12 +134,13 @@ function nameOf(match) {
   return key ? groups[key] : match[0];
 }
 
-function matchesOf(all, rule, taken, budget, allowed) {
-  markAllowed(all, rule, budget, allowed);
+function matchesOf(all, rule, taken, allowed) {
+  markAllowed(all, rule, allowed);
   const found = [];
   for (let i = 0; i < all.length; i++) {
     if (!allowed[i] || taken?.has(i)) continue;
     let matched = false;
+    let reads = REPEAT_READS * all[i].length;
     for (const m of all[i].matchAll(rule.pattern)) {
       const name = nameOf(m);
       const matchEnd = m.index + m[0].length;
@@ -165,8 +150,8 @@ function matchesOf(all, rule, taken, budget, allowed) {
         found.push({ name, rule, line: i, col: m.index, matchEnd, indent, level: m.groups?.level?.length ?? 0 });
       }
       // The next search can read the rest of the line, so each one after the first spends it.
-      budget.left -= all[i].length - matchEnd;
-      if (budget.left < 0) break;
+      reads -= all[i].length - matchEnd;
+      if (reads < 0) break;
     }
     if (matched) taken?.add(i);
   }
@@ -191,40 +176,173 @@ function* codeChars(text, from) {
   }
 }
 
-// Where a "brace" block closes, as [line, col], or null when it opens none in reach. It counts `{`
-// and `}` from the match's start and closes at the end of the first line that leaves them balanced,
-// so a `{}` inside a parameter list ends nothing; a `;` before the first `{` (`int f();`) ends the
-// statement with no block.
-function braceEnd(all, symbol, budget) {
-  let depth = 0;
-  let opened = false;
-  for (let i = symbol.line; i < all.length; i++) {
-    if (spend(budget, all[i])) return null;
-    for (const [, ch] of codeChars(all[i], i === symbol.line ? symbol.col : 0)) {
-      if (ch === ";" && !opened) return null;
-      if (ch === "{") { depth++; opened = true; } else if (ch === "}") depth--;
-    }
-    if (opened && depth <= 0) return [i, Infinity];
-    if (!opened && i >= symbol.line + OPEN_WITHIN - 1) return null;
+// Open blocks keyed by the level that closes them, highest first, so a pass closes every block a
+// line reaches in one step however the blocks were opened.
+class OpenBlocks {
+  #items = [];
+
+  get size() {
+    return this.#items.length;
   }
-  return opened ? [all.length - 1, Infinity] : null;
+
+  add(key, symbol) {
+    const items = this.#items;
+    items.push([key, symbol]);
+    for (let i = items.length - 1; i > 0;) {
+      const parent = (i - 1) >> 1;
+      if (items[parent][0] >= items[i][0]) break;
+      [items[parent], items[i]] = [items[i], items[parent]];
+      i = parent;
+    }
+  }
+
+  // Removes and returns every symbol whose key is `level` or more.
+  closeAt(level) {
+    const closed = [];
+    while (this.#items.length && this.#items[0][0] >= level) closed.push(this.#take());
+    return closed;
+  }
+
+  // Removes and returns every symbol left.
+  rest() {
+    const left = this.#items.map(([, symbol]) => symbol);
+    this.#items = [];
+    return left;
+  }
+
+  #take() {
+    const items = this.#items;
+    const top = items[0][1];
+    const last = items.pop();
+    if (!items.length) return top;
+    items[0] = last;
+    for (let i = 0; ;) {
+      let high = i;
+      for (const child of [2 * i + 1, 2 * i + 2]) {
+        if (child < items.length && items[child][0] > items[high][0]) high = child;
+      }
+      if (high === i) return top;
+      [items[high], items[i]] = [items[i], items[high]];
+      i = high;
+    }
+  }
 }
 
-// Where a "value" block closes, as [line, col], or null for a scalar value. The first thing after
-// the match must be `{` or `[`, and the block closes at its own bracket, so one-line JSON nests.
-function valueEnd(all, symbol, budget) {
+// Ends every block of one rule in a single pass over the file, the way an editor pairs brackets:
+// one walk with the blocks still open, never a scan per symbol. Each pass takes one rule's
+// symbols in file order and leaves a symbol that opens no block at its own match.
+
+// "brace": a symbol counts `{` and `}` from its match and closes at the end of the first line
+// that leaves them balanced, so a `{}` inside a parameter list ends nothing; a `;` before its
+// first `{` (`int f();`), or no `{` within three lines, means no block. `depth` counts every
+// brace, so a symbol's own count is `depth` less the depth where it matched.
+function braceEnds(all, symbols) {
+  const open = new OpenBlocks();
+  let waiting = [];
+  let next = 0;
   let depth = 0;
-  for (let i = symbol.line; i < all.length; i++) {
-    if (spend(budget, all[i])) return null;
-    for (const [j, ch] of codeChars(all[i], i === symbol.line ? symbol.matchEnd : 0)) {
-      if (!ch.trim()) continue;
-      if (ch === "{" || ch === "[") depth++;
-      else if (depth === 0) return null;
-      else if ((ch === "}" || ch === "]") && --depth === 0) return [i, j];
+  const arrive = (i, col) => {
+    while (next < symbols.length && symbols[next].line === i && symbols[next].col <= col) {
+      waiting.push({ symbol: symbols[next++], from: depth });
     }
-    if (depth === 0 && i >= symbol.line + OPEN_WITHIN - 1) return null;
+  };
+  for (let i = symbols[0]?.line ?? all.length; i < all.length; i++) {
+    for (const [j, ch] of codeChars(all[i], 0)) {
+      arrive(i, j);
+      if (ch === ";") waiting = [];
+      else if (ch === "}") depth--;
+      else if (ch === "{") {
+        for (const { symbol, from } of waiting) open.add(from, symbol);
+        waiting = [];
+        depth++;
+      }
+    }
+    arrive(i, Infinity);
+    for (const symbol of open.closeAt(depth)) symbol.end = [i, Infinity];
+    waiting = waiting.filter(({ symbol }) => i < symbol.line + OPEN_WITHIN - 1);
+    if (!open.size && !waiting.length) {
+      if (next === symbols.length) return;
+      i = symbols[next].line - 1;
+    }
   }
-  return depth > 0 ? [all.length - 1, Infinity] : null;
+  for (const symbol of open.rest()) symbol.end = [all.length - 1, Infinity];
+}
+
+// "value": the first thing after a symbol's match must be `{` or `[` (within three lines), and
+// the block closes at that bracket's own closing bracket, so one-line JSON nests.
+function valueEnds(all, symbols) {
+  const brackets = [];
+  let waiting = [];
+  let next = 0;
+  let live = 0;
+  const arrive = (i, col) => {
+    while (next < symbols.length && symbols[next].line === i && symbols[next].matchEnd <= col) {
+      waiting.push(symbols[next++]);
+    }
+  };
+  for (let i = symbols[0]?.line ?? all.length; i < all.length; i++) {
+    for (const [j, ch] of codeChars(all[i], 0)) {
+      arrive(i, j);
+      if (!ch.trim()) continue;
+      const opens = ch === "{" || ch === "[";
+      if (opens) {
+        brackets.push(waiting);
+        live += waiting.length;
+      }
+      waiting = [];
+      if ((ch === "}" || ch === "]") && brackets.length) {
+        const closed = brackets.pop();
+        for (const symbol of closed) symbol.end = [i, j];
+        live -= closed.length;
+      }
+    }
+    arrive(i, Infinity);
+    waiting = waiting.filter((symbol) => i < symbol.line + OPEN_WITHIN - 1);
+    if (!live && !waiting.length) {
+      if (next === symbols.length) return;
+      brackets.length = 0;
+      i = symbols[next].line - 1;
+    }
+  }
+  for (const symbol of brackets.flat()) symbol.end = [all.length - 1, Infinity];
+}
+
+// "indent": a block runs through the last filled line indented deeper than the symbol, past
+// blank lines.
+function indentEnds(all, symbols) {
+  const open = new OpenBlocks();
+  let next = 0;
+  let lastFilled = -1;
+  const close = (symbol) => { symbol.end = [Math.max(symbol.line, lastFilled), Infinity]; };
+  for (let i = symbols[0]?.line ?? all.length; i < all.length; i++) {
+    const filled = !isBlank(all[i]);
+    if (filled) open.closeAt(indentOf(all[i])).forEach(close);
+    while (next < symbols.length && symbols[next].line === i) open.add(symbols[next].indent, symbols[next++]);
+    if (filled) lastFilled = i;
+    if (!open.size) {
+      if (next === symbols.length) return;
+      i = symbols[next].line - 1;
+    }
+  }
+  open.rest().forEach(close);
+}
+
+// { until }: every open block closes at the first later line the pattern matches.
+function untilEnds(all, symbols, until) {
+  let open = [];
+  let next = 0;
+  for (let i = symbols[0]?.line ?? all.length; i < all.length; i++) {
+    if (open.length && until.test(all[i])) {
+      for (const symbol of open) symbol.end = [i, Infinity];
+      open = [];
+    }
+    while (next < symbols.length && symbols[next].line === i) open.push(symbols[next++]);
+    if (!open.length) {
+      if (next === symbols.length) return;
+      i = symbols[next].line - 1;
+    }
+  }
+  for (const symbol of open) symbol.end = [all.length - 1, Infinity];
 }
 
 // Closes each "next" block at the line before the rule's next match of the same or a lower level.
@@ -240,27 +358,14 @@ function closeAtNext(all, symbols) {
   for (const symbol of open) symbol.end = [all.length - 1, Infinity];
 }
 
-function untilEnd(all, symbol, until, budget) {
-  for (let i = symbol.line + 1; i < all.length; i++) {
-    if (spend(budget, all[i])) return [symbol.line, Infinity];
-    if (until.test(all[i])) return [i, Infinity];
-  }
-  return [all.length - 1, Infinity];
-}
-
-// Sets `end` ([line, col], 0-based) on each of one rule's symbols.
-function setEnds(all, rule, symbols, budget) {
-  if (rule.end === "next") return closeAtNext(all, symbols);
-  for (const symbol of symbols) {
-    const own = [symbol.line, symbol.matchEnd];
-    if (rule.end === "brace") symbol.end = braceEnd(all, symbol, budget) ?? own;
-    else if (rule.end === "value") symbol.end = valueEnd(all, symbol, budget) ?? own;
-    else if (rule.end === "indent") {
-      symbol.end = [blockEnd(all, symbol.line, (line) => indentOf(line) > symbol.indent, budget), Infinity];
-    }
-    else if (rule.until) symbol.end = untilEnd(all, symbol, rule.until, budget);
-    else symbol.end = own;
-  }
+// Sets `end` ([line, col], 0-based) on each of one rule's symbols, which come in file order.
+function setEnds(all, rule, symbols) {
+  for (const symbol of symbols) symbol.end = [symbol.line, symbol.matchEnd];
+  if (rule.end === "next") closeAtNext(all, symbols);
+  else if (rule.end === "brace") braceEnds(all, symbols);
+  else if (rule.end === "value") valueEnds(all, symbols);
+  else if (rule.end === "indent") indentEnds(all, symbols);
+  else if (rule.until) untilEnds(all, symbols, rule.until);
 }
 
 const before = (a, b) => a[0] < b[0] || (a[0] === b[0] && a[1] < b[1]);
@@ -293,7 +398,6 @@ export function canRun(rule) {
 /** The symbols `rules` name in `text`, each { name, kind, line, endLine } with 1-based, inclusive lines. */
 export function fromRules(text, rules) {
   const all = text.split(/\r?\n/);
-  const budget = { left: SCAN_CHARACTERS };
   const allowed = new Uint8Array(all.length);
   const claimed = new Map();
   const symbols = [];
@@ -302,8 +406,8 @@ export function fromRules(text, rules) {
     const compiled = normal && compile(normal, order);
     if (!compiled) return;
     if (compiled.group && !claimed.has(compiled.group)) claimed.set(compiled.group, new Set());
-    const found = matchesOf(all, compiled, claimed.get(compiled.group), budget, allowed);
-    setEnds(all, compiled, found, budget);
+    const found = matchesOf(all, compiled, claimed.get(compiled.group), allowed);
+    setEnds(all, compiled, found);
     for (const symbol of found) symbols.push(symbol);
   });
   return nestNames(symbols)
