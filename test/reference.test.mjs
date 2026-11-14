@@ -25,6 +25,13 @@ const samples = [
   ["c++: constructors and destructors at the line start", "c-cpp.json", "a.cpp",
     "Foo::Foo(int x) {\n}\nFoo::~Foo() {\n}", ["Foo::Foo", "Foo::~Foo"]],
   ["c++: a test macro is a test only", "c-cpp.json", "a_test.cc", "TEST_F(Fixture, Does)\n{\n}", ["Does"]],
+  ["c: a function returning an enum is no enum", "c-cpp.json", "a.c",
+    "enum color get_color(void) {\n}", ["get_color"]],
+  ["c++: a qualified call at the line start is no method", "c-cpp.json", "a.cpp",
+    "std::move(x);\nFoo::bar(int x) {\n}\nFoo::Foo() = default;", ["Foo::bar", "Foo::Foo"]],
+  ["c++: locals in an inline body are no members", "c-cpp.json", "a.h",
+    "class A {\n  void f(int x);\n  void g() {\n    std::lock_guard<std::mutex> lock(mutex_);\n    Vec3 v(1, 2, 3);\n  }\n};",
+    ["A", "A::f"]],
   ["markdown: a comment in front matter is no heading", "markdown.json", "a.md",
     "---\n# comment\ntitle: x\n---\n# Real", ["title", "Real"]],
 ];
