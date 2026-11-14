@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { find } from "./find.mjs";
-import { checkOwnFolder } from "./store.mjs";
+import { checkOwnFolder, configChangedAt } from "./store.mjs";
 
 const SEARCH_TOOL = /^mcp__findwright__(find|search)$/;
 const OPEN_TOOLS = { Read: "file_path", Edit: "file_path", Write: "file_path", MultiEdit: "file_path" };
@@ -123,6 +123,12 @@ function parseLine(line) {
 
 const rateOf = (h) => (100 * h.hits) / h.scored;
 
+/** The sessions recorded since the config last changed, so a fit starts the count again. */
+export function sinceFit(root, sessions) {
+  const changed = configChangedAt(root);
+  return sessions.filter((h) => Date.parse(h.at ?? h.date) > changed);
+}
+
 /** Whether the last few recorded sessions all fell short of `goal`. */
 export function fellShort(sessions, goal) {
   const recent = sessions.slice(-SESSIONS_BEFORE_ASSESS);
@@ -143,7 +149,8 @@ export function recordSession(root, { goal = DEFAULT_GOAL, transcript = newestTr
   const session = transcript.replace(/^.*[\\/]/, "").replace(/\.jsonl$/, "");
   const score = scoreSession(transcript, root);
   const past = history(root).filter((h) => h.session !== session);
-  const entry = { session, date: new Date().toISOString().slice(0, 10), ...score };
+  const now = new Date().toISOString();
+  const entry = { session, date: now.slice(0, 10), at: now, ...score };
   // A second close of the same session replaces its line instead of adding one.
   if (score.scored) {
     mkdirSync(dirname(logFile(root)), { recursive: true });
@@ -153,7 +160,7 @@ export function recordSession(root, { goal = DEFAULT_GOAL, transcript = newestTr
     rate: score.scored ? Math.round(rateOf(entry)) : null,
     scored: score.scored,
     goal,
-    assess: fellShort([...past, ...(score.scored ? [entry] : [])], goal),
+    assess: fellShort(sinceFit(root, [...past, ...(score.scored ? [entry] : [])]), goal),
   };
 }
 

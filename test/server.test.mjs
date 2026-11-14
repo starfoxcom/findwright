@@ -84,9 +84,12 @@ test("a session is sent to /findwright:fit when the repo has no rules, or its la
   assert.match(instructionsAt(fittedRepo()), /findwright:fit/, "no config");
   assert.equal(instructionsAt(fittedRepo({ rules: [] })), undefined, "fitted with no rules");
   const short = fittedRepo({ rules: [], goal: 90 });
-  const session = (n) => JSON.stringify({ session: `s${n}`, scored: 10, hits: 5, misses: [] });
-  writeFileSync(join(short, ".findwright", "hits.jsonl"), [1, 2, 3].map(session).join("\n") + "\n");
+  const log = (at) => writeFileSync(join(short, ".findwright", "hits.jsonl"), [1, 2, 3]
+    .map((n) => JSON.stringify({ session: `s${n}`, at, scored: 10, hits: 5, misses: [] }) + "\n").join(""));
+  log(new Date(Date.now() + 60_000).toISOString());
   assert.match(instructionsAt(short), /less often than the goal/, "three sessions at 50%");
+  log("2020-01-01T00:00:00.000Z");
+  assert.equal(instructionsAt(short), undefined, "the same sessions, then a fit saved after them");
 });
 
 test("a session started after a failed counts send is told once a day", () => {
