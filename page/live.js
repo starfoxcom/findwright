@@ -33,8 +33,8 @@ function counterUrl() {
   return isLocal || url.origin === location.origin ? url.href : COUNTER;
 }
 
-const isCount = (value) => Number.isInteger(value) && value >= 0;
-const isRow = (row) => row?.kind in KIND_NAMES && isCount(row.searches) && row.searches > 0
+const isCount = (value) => Number.isSafeInteger(value) && value >= 0;
+const isRow = (row) => Object.hasOwn(KIND_NAMES, row?.kind) && isCount(row.searches) && row.searches > 0
   && isCount(row.hits) && row.hits <= row.searches;
 
 // The counter's answer, or null when it holds no project or is not the shape drawn here.
@@ -43,9 +43,13 @@ async function load() {
   if (!response.ok) return null;
   const total = await response.json();
   const fields = ["projects", "sessions", "searches", "hits", "bytes"];
-  if (!total || !fields.every((field) => isCount(total[field])) || total.searches === 0) return null;
+  if (!total || !fields.every((field) => isCount(total[field]))) return null;
+  if (total.projects === 0 || total.searches === 0 || total.hits > total.searches) return null;
   const rows = Array.isArray(total.top) ? total.top.filter(isRow) : [];
-  const countries = Array.isArray(total.countries) ? total.countries.length : 0;
+  // The counter files a send whose country it could not tell under "XX", which is no country.
+  const countries = Array.isArray(total.countries)
+    ? total.countries.filter((row) => /^[A-Z]{2}$/.test(row?.country) && row.country !== "XX").length
+    : 0;
   return rows.length ? { ...total, rows, countries } : null;
 }
 
@@ -61,19 +65,20 @@ function labelled(rows) {
   });
 }
 
-const el = (tag, cls, text = "") => Object.assign(document.createElement(tag), { className: cls, textContent: text });
+const element = (tag, className, text = "") =>
+  Object.assign(document.createElement(tag), { className, textContent: text });
 const percentOf = (part, whole) => Math.round((100 * part) / whole);
 const width = (part, whole) => `${((100 * part) / whole).toFixed(3)}%`;
 
 // Under the bar, each part's exact count, the number in its part's colour.
 function breakdown(row) {
-  const line = el("span", "project-breakdown");
+  const line = element("span", "project-breakdown");
   line.append(...[
     ["tone-hit", row.hits, "named the file"],
     ["tone-miss", row.searches - row.hits, "did not"],
   ].map(([tone, count, words]) => {
-    const part = el("span", "project-part");
-    part.append(el("b", tone, String(count)), ` ${words}`);
+    const part = element("span", "project-part");
+    part.append(element("b", tone, String(count)), ` ${words}`);
     return part;
   }));
   return line;
@@ -81,17 +86,22 @@ function breakdown(row) {
 
 // One project's row: its bar as wide as its searches against the largest, the hits part first.
 function projectRow(row, index, largest) {
-  const item = el("li", "project");
+  const item = element("li", "project");
   item.style.setProperty("--row", index);
-  const bar = el("i", "project-bar");
+  const bar = element("i", "project-bar");
   bar.style.width = width(row.searches, largest);
-  const hits = el("i", "seg-hit");
+  const hits = element("i", "seg-hit");
   hits.style.width = width(row.hits, row.searches);
-  bar.append(hits, el("i", "seg-miss"));
-  const track = el("span", "project-track");
+  bar.append(hits, element("i", "seg-miss"));
+  const track = element("span", "project-track");
   track.append(bar);
   const count = `${row.searches} searches · ${percentOf(row.hits, row.searches)}% found the file`;
-  item.append(el("span", "project-name", row.label), track, el("span", "project-count", count), breakdown(row));
+  item.append(
+    element("span", "project-name", row.label),
+    track,
+    element("span", "project-count", count),
+    breakdown(row),
+  );
   return item;
 }
 
