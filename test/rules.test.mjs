@@ -134,6 +134,8 @@ const unbounded = [
   ["indent blocks that each run to the end", " x\n".repeat(700_000), { pattern: r`^(?<indent>)\s*x`, end: "indent" }],
   ["indent regions over blank lines", "\n".repeat(1_000_000),
     { pattern: "x", outside: [{ start: "^$", end: "indent" }] }],
+  ["long lines whose every character opens a brace scan", `${"x".repeat(1000)}\n`.repeat(2000),
+    { pattern: "x", end: "brace" }],
   ["until regions that never close", "a\n".repeat(700_000),
     { pattern: "x", outside: [{ start: "^a", end: { until: "^b" } }] }],
 ];
@@ -166,4 +168,14 @@ test("a block left open on a line cut at its length cap ends on its own line, so
   const found = fromRules(text, [{ pattern: JSON_KEY, kind: "key", end: "value", nest: true }]);
   assert.deepEqual(found.map((s) => [s.name, s.line, s.endLine]),
     [["a", 2, 2], ["b", 3, 3], ["c", 4, 4], ["c.d", 4, 4]]);
+});
+
+test("a long line is read in full, so a block that opens or ends past its first 1000 characters is right", () => {
+  const data = `const DATA = [${"1, ".repeat(400)}2];\nfunction g() {\n  x;\n}`;
+  const rules = [{ pattern: r`^const\s+(?<name>\w+)`, kind: "const", end: "brace", nest: true },
+    { pattern: FUNCTION, kind: "function", end: "brace", nest: true }];
+  assert.deepEqual(spans(data, rules), [["DATA", 1, 1], ["g", 2, 4]]);
+  const records = `{${'"x": 1, '.repeat(120)}"a": {"z": 1}}\n{"b": 2}`;
+  const keys = fromRules(records, [{ pattern: JSON_KEY, kind: "key", end: "value", nest: true }]).map((s) => s.name);
+  assert.ok(keys.includes("a.z") && keys.includes("b") && !keys.includes("a.b"), keys.slice(-3).join(","));
 });
