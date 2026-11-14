@@ -6,12 +6,12 @@ name: Release plugin
 #
 # Both are rebuilt from the release tag by tools/pack.mjs, which reads the
 # files git stores, so every machine builds the same bytes. The job refuses a
-# zip whose SHA-256 differs from the pin in the default branch's
-# .claude-plugin/marketplace.json, since that copy is the one every machine
-# reads. The same files then go to the `plugin` branch, which the plugin
-# directory follows.
+# zip whose SHA-256 differs from the pin in the wrights marketplace
+# (starfoxcom/wrights, its main branch), since that copy is the one every
+# machine installs from. The same files then go to the `plugin` branch, which
+# the plugin directory follows.
 #
-# When a run refuses, fix the pin on the default branch and run this again
+# When a run refuses, fix the pin in the wrights marketplace and run this again
 # for the same release, never moving its tag:
 #   gh workflow run release-plugin.yml -f tag=vX.Y.Z
 
@@ -38,6 +38,7 @@ defaults:
 
 env:
   TAG: ${{ github.event.release.tag_name || inputs.tag }}
+  MARKETPLACE_REPO: starfoxcom/wrights
 
 jobs:
   release:
@@ -80,7 +81,6 @@ jobs:
         id: build
         env:
           GH_TOKEN: ${{ github.token }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
           version="${TAG#v}"
@@ -88,27 +88,27 @@ jobs:
           dir="$RUNNER_TEMP/helper"
           mkdir -p "$dir"
           market="$RUNNER_TEMP/marketplace.json"
-          path="repos/$GITHUB_REPOSITORY/contents/.claude-plugin/marketplace.json?ref=$DEFAULT_BRANCH"
+          path="repos/$MARKETPLACE_REPO/contents/.claude-plugin/marketplace.json?ref=main"
           gh api -H "Accept: application/vnd.github.raw+json" "$path" > "$market"
           node tools/pack.mjs --zip "$zip" --ref HEAD
           node tools/pack.mjs --tgz "$dir" --ref HEAD
           unzip -p "$zip" helper.json > "$RUNNER_TEMP/helper.json"
-          node - "$zip" "$version" "$market" "$DEFAULT_BRANCH" "$RUNNER_TEMP/helper.json" "$dir" <<'EOF'
+          node - "$zip" "$version" "$market" "$MARKETPLACE_REPO" "$RUNNER_TEMP/helper.json" "$dir" <<'EOF'
           const { createHash } = require("node:crypto");
           const { readFileSync } = require("node:fs");
           const { join } = require("node:path");
-          const [zip, version, market, branch, helperJson, dir] = process.argv.slice(2);
+          const [zip, version, market, repo, helperJson, dir] = process.argv.slice(2);
           const sha = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
-          const entry = JSON.parse(readFileSync(market, "utf8")).plugins.find((p) => p.name === "findwright");
+          const entry = JSON.parse(readFileSync(market, "utf8")).plugins.find((p) => p.name === "findwright") ?? { source: {} };
           const pin = JSON.parse(readFileSync(helperJson, "utf8")).node;
           const problems = [];
-          if (entry.version !== version) problems.push(`${branch}'s marketplace lists version ${entry.version}, the tag is ${version}`);
-          if ((entry.source.sha256 ?? "").toLowerCase() !== sha(zip)) problems.push(`${branch}'s marketplace pins ${entry.source.sha256}, the rebuilt zip is ${sha(zip)}`);
-          if (!(entry.source.url ?? "").endsWith(`/v${version}/findwright-${version}.zip`)) problems.push(`${branch}'s marketplace url does not name this release's zip`);
+          if (entry.version !== version) problems.push(`${repo} lists version ${entry.version}, the tag is ${version}`);
+          if ((entry.source.sha256 ?? "").toLowerCase() !== sha(zip)) problems.push(`${repo} pins ${entry.source.sha256}, the rebuilt zip is ${sha(zip)}`);
+          if (!(entry.source.url ?? "").endsWith(`/v${version}/findwright-${version}.zip`)) problems.push(`${repo}'s url does not name this release's zip`);
           if (sha(join(dir, pin.file)) !== pin.sha256) problems.push(`${pin.file} differs from the SHA-256 the plugin pins`);
           for (const p of problems) console.log(`::error::${p}`);
           if (problems.length) {
-            console.log(`::error::pin the zip on ${branch} (node tools/pack.mjs --marketplace), then run: gh workflow run release-plugin.yml -f tag=v${version}`);
+            console.log(`::error::set the findwright entry in ${repo} to this release's version, zip url and SHA-256, then run: gh workflow run release-plugin.yml -f tag=v${version}`);
             process.exit(1);
           }
           EOF
