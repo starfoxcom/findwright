@@ -3,8 +3,8 @@
 // the session went on to use.
 //   node replay.mjs events.jsonl results.jsonl
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync, readdirSync, writeFileSync, mkdirSync, openSync, writeSync } from "node:fs";
-import { openIndex, refresh } from "../src/store.mjs";
+import { readFileSync, writeFileSync, mkdirSync, openSync, writeSync } from "node:fs";
+import { openIndex, refresh, UNREADABLE } from "../src/store.mjs";
 
 // The reference sets for the file types every project has, as a fitted project would carry them.
 const REFERENCE = new URL("../plugin/skills/fit/reference/", import.meta.url);
@@ -246,7 +246,7 @@ function project(name, events, out) {
   const fileset = new Set(db.prepare("SELECT path FROM files").all().map((r) => r.path));
   const tracked = new Set(execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean));
   const known = (p) => fileset.has(p) || tracked.has(p);
-  const bare = db.prepare("SELECT COUNT(*) AS n FROM files WHERE symbols = 0 AND kind != 'binary'").get().n;
+  const bare = db.prepare("SELECT COUNT(*) AS n FROM files WHERE symbols = 0 AND kind != ?").get(UNREADABLE).n;
   console.log(`${name}: ${built.files} files, ${bare} without symbols, built in ${buildMs} ms`);
   let scored = 0;
   for (const ev of events) {
