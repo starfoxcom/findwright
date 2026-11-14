@@ -1,6 +1,6 @@
 {
   "name": "findwright",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "A code index and search tool that adapts to each project: regex search over every file, symbols from built-in extractors and per-project rules, served over MCP.",
   "type": "module",
   "bin": {
