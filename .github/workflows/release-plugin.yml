@@ -108,7 +108,7 @@ jobs:
           if (sha(join(dir, pin.file)) !== pin.sha256) problems.push(`${pin.file} differs from the SHA-256 the plugin pins`);
           for (const p of problems) console.log(`::error::${p}`);
           if (problems.length) {
-            console.log(`::error::pin the zip in ${repo} (node tools/pack.mjs --marketplace <its marketplace.json>), then run: gh workflow run release-plugin.yml -f tag=v${version}`);
+            console.log(`::error::set the findwright entry in ${repo} to this release's version, zip url and SHA-256, then run: gh workflow run release-plugin.yml -f tag=v${version}`);
             process.exit(1);
           }
           EOF
