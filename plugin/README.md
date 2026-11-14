@@ -11,7 +11,7 @@ From the plugin directory: in Claude Code, run `/plugin`, open Discover and inst
 /plugin install findwright@wrights
 ```
 
-Then run `/findwright:setup`. Running it is your yes to everything FindWright needs, so it installs each part and says what it installs: Node when yours is missing or behind on security fixes (on Windows; elsewhere it gives you the installer), the helper (the part that runs on your computer, the file attached to the plugin's GitHub release, checked against the SHA-256 the plugin pins, into `~/.findwright/helper` for your user only), the 32 MB meaning model, and the registration with Claude Code for every project. Inside a project, it also fits the index to it: it writes the rules that name the project's code, since FindWright knows no language by itself. It asks only about the hook that sends searches to FindWright in indexed repos. When a part cannot be installed, setup stops and FindWright stays off.
+Then run `/findwright:setup`. Running it is your yes to everything FindWright needs, so it installs each part and says what it installs: Node when yours is missing or behind on security fixes (on Windows; elsewhere it gives you the installer), the helper (the part that runs on your computer, the file attached to the plugin's GitHub release, checked against the SHA-256 the plugin pins, into `~/.findwright/helper` for your user only), the 32 MB meaning model, and the registration with Claude Code for every project. Inside a project, it also fits the index to it: it writes the rules that name the project's code, so searches find it by name. It asks only about the hook that sends searches to FindWright in indexed repos. When a part cannot be installed, setup stops and FindWright stays off.
 
 ## Use
 
