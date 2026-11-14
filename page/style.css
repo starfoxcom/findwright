@@ -13,6 +13,7 @@
   --on-accent: oklch(0.20 0.03 var(--hue));
   --del: oklch(0.72 0.15 25); /* how it was, struck through */
   --muted: oklch(0.50 0.01 240); /* the part of a bar that is not the result */
+  --muted-text: oklch(0.68 0.01 240); /* that part's count as text, lighter so it reads */
   color-scheme: dark;
   scroll-padding: 96px 0;
 }
@@ -233,6 +234,15 @@ footer {
   font-size: 14px; color: var(--text-2);
   font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap;
 }
+/* Under the bar: each part's exact count; the parts wrap whole, never mid-part. */
+.project-breakdown {
+  grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 2px 16px; margin-top: -8px;
+  font-size: 13px; color: var(--text-2); font-variant-numeric: tabular-nums;
+}
+.project-part { white-space: nowrap; }
+.project-part b { font-weight: 650; }
+.tone-hit { color: var(--accent); }
+.tone-miss { color: var(--muted-text); }
 .legend {
   display: flex; flex-wrap: wrap; gap: 8px 24px; margin-top: 20px; padding: 0; list-style: none;
   font-size: 14px; color: var(--text-2);
@@ -248,11 +258,13 @@ footer {
   .stat-label { margin-top: 6px; font-size: 15px; }
   /* Phones: each project's name and count sit above a full-width bar. */
   .project {
-    grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name count" "track track"; gap: 8px 16px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "name count" "track track" "breakdown breakdown"; gap: 6px 12px;
   }
   .project-name { grid-area: name; }
   .project-count { grid-area: count; }
   .project-track { grid-area: track; }
+  .project-breakdown { grid-area: breakdown; margin-top: 0; }
 }
 
 /* Each block below the hero fades in as it enters the view (reveal.js). If that script

@@ -65,6 +65,20 @@ const el = (tag, cls, text = "") => Object.assign(document.createElement(tag), {
 const percentOf = (part, whole) => Math.round((100 * part) / whole);
 const width = (part, whole) => `${((100 * part) / whole).toFixed(3)}%`;
 
+// Under the bar, each part's exact count, the number in its part's colour.
+function breakdown(row) {
+  const line = el("span", "project-breakdown");
+  line.append(...[
+    ["tone-hit", row.hits, "named the file"],
+    ["tone-miss", row.searches - row.hits, "did not"],
+  ].map(([tone, count, words]) => {
+    const part = el("span", "project-part");
+    part.append(el("b", tone, String(count)), ` ${words}`);
+    return part;
+  }));
+  return line;
+}
+
 // One project's row: its bar as wide as its searches against the largest, the hits part first.
 function projectRow(row, index, largest) {
   const item = el("li", "project");
@@ -76,8 +90,8 @@ function projectRow(row, index, largest) {
   bar.append(hits, el("i", "seg-miss"));
   const track = el("span", "project-track");
   track.append(bar);
-  const count = `${row.searches} searches, ${percentOf(row.hits, row.searches)}% found the file`;
-  item.append(el("span", "project-name", row.label), track, el("span", "project-count", count));
+  const count = `${row.searches} searches · ${percentOf(row.hits, row.searches)}% found the file`;
+  item.append(el("span", "project-name", row.label), track, el("span", "project-count", count), breakdown(row));
   return item;
 }
 
@@ -104,9 +118,10 @@ function show(total) {
     stats.querySelector(`[data-total="${name}"]`).textContent = format(value);
   }
   const places = total.countries > 1 ? ` in ${total.countries} countries` : "";
-  note.textContent = `From ${total.projects} ${total.projects === 1 ? "project" : "projects"}${places} `
-    + "whose owners turned on the anonymous counts. An anonymous counter cannot prove a count is real, "
-    + "so read these as a signal.";
+  const one = total.projects === 1;
+  note.textContent = `From ${total.projects} ${one ? "project" : "projects"}${places} `
+    + `whose ${one ? "owner" : "owners"} turned on the anonymous counts. `
+    + "An anonymous counter cannot prove a count is real, so read these as a signal.";
   const rows = labelled(total.rows);
   const largest = Math.max(...rows.map((row) => row.searches));
   chart.replaceChildren(...rows.map((row, index) => projectRow(row, index, largest)));
