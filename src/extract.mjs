@@ -5,7 +5,7 @@
 // linear-time engine, and lines past MAX_LINE (minified or generated text, never a
 // declaration) are read as blank, so no file can make extraction slow.
 
-import { linear, linearRegExp } from "./linear.mjs";
+import { linear } from "./linear.mjs";
 
 const MAX_LINE = 1000;
 const lines = (text) => text.split(/\r?\n/).map((line) => (line.length > MAX_LINE ? "" : line));
@@ -285,27 +285,3 @@ export function shell(text) {
 }
 
 export const EXTRACTORS = { markdown, yaml, json, javascript, python, css, html, shell };
-
-// Symbols from the project's own pattern rules: each rule's regex runs on every
-// line of the files its globs match, and its `name` group (or the whole match) names the symbol.
-// A rule comes from the repo's own config, so a cloned repo can carry a hostile one: it runs
-// on the linear engine, and a rule that engine cannot run (back-references, lookarounds) is skipped.
-const MAX_RULE_LINE = 400;
-
-const rulePattern = (source) => (typeof source === "string" && source.length <= 300 ? linearRegExp(source, "g") : null);
-
-export function fromRules(text, rules) {
-  const all = lines(text);
-  const found = [];
-  for (const rule of rules) {
-    const pattern = rulePattern(rule.pattern);
-    if (!pattern) continue;
-    for (let i = 0; i < all.length; i++) {
-      if (all[i].length > MAX_RULE_LINE) continue;
-      for (const m of all[i].matchAll(pattern)) {
-        found.push({ name: m.groups?.name ?? m[0], kind: rule.kind, line: i + 1, endLine: i + 1 });
-      }
-    }
-  }
-  return found;
-}

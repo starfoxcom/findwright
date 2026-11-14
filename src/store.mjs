@@ -7,7 +7,8 @@ import { DatabaseSync } from "node:sqlite";
 import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
-import { EXTRACTORS, fromRules } from "./extract.mjs";
+import { EXTRACTORS } from "./extract.mjs";
+import { fromRules, normalRule } from "./rules.mjs";
 import { linearRegExp } from "./linear.mjs";
 
 /** The root of the git repository the process runs in, or null outside one. */
@@ -105,9 +106,7 @@ export function normalConfig(raw) {
   const config = isObject(raw) ? raw : {};
   const kinds = Object.fromEntries(Object.entries(isObject(config.kinds) ? config.kinds : {})
     .filter(([, kind]) => typeof kind === "string"));
-  const rules = (Array.isArray(config.rules) ? config.rules : [])
-    .filter((r) => isObject(r) && typeof r.pattern === "string" && typeof r.kind === "string")
-    .map((r) => ({ pattern: r.pattern, kind: r.kind, globs: Array.isArray(r.globs) ? strings(r.globs) : ["**"] }));
+  const rules = (Array.isArray(config.rules) ? config.rules : []).map(normalRule).filter(Boolean);
   const goal = typeof config.goal === "number" && config.goal > 0 && config.goal <= 100 ? config.goal : undefined;
   return { include: strings(config.include), exclude: strings(config.exclude), kinds, rules, goal };
 }
