@@ -15,5 +15,3 @@ export function linearRegExp(source, flags = "") {
   }
 }
 
-/** A built-in pattern moved onto the linear engine; it stays as written only where that engine is missing. */
-export const linear = (pattern) => linearRegExp(pattern.source, pattern.flags) ?? pattern;
