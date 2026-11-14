@@ -64,7 +64,7 @@
    "kind": "enum",
    "end": "brace",
    "nest": "::",
-   "pattern": "^\\s*(?:typedef\\s+)?enum\\s+(?:class\\s+|struct\\s+)?(?<name>[A-Za-z_]\\w*)[^;]*$"
+   "pattern": "^\\s*(?:typedef\\s+)?enum\\s+(?:class\\s+|struct\\s+)?(?<name>[A-Za-z_]\\w*)[^;(]*$"
   },
   {
    "globs": [
@@ -92,7 +92,7 @@
    "end": "brace",
    "nest": "::",
    "group": "callable",
-   "pattern": "^(?:template\\s*<.*>\\s*)?(?:[A-Za-z_][\\w:<>,\\*& ]*?\\b)?(?<name>[A-Za-z_]\\w*::~?[A-Za-z_]\\w*)\\s*\\("
+   "pattern": "^(?:template\\s*<.*>\\s*)?(?:[A-Za-z_][\\w:<>,\\*& ]*?\\b)?(?<name>[A-Za-z_]\\w*::~?[A-Za-z_]\\w*)\\s*\\([^;{]*(?:\\{.*|=\\s*(?:default|delete)\\s*;)?$"
   },
   {
    "globs": [
@@ -193,7 +193,13 @@
     "decltype",
     "static_assert"
    ],
-   "pattern": "^\\s+(?:(?:virtual|static|inline|constexpr|explicit|friend|const|(?:un)?signed|short)\\s+)*(?:void|bool|char|int|long|float|double|auto|[A-Z_][\\w<>,:]*|[a-z]\\w*[_\\d:<][\\w<>,:]*)[\\*&\\s]+\\**(?<name>~?[A-Za-z_]\\w*)\\s*\\([^)]*\\)\\s*(?:(?:const|noexcept|override|final)\\s*)*(?:=\\s*(?:0|default|delete)\\s*)?;"
+   "pattern": "^\\s+(?:(?:virtual|static|inline|constexpr|explicit|friend|const|(?:un)?signed|short)\\s+)*(?:void|bool|char|int|long|float|double|auto|[A-Z_][\\w<>,:]*|[a-z]\\w*[_\\d:<][\\w<>,:]*)[\\*&\\s]+\\**(?<name>~?[A-Za-z_]\\w*)\\s*\\([^)]*\\)\\s*(?:(?:const|noexcept|override|final)\\s*)*(?:=\\s*(?:0|default|delete)\\s*)?;",
+   "outside": [
+    {
+     "start": "\\)\\s*(?:(?:const|noexcept|override|final)\\s*)*\\{\\s*$",
+     "end": "indent"
+    }
+   ]
   }
  ]
 }
