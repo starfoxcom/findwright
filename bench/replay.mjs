@@ -4,7 +4,7 @@
 //   node replay.mjs events.jsonl results.jsonl
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, openSync, writeSync } from "node:fs";
-import { openIndex, refresh, UNREADABLE } from "../src/store.mjs";
+import { openIndex, refresh, typeOf, UNREADABLE } from "../src/store.mjs";
 
 // The reference sets for the file types every project has, as a fitted project would carry them.
 const REFERENCE = new URL("../plugin/skills/fit/reference/", import.meta.url);
@@ -13,6 +13,9 @@ const BASE_RULES = ["markdown", "yaml", "json", "javascript-typescript", "python
   // A `.template` file is read as the file it renders to, as the fit globs it.
   .map((rule) => ({ ...rule, globs: rule.globs.flatMap((glob) => [glob, `${glob}.template`]) }));
 const withBase = (config) => ({ ...config, rules: [...BASE_RULES, ...(config.rules ?? [])] });
+// Code is what the old index read as code; every other file is a doc, a `.template` as its target.
+const CODE = /^(js|mjs|cjs|ts|tsx|jsx|mts|py|css|html|htm|sh|bash)$/;
+const isCode = (path) => CODE.test(typeOf(path.replace(/\.template$/, "")));
 import { search } from "../src/query.mjs";
 import { find } from "../src/find.mjs";
 import { ensureModel, loadModel } from "../src/embed.mjs";
@@ -151,7 +154,6 @@ function ours(db, ev, k) {
 }
 
 const snake = (w) => w.replace(/([a-z0-9])([A-Z])/g, "$1_$2").replace(/([A-Z])([A-Z][a-z])/g, "$1_$2").toLowerCase();
-const DOC_KINDS = new Set(["md", "mdx", "json", "jsonc", "yml", "yaml", "text"]);
 
 // Version 2: rare terms weigh more (IDF), file names count, `Foo::bar` answers
 // to `bar`, CamelCase answers to its snake_case file, and literal hits are ranked.
@@ -159,7 +161,6 @@ function ours2(db, ev, k) {
   const keep = pathFilter(ev.input);
   const t = performance.now();
   const N = db.prepare("SELECT COUNT(*) AS n FROM files").get().n;
-  const kinds = new Map(db.prepare("SELECT path, kind FROM files").all().map((r) => [r.path, r.kind]));
   const paths = [...kinds.keys()].filter(keep);
   const base = (p) => p.slice(p.lastIndexOf("/") + 1).toLowerCase();
   let ranked;
@@ -168,7 +169,7 @@ function ours2(db, ev, k) {
     const res = search(db, { patterns: [escapeRe(ev.input.query)], limit: 100000 });
     const q = ev.input.query.toLowerCase();
     const scoreOf = (f) => (base(f.path).includes(q) ? 5 : 0) + (f.hits.some((h) => h.symbol?.toLowerCase().includes(q)) ? 3 : 0)
-      + (DOC_KINDS.has(kinds.get(f.path)) ? 0 : 2) + Math.min(f.hits.length, 5) / 5;
+      + (isCode(f.path) ? 2 : 0) + Math.min(f.hits.length, 5) / 5;
     const files = res.files.filter((f) => keep(f.path)).map((f) => ({ ...f, s: scoreOf(f) })).sort((a, b) => b.s - a.s);
     ranked = files.map((f) => f.path);
     let budget = ev.input.limit ?? 10;
