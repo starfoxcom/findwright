@@ -112,9 +112,9 @@ function textProblems(rel, data) {
 // The directory holds a plugin as "uses a credential from the user's machine" when one line pairs
 // a web address or network command with a credential word or an environment variable. It reads
 // the text alone, so an example that never runs counts too.
-const NETWORK = /https?:\/\/|\b(curl|wget|Invoke-WebRequest|iwr)\b|\bgh api\b|--url\b/i;
+const NETWORK = /https?:\/\/|\b(curl|wget|npm|npx|fetch|Invoke-WebRequest|iwr)\b|\bgh api\b|--url\b/i;
 const VARIABLE = /\$\{?[A-Za-z_]\w*|\$env:\w+|%[A-Za-z_]\w*%/;
-const SECRET_WORD = /token|secret|passw(or)?d|credential|api[ _-]?key|bearer|authorization/i;
+const SECRET_WORD = /token|secret|passw(or)?d|credential|\bkeys?\b|api[ _-]?key|bearer|\bauth|authorization/i;
 
 function credentialLines(rel, text) {
   const pairs = (line) => NETWORK.test(line) && (VARIABLE.test(line) || SECRET_WORD.test(line));
