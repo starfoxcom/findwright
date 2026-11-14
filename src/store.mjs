@@ -82,6 +82,17 @@ function globSource(glob) {
   return glob.includes("/") ? `^${out}$` : `(?:^|/)${out}$`;
 }
 
+/**
+ * The path test for the tools' `globs`, read the way ripgrep's `-g` reads them: a glob starting
+ * with `!` leaves out the files it matches, and the others keep only the files they match.
+ * With no plain glob, every file is kept except those the `!` globs leave out.
+ */
+export function globFilter(globs = []) {
+  const plain = globs.filter((g) => !g.startsWith("!")).map(globToRegExp);
+  const left = globs.filter((g) => g.startsWith("!")).map((g) => globToRegExp(g.slice(1)));
+  return (path) => (!plain.length || plain.some((g) => g.test(path))) && !left.some((g) => g.test(path));
+}
+
 const matchesAny = (path, globs) => globs.some((g) => globToRegExp(g).test(path));
 
 /** True for a plain JSON object: not null, not an array. */

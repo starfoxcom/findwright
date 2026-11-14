@@ -1,7 +1,7 @@
 // Queries over the index: regex search with the enclosing symbol of each hit,
 // symbol lookup, a file's outline, and the coverage report.
 
-import { globToRegExp } from "./store.mjs";
+import { globFilter } from "./store.mjs";
 import vm from "node:vm";
 import { linearRegExp } from "./linear.mjs";
 
@@ -175,7 +175,7 @@ function enclosing(db, path, line) {
 export function search(db, { patterns, globs = [], ignoreCase = false, context = 0, limit = 200, all = false }) {
   const regexes = patterns.map((p) => sessionPattern(p, ignoreCase));
   const candidates = all ? shortlist(db, patterns) : unionOf(patterns.map((p) => shortlist(db, [p])));
-  const globRes = globs.map(globToRegExp);
+  const keep = globFilter(globs);
   const rows = candidates
     ? db.prepare("SELECT path, text FROM body").all().filter((r) => candidates.has(r.path))
     : db.prepare("SELECT path, text FROM body").all();
@@ -184,7 +184,7 @@ export function search(db, { patterns, globs = [], ignoreCase = false, context =
   const budget = searchBudget();
   try {
     for (const { path, text } of rows.sort((a, b) => a.path.localeCompare(b.path))) {
-      if (globRes.length && !globRes.some((g) => g.test(path))) continue;
+      if (!keep(path)) continue;
       const lines = text.split(/\r?\n/);
       const perPattern = regexes.map((re) => re.matchLines(lines, budget));
       if (all && perPattern.some((found) => found.length === 0)) continue;
@@ -214,9 +214,9 @@ function hit(db, path, lines, i, context) {
 export function symbols(db, { query, kind, globs = [], limit = 50 }) {
   let re;
   try { re = sessionPattern(query, true); } catch { re = sessionPattern(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), true); }
-  const globRes = globs.map(globToRegExp);
+  const keep = globFilter(globs);
   const rows = db.prepare("SELECT path, name, kind, line, end_line FROM symbols").all()
-    .filter((r) => (!kind || r.kind === kind) && (!globRes.length || globRes.some((g) => g.test(r.path))));
+    .filter((r) => (!kind || r.kind === kind) && keep(r.path));
   let named;
   try {
     named = new Set(re.matchLines(rows.map((r) => r.name), searchBudget()));
