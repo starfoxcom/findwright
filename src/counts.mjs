@@ -151,6 +151,21 @@ function blockedReason(state, project, now) {
   return null;
 }
 
+/**
+ * When `root` shares its counts and its last send failed, the time it failed (ms), once a day:
+ * the first call on a day marks the failure reported, so later calls that day return null.
+ */
+export function failureToReport(root, now = Date.now()) {
+  const state = readState();
+  const project = projectOf(state, root);
+  if (!state.share || !KINDS.includes(project?.kind) || typeof project.failedAt !== "number") return null;
+  const today = new Date(now).toLocaleDateString("en-CA");
+  if (project.failureReportedOn === today) return null;
+  project.failureReportedOn = today;
+  writeState(state);
+  return project.failedAt;
+}
+
 /** Whether a send for `root` would try at `now`: sharing on, a kind, and no try in the last day. */
 export function sendDue(root, now = Date.now()) {
   const state = readState();
@@ -158,13 +173,16 @@ export function sendDue(root, now = Date.now()) {
 }
 
 // Moves what the counter holds forward and, unless the try is to run again at once, starts the
-// day's wait. A project removed meanwhile stays removed.
-function record(root, { coveredTo, lastTry }) {
+// day's wait. `failedAt` is when a send failed, or null once one gets through.
+// A project removed meanwhile stays removed.
+function record(root, { coveredTo, lastTry, failedAt }) {
   const state = readState();
   const project = projectOf(state, root);
   if (!project) return;
   if (coveredTo !== undefined) project.coveredTo = Math.max(project.coveredTo ?? 0, coveredTo);
   if (lastTry !== undefined) project.lastTry = lastTry;
+  if (failedAt === null) delete project.failedAt;
+  else if (failedAt !== undefined) project.failedAt = failedAt;
   writeState(state);
 }
 
@@ -185,18 +203,18 @@ async function attempt(root, now, fetch) {
   try {
     reply = await post(fetch, { project: project.id, kind: project.kind, ...body });
   } catch (error) {
-    record(root, { lastTry: now });
+    record(root, { lastTry: now, failedAt: now });
     return { sent: false, reason: `not sent: ${error.message}` };
   }
   if (reply.status === 200) {
-    record(root, { coveredTo: body.to, lastTry: now });
+    record(root, { coveredTo: body.to, lastTry: now, failedAt: null });
     return { sent: true, ...body };
   }
   if (reply.status === 409 && Number.isSafeInteger(reply.body?.coveredTo)) {
-    record(root, { coveredTo: reply.body.coveredTo });
+    record(root, { coveredTo: reply.body.coveredTo, failedAt: null });
     return { sent: false, reason: "already counted; the next send starts after it" };
   }
-  record(root, { lastTry: now });
+  record(root, { lastTry: now, failedAt: now });
   return { sent: false, reason: `the counter answered ${reply.status}` };
 }
 

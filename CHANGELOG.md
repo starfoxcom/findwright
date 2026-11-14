@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- With usage counts turned on, a session started in a repo whose last send failed now says so, once a day, until a send gets through. A send that kept failing used to go unnoticed ([#35](https://github.com/starfoxcom/findwright/issues/35)).
+
 ## [1.0.2] - 2026-11-13
 
 ### Fixed

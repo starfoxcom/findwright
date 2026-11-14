@@ -10,7 +10,7 @@ import { gitRoot, globToRegExp, openIndex, readConfig, refresh } from "./store.m
 import { coverage, outline, search, symbols } from "./query.mjs";
 import { find } from "./find.mjs";
 import { meaningModel } from "./meaning.mjs";
-import { sendDue } from "./counts.mjs";
+import { failureToReport, sendDue } from "./counts.mjs";
 
 const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
@@ -99,7 +99,9 @@ function formatSearch(result) {
 async function answer(message) {
   const { id, method, params } = message;
   if (method === "initialize") {
-    return { protocolVersion: params?.protocolVersion ?? "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "findwright", version: VERSION } };
+    const instructions = countsNotice();
+    return { protocolVersion: params?.protocolVersion ?? "2025-06-18", capabilities: { tools: {} },
+      serverInfo: { name: "findwright", version: VERSION }, ...(instructions && { instructions }) };
   }
   if (method === "tools/list") {
     return { tools: Object.entries(TOOLS).map(([name, t]) => ({ name, description: t.description, inputSchema: t.inputSchema })) };
@@ -144,6 +146,22 @@ function sendCountsIfDue() {
   child.unref();
 }
 sendCountsIfDue();
+
+// The session-start notice, once a day, while this repo's last counts send failed. The server's
+// instructions are what a session reads at start, since the plugin ships no hooks.
+function countsNotice() {
+  if (!root) return undefined;
+  let failedAt;
+  try {
+    failedAt = failureToReport(root);
+  } catch {
+    return undefined;
+  }
+  if (failedAt === null) return undefined;
+  const day = new Date(failedAt).toLocaleDateString("en-CA");
+  return `Tell the user in one line: this computer shares FindWright's usage counts, but this repo's last `
+    + `send failed (${day}). The server tries again once a day; if this keeps showing, check the network.`;
+}
 
 async function handle(line) {
   if (!line.trim()) return;
