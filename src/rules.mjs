@@ -314,14 +314,14 @@ function valueEnds(all, symbols) {
 }
 
 // "indent": a block runs through the last filled line indented deeper than the symbol, past
-// blank lines.
+// blank lines and `#` comment lines, which end no block in YAML, Python or GDScript.
 function indentEnds(all, symbols) {
   const open = new OpenBlocks();
   let next = 0;
   let lastFilled = -1;
   const close = (symbol) => { symbol.end = [Math.max(symbol.line, lastFilled), Infinity]; };
   for (let i = symbols[0]?.line ?? all.length; i < all.length; i++) {
-    const filled = !isBlank(all[i]);
+    const filled = !isBlank(all[i]) && !all[i].trimStart().startsWith("#");
     if (filled) open.closeAt(indentOf(all[i])).forEach(close);
     while (next < symbols.length && symbols[next].line === i) open.add(symbols[next].indent, symbols[next++]);
     if (filled) lastFilled = i;

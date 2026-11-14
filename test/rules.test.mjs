@@ -80,6 +80,9 @@ const nesting = [
     "jobs:\n  review:\n    steps:\n      - run: x\n        with: y\n    env: z",
     [{ pattern: YAML_KEY, end: "indent", nest: true }],
     ["jobs", "jobs.review", "jobs.review.steps", "jobs.review.steps.run", "jobs.review.steps.with", "jobs.review.env"]],
+  ["YAML keys by path past a comment at the line start",
+    "jobs:\n  review:\n# note\n    steps: x", [{ pattern: YAML_KEY, end: "indent", nest: true }],
+    ["jobs", "jobs.review", "jobs.review.steps"]],
   ["a separator of the rule's own, under another rule's symbol",
     "class Grid {\n  build() {\n  }\n}",
     [{ pattern: r`^class\s+(?<name>\w+)`, end: "brace", nest: true },
@@ -137,6 +140,8 @@ const unbounded = [
     { pattern: "x", outside: [{ start: "^$", end: "indent" }] }],
   ["long lines whose every character opens a brace scan", `${"x".repeat(1000)}\n`.repeat(2000),
     { pattern: "x", end: "brace" }],
+  ["JSON values nested deeper than names reach", `${'{"a":\n'.repeat(60_000)}1${"}".repeat(60_000)}`,
+    { pattern: JSON_KEY, end: "value", nest: true }],
   ["until regions that never close", "a\n".repeat(700_000),
     { pattern: "x", outside: [{ start: "^a", end: { until: "^b" } }] }],
 ];
