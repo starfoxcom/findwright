@@ -6,11 +6,11 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { gitRoot, globToRegExp, openIndex, readConfig, refresh } from "./store.mjs";
+import { gitRoot, globFilter, openIndex, readConfig, refresh } from "./store.mjs";
 import { coverage, outline, search, symbols } from "./query.mjs";
 import { find } from "./find.mjs";
 import { meaningModel } from "./meaning.mjs";
-import { sendDue } from "./counts.mjs";
+import { failureToReport, sendDue } from "./counts.mjs";
 
 const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
@@ -20,7 +20,7 @@ const root = process.env.FINDWRIGHT_ROOT ?? gitRoot();
 let db = null;
 
 const text = (value) => ({ content: [{ type: "text", text: value }] });
-const globs = { type: "array", items: { type: "string" }, description: "Path globs (`page/**`, `*.md`); any file when empty." };
+const globs = { type: "array", items: { type: "string" }, description: "Path globs (`page/**`, `*.md`); any file when empty. A glob starting with `!` leaves out the files it matches (`!CHANGELOG.md`); with only `!` globs, every other file is kept." };
 
 const TOOLS = {
   find: {
@@ -35,8 +35,7 @@ const TOOLS = {
       required: ["query"],
     },
     run: async (args) => {
-      const globRes = (args.globs ?? []).map(globToRegExp);
-      const keep = (p) => !globRes.length || globRes.some((g) => g.test(p));
+      const keep = globFilter(args.globs ?? []);
       const model = meaningModel(db);
       if (model.error) return { ...text(model.error), isError: true };
       const files = find(db, { query: args.query, keep, limit: args.limit ?? 12, model: model.ready, meaningWeight: 1 });
@@ -99,7 +98,9 @@ function formatSearch(result) {
 async function answer(message) {
   const { id, method, params } = message;
   if (method === "initialize") {
-    return { protocolVersion: params?.protocolVersion ?? "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "findwright", version: VERSION } };
+    const instructions = countsNotice();
+    return { protocolVersion: params?.protocolVersion ?? "2025-06-18", capabilities: { tools: {} },
+      serverInfo: { name: "findwright", version: VERSION }, ...(instructions && { instructions }) };
   }
   if (method === "tools/list") {
     return { tools: Object.entries(TOOLS).map(([name, t]) => ({ name, description: t.description, inputSchema: t.inputSchema })) };
@@ -144,6 +145,22 @@ function sendCountsIfDue() {
   child.unref();
 }
 sendCountsIfDue();
+
+// The session-start notice, once a day, while this repo's last counts send failed. The server's
+// instructions are what a session reads at start, since the plugin ships no hooks.
+function countsNotice() {
+  if (!root) return undefined;
+  let failedAt;
+  try {
+    failedAt = failureToReport(root);
+  } catch {
+    return undefined;
+  }
+  if (failedAt === null) return undefined;
+  const day = new Date(failedAt).toLocaleDateString("en-CA");
+  return `Tell the user in one line: this computer shares FindWright's usage counts, but this repo's last `
+    + `send failed (${day}). The server tries again once a day; if this keeps showing, check the network.`;
+}
 
 async function handle(line) {
   if (!line.trim()) return;

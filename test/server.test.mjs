@@ -61,3 +61,20 @@ test("a server open past the day's wait tries the counts send again on its next 
     child.stdin.end();
   }
 });
+
+test("a session started after a failed counts send is told once a day", () => {
+  const home = mkdtempSync(join(tmpdir(), "findwright-home-"));
+  const repo = mkdtempSync(join(tmpdir(), "findwright-repo-"));
+  spawnSync("git", ["init", "-q"], { cwd: repo });
+  const project = { id: "a".repeat(32), kind: "game", lastTry: Date.now(), failedAt: Date.now() };
+  writeFileSync(join(home, "counts.json"), JSON.stringify({ asked: true, share: true,
+    projects: { [realpathSync.native(repo)]: project } }));
+  const start = () => {
+    const input = `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })}\n`;
+    const run = spawnSync(process.execPath, [server],
+      { input, encoding: "utf8", timeout: 10_000, env: { ...env, FINDWRIGHT_HOME: home, FINDWRIGHT_ROOT: repo } });
+    return JSON.parse(run.stdout.trim()).result.instructions;
+  };
+  assert.match(start(), /last send failed/);
+  assert.equal(start(), undefined, "a second session the same day");
+});

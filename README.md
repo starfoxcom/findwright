@@ -34,6 +34,8 @@ findwright refresh                         # bring the index level with the work
 findwright counts status|share on|share off|project <kind>|send   # the opt-in usage counts
 ```
 
+A glob starting with `!` leaves out the files it matches, as in ripgrep: `--glob '*.md' --glob '!CHANGELOG.md'` searches every Markdown file but the changelog, and `!` globs alone search every other file.
+
 `findwright-mcp` runs the same queries as an MCP server over stdio. Every call first re-reads the files whose size or modified time changed, so answers match the working tree.
 
 ## Per-project settings
