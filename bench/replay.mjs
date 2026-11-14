@@ -3,8 +3,14 @@
 // the session went on to use.
 //   node replay.mjs events.jsonl results.jsonl
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync, openSync, writeSync } from "node:fs";
+import { readFileSync, readdirSync, writeFileSync, mkdirSync, openSync, writeSync } from "node:fs";
 import { openIndex, refresh } from "../src/store.mjs";
+
+// The reference sets for the file types every project has, as a fitted project would carry them.
+const REFERENCE = new URL("../plugin/skills/fit/reference/", import.meta.url);
+const BASE_RULES = ["markdown", "yaml", "json", "javascript-typescript", "python", "css", "html", "shell"]
+  .flatMap((set) => JSON.parse(readFileSync(new URL(`${set}.json`, REFERENCE), "utf8")).rules);
+const withBase = (config) => ({ ...config, rules: [...BASE_RULES, ...config.rules] });
 import { search } from "../src/query.mjs";
 import { find } from "../src/find.mjs";
 import { ensureModel, loadModel } from "../src/embed.mjs";
@@ -143,7 +149,7 @@ function ours(db, ev, k) {
 }
 
 const snake = (w) => w.replace(/([a-z0-9])([A-Z])/g, "$1_$2").replace(/([A-Z])([A-Z][a-z])/g, "$1_$2").toLowerCase();
-const DOC_KINDS = new Set(["markdown", "json", "yaml", "text"]);
+const DOC_KINDS = new Set(["md", "mdx", "json", "jsonc", "yml", "yaml", "text"]);
 
 // Version 2: rare terms weigh more (IDF), file names count, `Foo::bar` answers
 // to `bar`, CamelCase answers to its snake_case file, and literal hits are ranked.
@@ -223,9 +229,9 @@ function ours3(db, ev, k) {
 function project(name, events, out) {
   const root = ROOTS[name];
   const p = PROJECTS[name];
-  const config = p.config
+  const config = withBase(p.config
     ? JSON.parse(readFileSync(new URL(p.config, import.meta.url), "utf8"))
-    : { exclude: p.exclude ?? [], rules: (p.rules ?? []).flatMap((set) => RULE_SETS[set]) };
+    : { exclude: p.exclude ?? [], rules: (p.rules ?? []).flatMap((set) => RULE_SETS[set]) });
   mkdirSync("db", { recursive: true });
   process.env.FINDWRIGHT_DB = `db/${name}${MODEL_TAG}.db`;
   const db = openIndex(root);
