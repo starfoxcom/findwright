@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- With usage counts turned on, a session started in a repo whose last send failed now says so, once a day, until a send gets through. A send that kept failing used to go unnoticed ([#35](https://github.com/starfoxcom/findwright/issues/35)).
+
 ### Fixed
 - A glob starting with `!` in `search`, `find` and `symbols` (`!CHANGELOG.md`) now leaves out the files it matches, as it does in ripgrep. It used to be read as a file name, matched nothing, and the search answered "No matches." for text the repo holds ([#33](https://github.com/starfoxcom/findwright/issues/33)).
 
