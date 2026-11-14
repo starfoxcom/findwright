@@ -33,6 +33,7 @@ findwright symbols <name> [--kind K]
 findwright outline <path>
 findwright coverage                        # files per kind, and files with no symbols
 findwright refresh                         # bring the index level with the working tree
+findwright try <rules.json>                # what draft rules would name, without saving them
 findwright counts status|share on|share off|project <kind>|send   # the opt-in usage counts
 ```
 
@@ -53,6 +54,8 @@ A glob starting with `!` leaves out the files it matches, as in ripgrep: `--glob
   - `group`: rules in the same group share each line, and the first in the list to match it takes it.
   - `except`: names to drop, such as `if` and `for` for a method pattern.
   - `inside` and `outside`: regions the rule matches only within, or never in, each `{ "start": "<regex>", "end": "indent" | { "until": "<regex>" } }` covering the lines after its start; `"first": true` holds only for a region that starts on line 1, such as front matter.
+
+`findwright try <rules.json>` runs draft rules over the repo without writing the config or touching the index, and prints what each kind of symbol finds, with samples, and which matched files still get none. The plugin's `/findwright:fit` skill writes a project's rules this way, starting from the reference rule sets in `plugin/skills/fit/reference/`.
 
 The index lives in `.findwright/index.db`, in a folder that keeps itself out of git.
 

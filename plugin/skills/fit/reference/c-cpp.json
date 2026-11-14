@@ -1,0 +1,198 @@
+{
+ "description": "C and C++: macros, namespaces, classes, structs, unions, enums, free functions, out-of-class method definitions, members declared in a class, and GoogleTest tests.",
+ "rules": [
+  {
+   "globs": [
+    "**/*.c",
+    "**/*.h",
+    "**/*.cc",
+    "**/*.cpp",
+    "**/*.cxx",
+    "**/*.hh",
+    "**/*.hpp",
+    "**/*.hxx",
+    "**/*.inl"
+   ],
+   "kind": "macro",
+   "pattern": "^\\s*#\\s*define\\s+(?<name>[A-Za-z_]\\w*)"
+  },
+  {
+   "globs": [
+    "**/*.cc",
+    "**/*.cpp",
+    "**/*.cxx",
+    "**/*.h",
+    "**/*.hh",
+    "**/*.hpp",
+    "**/*.hxx",
+    "**/*.inl"
+   ],
+   "kind": "namespace",
+   "end": "brace",
+   "nest": "::",
+   "pattern": "^\\s*(?:inline\\s+)?namespace\\s+(?<name>[A-Za-z_][\\w:]*)\\s*\\{?\\s*$"
+  },
+  {
+   "globs": [
+    "**/*.c",
+    "**/*.h",
+    "**/*.cc",
+    "**/*.cpp",
+    "**/*.cxx",
+    "**/*.hh",
+    "**/*.hpp",
+    "**/*.hxx",
+    "**/*.inl"
+   ],
+   "kind": "class",
+   "end": "brace",
+   "nest": "::",
+   "pattern": "^\\s*(?:template\\s*<.*>\\s*)?(?:typedef\\s+)?(?:class|struct|union)\\s+(?:[A-Z][A-Z0-9_]+\\s+)?(?<name>[A-Za-z_]\\w*)(?:\\s+final)?\\s*(?:[:{][^;]*)?$"
+  },
+  {
+   "globs": [
+    "**/*.c",
+    "**/*.h",
+    "**/*.cc",
+    "**/*.cpp",
+    "**/*.cxx",
+    "**/*.hh",
+    "**/*.hpp",
+    "**/*.hxx",
+    "**/*.inl"
+   ],
+   "kind": "enum",
+   "end": "brace",
+   "nest": "::",
+   "pattern": "^\\s*(?:typedef\\s+)?enum\\s+(?:class\\s+|struct\\s+)?(?<name>[A-Za-z_]\\w*)[^;]*$"
+  },
+  {
+   "globs": [
+    "**/*.cc",
+    "**/*.cpp",
+    "**/*.cxx",
+    "**/*.h",
+    "**/*.hh",
+    "**/*.hpp",
+    "**/*.hxx",
+    "**/*.inl"
+   ],
+   "kind": "method",
+   "end": "brace",
+   "nest": "::",
+   "group": "callable",
+   "pattern": "^(?:template\\s*<.*>\\s*)?[A-Za-z_][\\w:<>,\\*& ]*?\\b(?<name>[A-Za-z_]\\w*::~?[A-Za-z_]\\w*)\\s*\\("
+  },
+  {
+   "globs": [
+    "**/*.c",
+    "**/*.h",
+    "**/*.cc",
+    "**/*.cpp",
+    "**/*.cxx",
+    "**/*.hh",
+    "**/*.hpp",
+    "**/*.hxx",
+    "**/*.inl"
+   ],
+   "kind": "function",
+   "end": "brace",
+   "nest": "::",
+   "group": "callable",
+   "except": [
+    "if",
+    "for",
+    "while",
+    "switch",
+    "return",
+    "sizeof",
+    "catch",
+    "else",
+    "do",
+    "case",
+    "new",
+    "delete",
+    "defined",
+    "decltype",
+    "alignof",
+    "static_assert"
+   ],
+   "pattern": "^(?:template\\s*<.*>\\s*)?(?:(?:static|inline|constexpr|consteval|extern|virtual|explicit|friend|[A-Z][A-Z0-9_]+)\\s+)*[A-Za-z_][\\w<>,:]*[\\*&\\s]+\\**(?<name>[A-Za-z_]\\w*)\\s*\\([^;]*$"
+  },
+  {
+   "globs": [
+    "**/*.c",
+    "**/*.h",
+    "**/*.cc",
+    "**/*.cpp",
+    "**/*.cxx",
+    "**/*.hh",
+    "**/*.hpp",
+    "**/*.hxx",
+    "**/*.inl"
+   ],
+   "kind": "function",
+   "end": "brace",
+   "nest": "::",
+   "group": "callable",
+   "except": [
+    "if",
+    "for",
+    "while",
+    "switch",
+    "return",
+    "sizeof",
+    "catch",
+    "else",
+    "do",
+    "case",
+    "new",
+    "delete",
+    "defined",
+    "decltype",
+    "alignof",
+    "static_assert"
+   ],
+   "pattern": "^(?<name>[A-Za-z_]\\w*)\\s*\\([^;{]*$"
+  },
+  {
+   "globs": [
+    "**/*.h",
+    "**/*.hh",
+    "**/*.hpp",
+    "**/*.hxx",
+    "**/*.inl"
+   ],
+   "kind": "member",
+   "nest": "::",
+   "group": "callable",
+   "except": [
+    "if",
+    "for",
+    "while",
+    "switch",
+    "return",
+    "sizeof",
+    "catch",
+    "else",
+    "do",
+    "case",
+    "new",
+    "delete",
+    "decltype",
+    "static_assert"
+   ],
+   "pattern": "^\\s+(?:(?:virtual|static|inline|constexpr|explicit|friend|const)\\s+)*[A-Za-z_][\\w<>,:]*[\\*&\\s]+\\**(?<name>~?[A-Za-z_]\\w*)\\s*\\([^)]*\\)\\s*(?:const\\s*)?(?:noexcept\\s*)?(?:override\\s*|final\\s*)*(?:=\\s*(?:0|default|delete)\\s*)?;"
+  },
+  {
+   "globs": [
+    "**/*.cc",
+    "**/*.cpp",
+    "**/*.cxx"
+   ],
+   "kind": "test",
+   "end": "brace",
+   "pattern": "^\\s*(?:TEST|TEST_F|TEST_P|TYPED_TEST)\\s*\\(\\s*\\w+\\s*,\\s*(?<name>\\w+)"
+  }
+ ]
+}

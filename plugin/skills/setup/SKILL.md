@@ -55,9 +55,7 @@ The hook sends Grep, Glob and shell searches to FindWright in repos that have an
 
 Only inside a git repo (`git rev-parse --show-toplevel`). Ask, "Fit FindWright's index to this project now? It takes a minute.", "Yes" first. On a yes:
 
-1. Run `node "<helper>/src/cli.mjs" coverage` from the repo root. The first run builds the index in `.findwright/`, which keeps itself out of git.
-2. Read which file kinds and files yield no symbol. For each group the work cares about, propose an entry for `.findwright/config.json`: `kinds` maps globs to a built-in extractor (`{ "*.mdc": "markdown" }`); `rules` adds a pattern whose `name` group names a symbol (`{ "globs": ["**/*.sql"], "kind": "table", "pattern": "^create table (?<name>\\w+)" }`). Licenses, lock files and ignore lists need nothing: full-text search still covers them.
-3. Show the proposed file and write it on a yes, then run `coverage` again and say how many files gained symbols.
+Follow `<plugin>/skills/fit/SKILL.md`: it reads what the repo holds, starts from the reference rule sets that fit, writes rules for the rest, tries them on the repo and saves `.findwright/config.json` on a yes. The first `coverage` run builds the index in `.findwright/`, which keeps itself out of git.
 
 ## 7. Anonymous usage counts
 

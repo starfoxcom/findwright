@@ -1,0 +1,15 @@
+{
+ "description": "JSON: every object key named by its path (hooks.PreToolUse), each running to the end of its value, one-line files included.",
+ "rules": [
+  {
+   "globs": [
+    "**/*.json",
+    "**/*.jsonc"
+   ],
+   "kind": "key",
+   "pattern": "\"(?<name>(?:[^\"\\\\]|\\\\.)*)\"\\s*:\\s*",
+   "end": "value",
+   "nest": true
+  }
+ ]
+}

@@ -1,0 +1,36 @@
+{
+ "description": "YAML: every mapping key named by its path (jobs.review.steps), list items by their name, with block scalars skipped.",
+ "rules": [
+  {
+   "globs": [
+    "**/*.yml",
+    "**/*.yaml"
+   ],
+   "kind": "item",
+   "pattern": "^(?<indent>\\s*)-\\s+name:\\s*[\"']?(?<name>.+?)[\"']?\\s*$",
+   "end": "indent",
+   "outside": [
+    {
+     "start": ":\\s*[|>][-+]?\\s*$",
+     "end": "indent"
+    }
+   ]
+  },
+  {
+   "globs": [
+    "**/*.yml",
+    "**/*.yaml"
+   ],
+   "kind": "key",
+   "pattern": "^(?<indent>\\s*(?:-\\s+)?)[\"']?(?<name>[\\w.$/@-]+)[\"']?\\s*:(?:\\s|$)",
+   "end": "indent",
+   "nest": true,
+   "outside": [
+    {
+     "start": ":\\s*[|>][-+]?\\s*$",
+     "end": "indent"
+    }
+   ]
+  }
+ ]
+}

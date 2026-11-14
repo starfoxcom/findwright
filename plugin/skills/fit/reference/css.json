@@ -1,0 +1,20 @@
+{
+ "description": "CSS: rule selectors with their block, and custom properties.",
+ "rules": [
+  {
+   "globs": [
+    "**/*.css"
+   ],
+   "kind": "selector",
+   "pattern": "^\\s*(?<name>[^{}/@][^{}]*?)\\s*\\{",
+   "end": "brace"
+  },
+  {
+   "globs": [
+    "**/*.css"
+   ],
+   "kind": "property",
+   "pattern": "^\\s*(?<name>--[\\w-]+)\\s*:"
+  }
+ ]
+}

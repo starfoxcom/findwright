@@ -1,0 +1,117 @@
+{
+ "description": "Dart and Flutter: classes, mixins, extensions, enums and typedefs, functions, methods, constructors, getters and setters, top-level and static constants, and test, group and testWidgets cases.",
+ "rules": [
+  {
+   "globs": [
+    "**/*.dart"
+   ],
+   "kind": "class",
+   "end": "brace",
+   "nest": true,
+   "group": "decl",
+   "pattern": "^\\s*(?:(?:abstract|base|final|interface|sealed|mixin)\\s+)*class\\s+(?<name>[A-Za-z_$][\\w$]*)"
+  },
+  {
+   "globs": [
+    "**/*.dart"
+   ],
+   "kind": "mixin",
+   "end": "brace",
+   "nest": true,
+   "group": "decl",
+   "pattern": "^\\s*(?:base\\s+)?mixin\\s+(?<name>[A-Za-z_$][\\w$]*)"
+  },
+  {
+   "globs": [
+    "**/*.dart"
+   ],
+   "kind": "extension",
+   "end": "brace",
+   "nest": true,
+   "group": "decl",
+   "pattern": "^\\s*extension\\s+(?:type\\s+)?(?<name>[A-Za-z_$][\\w$]*)"
+  },
+  {
+   "globs": [
+    "**/*.dart"
+   ],
+   "kind": "enum",
+   "end": "brace",
+   "nest": true,
+   "group": "decl",
+   "pattern": "^\\s*enum\\s+(?<name>[A-Za-z_$][\\w$]*)"
+  },
+  {
+   "globs": [
+    "**/*.dart"
+   ],
+   "kind": "typedef",
+   "group": "decl",
+   "pattern": "^\\s*typedef\\s+(?<name>[A-Za-z_$][\\w$]*)"
+  },
+  {
+   "globs": [
+    "**/*.dart"
+   ],
+   "kind": "test",
+   "end": "brace",
+   "nest": " > ",
+   "group": "decl",
+   "pattern": "^\\s*(?:test|testWidgets|group|blocTest(?:<[^>]*>)?)\\(\\s*(?:'(?<name>[^']+)'|\"(?<name2>[^\"]+)\")"
+  },
+  {
+   "globs": [
+    "**/*.dart"
+   ],
+   "kind": "accessor",
+   "end": "brace",
+   "nest": true,
+   "group": "decl",
+   "pattern": "^\\s*(?:static\\s+)?(?:[A-Za-z_$][\\w$<>?,\\[\\] ]*\\s+)?(?:get|set)\\s+(?<name>[A-Za-z_$][\\w$]*)"
+  },
+  {
+   "globs": [
+    "**/*.dart"
+   ],
+   "kind": "constructor",
+   "end": "brace",
+   "nest": true,
+   "group": "decl",
+   "pattern": "^  (?:const\\s+|factory\\s+)*(?<name>_?[A-Z][\\w$]*(?:\\.[A-Za-z_$][\\w$]*)?)\\s*\\("
+  },
+  {
+   "globs": [
+    "**/*.dart"
+   ],
+   "kind": "function",
+   "end": "brace",
+   "nest": true,
+   "group": "decl",
+   "except": [
+    "if",
+    "for",
+    "while",
+    "switch",
+    "catch",
+    "return",
+    "else",
+    "super",
+    "this",
+    "assert",
+    "await",
+    "throw",
+    "print"
+   ],
+   "pattern": "^\\s*(?:@\\w+\\s+)?(?:(?:static|external|abstract|override)\\s+)*(?:Future|Stream|FutureOr|void|[A-Za-z_$][\\w$]*)(?:<[^()]*?>)?\\??\\s+(?<name>_?[a-z$][\\w$]*)\\s*(?:<[^()]*>)?\\s*\\("
+  },
+  {
+   "globs": [
+    "**/*.dart"
+   ],
+   "kind": "const",
+   "nest": true,
+   "group": "decl",
+   "pattern": "^\\s*(?:static\\s+)?const\\s+(?:[A-Za-z_$][\\w$<>?,]*\\s+)?(?<name>[A-Za-z_$][\\w$]*)\\s*="
+  }
+ ]
+}

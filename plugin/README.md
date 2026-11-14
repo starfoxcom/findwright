@@ -16,6 +16,7 @@ Then run `/findwright:setup`. Running it is your yes to everything FindWright ne
 ## Use
 
 - `/findwright:setup` installs and registers FindWright, and fits the index to the project you are in.
+- `/findwright:fit` fits the index to a project: it reads what the repo holds, writes the rules that name its functions, types, keys, headings and tests in `.findwright/config.json`, starting from the reference rule sets it ships, and tries them before saving.
 - `/findwright:find` is the lookup sequence Claude follows: `find` first, then `search`, `symbols` and `outline`.
 - `/findwright:update` brings the helper to the plugin's version.
 - `/findwright:doctor` checks Node, the helper, the registration and the hook, and says how to fix what is wrong.
