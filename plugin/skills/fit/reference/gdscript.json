@@ -14,6 +14,7 @@
    ],
    "kind": "class",
    "end": "indent",
+   "comment": "^\\s*#",
    "nest": true,
    "pattern": "^\\s*class\\s+(?<name>\\w+)"
   },
@@ -23,6 +24,7 @@
    ],
    "kind": "function",
    "end": "indent",
+   "comment": "^\\s*#",
    "nest": true,
    "pattern": "^\\s*(?:static\\s+)?func\\s+(?<name>\\w+)"
   },

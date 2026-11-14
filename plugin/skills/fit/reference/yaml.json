@@ -9,6 +9,7 @@
    "kind": "item",
    "pattern": "^(?<indent>\\s*)-\\s+name:\\s*[\"']?(?<name>.+?)[\"']?\\s*$",
    "end": "indent",
+   "comment": "^\\s*#",
    "outside": [
     {
      "start": ":\\s*[|>][-+]?\\s*$",
@@ -24,6 +25,7 @@
    "kind": "key",
    "pattern": "^(?<indent>\\s*(?:-\\s+)?)[\"']?(?<name>[\\w.$/@-]+)[\"']?\\s*:(?:\\s|$)",
    "end": "indent",
+   "comment": "^\\s*#",
    "nest": true,
    "outside": [
     {

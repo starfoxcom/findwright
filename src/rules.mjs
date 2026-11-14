@@ -13,6 +13,7 @@
 //            nesting symbol whose block holds it (`jobs.review.steps`), and can hold others
 //   group    rules sharing a group claim lines: the first rule in the list to match a line takes it
 //   except   names to drop (`if`, `for` for a method pattern)
+//   comment  a regex for comment lines, which an "indent" block reads past as it does blank lines
 //   inside   a region the rule matches only within; outside: regions it never matches in.
 //            A region is { start: <regex>, end: "indent" | { until: <regex> }, first?: true } and
 //            covers the lines after its start line through its end; `first` holds only on line 1.
@@ -61,6 +62,10 @@ export function normalRule(rule) {
   if (rule.nest === true || separator) out.nest = separator || ".";
   if (typeof rule.group === "string") out.group = rule.group;
   if (Array.isArray(rule.except)) out.except = strings(rule.except);
+  if (rule.comment !== undefined) {
+    if (!isPattern(rule.comment)) return null;
+    out.comment = rule.comment;
+  }
   if (rule.inside !== undefined) {
     out.inside = normalRegion(rule.inside);
     if (!out.inside) return null;
@@ -82,11 +87,13 @@ const compileRegion = (region) => {
 function compile(rule, order) {
   const pattern = isPattern(rule.pattern) ? linearRegExp(rule.pattern, "g") : null;
   const until = rule.end.until === undefined ? null : linearRegExp(rule.end.until);
+  const comment = rule.comment === undefined ? null : linearRegExp(rule.comment);
   const inside = rule.inside ? compileRegion(rule.inside) : null;
   const outside = (rule.outside ?? []).map(compileRegion);
-  const unreadable = (rule.end.until !== undefined && !until) || (rule.inside && !inside) || outside.includes(null);
+  const unreadable = (rule.end.until !== undefined && !until) || (rule.comment !== undefined && !comment)
+    || (rule.inside && !inside) || outside.includes(null);
   if (!pattern || unreadable) return null;
-  return { ...rule, order, pattern, until, inside, outside, except: new Set(rule.except ?? []) };
+  return { ...rule, order, pattern, until, comment, inside, outside, except: new Set(rule.except ?? []) };
 }
 
 const indentOf = (line) => line.length - line.trimStart().length;
@@ -314,15 +321,14 @@ function valueEnds(all, symbols) {
 }
 
 // "indent": a block runs through the last filled line indented deeper than the symbol, past
-// blank lines and `#` comment lines, which end no block in YAML, Python or GDScript. A `#` line
-// any rule's symbol starts on (`starts`) is code, a Pug or Sass `#id`, so it ends blocks too.
-function indentEnds(all, symbols, starts) {
+// blank lines and the lines the rule's `comment` pattern matches.
+function indentEnds(all, symbols, comment) {
   const open = new OpenBlocks();
   let next = 0;
   let lastFilled = -1;
   const close = (symbol) => { symbol.end = [Math.max(symbol.line, lastFilled), Infinity]; };
   for (let i = symbols[0]?.line ?? all.length; i < all.length; i++) {
-    const filled = !isBlank(all[i]) && (starts.has(i) || !all[i].trimStart().startsWith("#"));
+    const filled = !isBlank(all[i]) && !comment?.test(all[i]);
     if (filled) open.closeAt(indentOf(all[i])).forEach(close);
     while (next < symbols.length && symbols[next].line === i) open.add(symbols[next].indent, symbols[next++]);
     if (filled) lastFilled = i;
@@ -366,12 +372,12 @@ function closeAtNext(all, symbols) {
 }
 
 // Sets `end` ([line, col], 0-based) on each of one rule's symbols, which come in file order.
-function setEnds(all, rule, symbols, starts) {
+function setEnds(all, rule, symbols) {
   for (const symbol of symbols) symbol.end = [symbol.line, symbol.matchEnd];
   if (rule.end === "next") closeAtNext(all, symbols);
   else if (rule.end === "brace") braceEnds(all, symbols);
   else if (rule.end === "value") valueEnds(all, symbols);
-  else if (rule.end === "indent") indentEnds(all, symbols, starts);
+  else if (rule.end === "indent") indentEnds(all, symbols, rule.comment);
   else if (rule.until) untilEnds(all, symbols, rule.until);
 }
 
@@ -410,7 +416,6 @@ export function fromRules(text, rules) {
   const allowed = new Uint8Array(all.length);
   const claimed = new Map();
   const symbols = [];
-  const matched = [];
   let cutAt = null;
   rules.forEach((rule, order) => {
     const normal = normalRule(rule);
@@ -419,11 +424,9 @@ export function fromRules(text, rules) {
     if (compiled.group && !claimed.has(compiled.group)) claimed.set(compiled.group, new Set());
     const { found, cutAt: cut } = matchesOf(all, compiled, claimed.get(compiled.group), allowed);
     if (compiled.nest && cut && (!cutAt || before(cut, cutAt))) cutAt = cut;
-    matched.push([compiled, found]);
+    setEnds(all, compiled, found);
     for (const symbol of found) symbols.push(symbol);
   });
-  const starts = new Set(symbols.map((symbol) => symbol.line));
-  for (const [compiled, found] of matched) setEnds(all, compiled, found, starts);
   return nestNames(symbols, cutAt)
     .map((s) => ({ name: s.fullName, kind: s.rule.kind, line: s.line + 1, endLine: s.end[0] + 1 }));
 }

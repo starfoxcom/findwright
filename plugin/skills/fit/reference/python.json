@@ -7,7 +7,8 @@
    ],
    "kind": "class",
    "pattern": "^\\s*class\\s+(?<name>[A-Za-z_]\\w*)",
-   "end": "indent"
+   "end": "indent",
+   "comment": "^\\s*#"
   },
   {
    "globs": [
@@ -15,7 +16,8 @@
    ],
    "kind": "function",
    "pattern": "^(?:async\\s+)?def\\s+(?<name>[A-Za-z_]\\w*)",
-   "end": "indent"
+   "end": "indent",
+   "comment": "^\\s*#"
   },
   {
    "globs": [
@@ -23,7 +25,8 @@
    ],
    "kind": "method",
    "pattern": "^\\s+(?:async\\s+)?def\\s+(?<name>[A-Za-z_]\\w*)",
-   "end": "indent"
+   "end": "indent",
+   "comment": "^\\s*#"
   },
   {
    "globs": [

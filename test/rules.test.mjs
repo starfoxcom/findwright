@@ -34,6 +34,7 @@ test("a rule the linear engine cannot run is skipped", () => {
   assert.deepEqual(names("aa", r`(a)\1`), []);
   assert.deepEqual(names("xa", "(?=x)a"), []);
   assert.deepEqual(fromRules("a\nb", [{ pattern: "a", kind: "k", end: { until: r`(b)\1` } }]), []);
+  assert.deepEqual(fromRules("a\nb", [{ pattern: "a", kind: "k", end: "indent", comment: r`(b)\1` }]), []);
 });
 
 const FUNCTION = r`^\s*function\s+(?<name>\w+)`;
@@ -57,7 +58,7 @@ const ends = [
     [["a", 2, 5], ["b", 3, 4], ["c", 6, 6]]],
   ["indent: runs while lines sit deeper, past blank lines",
     "def f():\n    x = 1\n\n    return x\ny = 2", [{ pattern: r`^def\s+(?<name>\w+)`, end: "indent" }], [["f", 1, 4]]],
-  ["indent: a `#` line any rule's symbol starts on is code and ends the block before it",
+  ["indent: without a `comment` pattern a `#` line is code and ends the block before it",
     ".card\n  p\n#main\n  p",
     [{ pattern: r`^(?<name>\.\w+)`, end: "indent" }, { pattern: r`^(?<name>#\w+)`, end: "indent" }],
     [[".card", 1, 2], ["#main", 3, 4]]],
@@ -84,8 +85,8 @@ const nesting = [
     "jobs:\n  review:\n    steps:\n      - run: x\n        with: y\n    env: z",
     [{ pattern: YAML_KEY, end: "indent", nest: true }],
     ["jobs", "jobs.review", "jobs.review.steps", "jobs.review.steps.run", "jobs.review.steps.with", "jobs.review.env"]],
-  ["YAML keys by path past a comment at the line start",
-    "jobs:\n  review:\n# note\n    steps: x", [{ pattern: YAML_KEY, end: "indent", nest: true }],
+  ["YAML keys by path past a line the rule's `comment` pattern matches",
+    "jobs:\n  review:\n# note\n    steps: x", [{ pattern: YAML_KEY, end: "indent", comment: r`^\s*#`, nest: true }],
     ["jobs", "jobs.review", "jobs.review.steps"]],
   ["a separator of the rule's own, under another rule's symbol",
     "class Grid {\n  build() {\n  }\n}",
