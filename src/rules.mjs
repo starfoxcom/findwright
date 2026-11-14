@@ -157,7 +157,8 @@ const CLOSERS = { brace: "}", value: "}]" };
 // Where the block a symbol opens closes, as [line, col], or null when it opens none in reach.
 // "value" needs `{` or `[` as the first thing after the match and closes at its bracket, so
 // one-line JSON nests. "brace" counts `{` and `}` from the match's start and closes at the end
-// of the first line that leaves them balanced, so a `{}` inside a parameter list ends nothing.
+// of the first line that leaves them balanced, so a `{}` inside a parameter list ends nothing;
+// a `;` before the first `{` ends the statement with no block.
 function bracketEnd(all, symbol, mode, budget) {
   let depth = 0;
   let opened = false;
@@ -167,6 +168,8 @@ function bracketEnd(all, symbol, mode, budget) {
     for (let j = i === symbol.line ? (mode === "value" ? symbol.matchEnd : symbol.col) : 0; j < text.length; j++) {
       const ch = text[j];
       if (mode === "value" && !opened && ch.trim() && !OPENERS.value.includes(ch)) return null;
+      // A statement that ends before its first brace (`int f();`, `const n = 1;`) opens no block.
+      if (mode === "brace" && !opened && ch === ";") return null;
       if (ch === "/" && text[j + 1] === "/") break;
       if (ch === '"' || ch === "'" || ch === "`") j = stringEnd(text, j);
       else if (OPENERS[mode].includes(ch)) { depth++; opened = true; }
