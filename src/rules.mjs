@@ -22,15 +22,12 @@
 
 import { linearRegExp } from "./linear.mjs";
 
-// Each line is read up to this length: a declaration starts near the line's start, and a
-// minified or generated line costs no more than an ordinary one.
-const MAX_LINE = 1000;
 const MAX_PATTERN = 300;
 // A nested name past this is dropped with everything under it, which keeps deep nesting linear.
 const MAX_NAME = 400;
-// Most lines one file's block ends and regions may scan in all; past it a block ends on its first
-// line and a region covers nothing.
-const SCAN_LINES = 200_000;
+// Most characters one file's block ends and regions may scan in all, every line read in full; past
+// it a block ends on its first line and a region covers nothing.
+const SCAN_CHARACTERS = 8_000_000;
 const OPEN_WITHIN = 3;
 const MAX_SEPARATOR = 4;
 // Most `outside` regions one rule may list; a rule past it is dropped, so a config cannot make
@@ -92,6 +89,12 @@ function compile(rule, order) {
   return { ...rule, order, pattern, until, inside, outside, except: new Set(rule.except ?? []) };
 }
 
+// Spends one line's characters from the scan budget; true once the budget is gone.
+function spend(budget, line) {
+  budget.left -= line.length + 1;
+  return budget.left < 0;
+}
+
 /** How far a line is indented, in characters. */
 export const indentOf = (line) => line.length - line.trimStart().length;
 
@@ -101,7 +104,7 @@ export const indentOf = (line) => line.length - line.trimStart().length;
 export function blockEnd(all, start, isInside, budget = null) {
   let end = start;
   for (let i = start + 1; i < all.length; i++) {
-    if (budget && --budget.left < 0) return start;
+    if (budget && spend(budget, all[i])) return start;
     if (all[i].trim() === "") continue;
     if (!isInside(all[i])) break;
     end = i;
@@ -114,7 +117,7 @@ export function blockEnd(all, start, isInside, budget = null) {
 function regionEnd(all, start, region, budget) {
   if (!region.until) return blockEnd(all, start, (line) => indentOf(line) > indentOf(all[start]), budget);
   for (let i = start + 1; i < all.length; i++) {
-    if (--budget.left < 0) return start;
+    if (spend(budget, all[i])) return start;
     if (region.until.test(all[i])) return i;
   }
   return all.length - 1;
@@ -193,13 +196,11 @@ function braceEnd(all, symbol, budget) {
   let depth = 0;
   let opened = false;
   for (let i = symbol.line; i < all.length; i++) {
-    if (--budget.left < 0) return null;
+    if (spend(budget, all[i])) return null;
     for (const [, ch] of codeChars(all[i], i === symbol.line ? symbol.col : 0)) {
       if (ch === ";" && !opened) return null;
       if (ch === "{") { depth++; opened = true; } else if (ch === "}") depth--;
     }
-    // A line cut at MAX_LINE may hide the closing brace, so an end past it would be a guess.
-    if (budget.cut[i] && opened && depth > 0) return null;
     if (opened && depth <= 0) return [i, Infinity];
     if (!opened && i >= symbol.line + OPEN_WITHIN - 1) return null;
   }
@@ -211,14 +212,13 @@ function braceEnd(all, symbol, budget) {
 function valueEnd(all, symbol, budget) {
   let depth = 0;
   for (let i = symbol.line; i < all.length; i++) {
-    if (--budget.left < 0) return null;
+    if (spend(budget, all[i])) return null;
     for (const [j, ch] of codeChars(all[i], i === symbol.line ? symbol.matchEnd : 0)) {
       if (!ch.trim()) continue;
       if (ch === "{" || ch === "[") depth++;
       else if (depth === 0) return null;
       else if ((ch === "}" || ch === "]") && --depth === 0) return [i, j];
     }
-    if (budget.cut[i] && depth > 0) return null;
     if (depth === 0 && i >= symbol.line + OPEN_WITHIN - 1) return null;
   }
   return depth > 0 ? [all.length - 1, Infinity] : null;
@@ -239,7 +239,7 @@ function closeAtNext(all, symbols) {
 
 function untilEnd(all, symbol, until, budget) {
   for (let i = symbol.line + 1; i < all.length; i++) {
-    if (--budget.left < 0) return [symbol.line, Infinity];
+    if (spend(budget, all[i])) return [symbol.line, Infinity];
     if (until.test(all[i])) return [i, Infinity];
   }
   return [all.length - 1, Infinity];
@@ -289,12 +289,8 @@ export function canRun(rule) {
 
 /** The symbols `rules` name in `text`, each { name, kind, line, endLine } with 1-based, inclusive lines. */
 export function fromRules(text, rules) {
-  const lines = text.split(/\r?\n/);
-  const all = lines.map((line) => line.slice(0, MAX_LINE));
-  // The scan's budget, with the lines cut at MAX_LINE: a block left open on one of them falls
-  // back to the symbol's own line, so a cut line costs a range, never a wrong name.
-  const cut = Uint8Array.from(lines, (line) => (line.length > MAX_LINE ? 1 : 0));
-  const budget = { left: SCAN_LINES, cut };
+  const all = text.split(/\r?\n/);
+  const budget = { left: SCAN_CHARACTERS };
   const allowed = new Uint8Array(all.length);
   const claimed = new Map();
   const symbols = [];
