@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- The setup skill's helper install line writes the home folder as a placeholder instead of an environment variable, since the plugin directory holds a plugin whose skill text puts a variable beside a network command. The directory check now counts `npm`, `npx` and `fetch` as network commands and "key" and "auth" as credential words, so a line like that fails the pack.
+- The plugin's homepage points at the README while the FindWright page is not published, so its listing links to a page that exists.
+
 ## [1.1.0] - 2026-11-13
 
 ### Added
