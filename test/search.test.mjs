@@ -55,3 +55,23 @@ test("a literal of one emoji and one other character still finds its files", () 
   const emoji = index({ "c.md": "xab😀cx" });
   assert.deepEqual(search(emoji, { patterns: ["ab😀*c"] }).files.map((f) => f.path), ["c.md"]);
 });
+
+test("a glob starting with ! leaves out the files it matches, in search and symbols alike", () => {
+  const paths = ["CHANGELOG.md", "src/a.mjs", "src/b.md", "docs/c.md"];
+  const db = index(Object.fromEntries(paths.map((path) => [path, "sendDue"])));
+  for (const path of paths) {
+    db.prepare("INSERT INTO symbols VALUES (?, ?, ?, ?, ?)").run(path, "sendDue", "function", 1, 1);
+  }
+  const rows = [
+    ["a negated glob alone keeps every other file", ["!CHANGELOG.md"], ["docs/c.md", "src/a.mjs", "src/b.md"]],
+    ["several negated globs leave out each", ["!CHANGELOG.md", "!docs/**"], ["src/a.mjs", "src/b.md"]],
+    ["a negated glob beside a plain one narrows it", ["*.md", "!CHANGELOG.md"], ["docs/c.md", "src/b.md"]],
+    ["a plain glob alone keeps only its files", ["src/**"], ["src/a.mjs", "src/b.md"]],
+  ];
+  for (const [name, globs, expected] of rows) {
+    const searched = search(db, { patterns: ["sendDue"], globs }).files.map((f) => f.path);
+    assert.deepEqual(searched, expected, `search: ${name}`);
+    const named = symbols(db, { query: "sendDue", globs }).map((s) => s.path).sort();
+    assert.deepEqual(named, expected, `symbols: ${name}`);
+  }
+});

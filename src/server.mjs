@@ -6,7 +6,7 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { gitRoot, globToRegExp, openIndex, readConfig, refresh } from "./store.mjs";
+import { gitRoot, globFilter, openIndex, readConfig, refresh } from "./store.mjs";
 import { coverage, outline, search, symbols } from "./query.mjs";
 import { find } from "./find.mjs";
 import { meaningModel } from "./meaning.mjs";
@@ -20,7 +20,7 @@ const root = process.env.FINDWRIGHT_ROOT ?? gitRoot();
 let db = null;
 
 const text = (value) => ({ content: [{ type: "text", text: value }] });
-const globs = { type: "array", items: { type: "string" }, description: "Path globs (`page/**`, `*.md`); any file when empty." };
+const globs = { type: "array", items: { type: "string" }, description: "Path globs (`page/**`, `*.md`); any file when empty. A glob starting with `!` leaves out the files it matches (`!CHANGELOG.md`); with only `!` globs, every other file is kept." };
 
 const TOOLS = {
   find: {
@@ -35,8 +35,7 @@ const TOOLS = {
       required: ["query"],
     },
     run: async (args) => {
-      const globRes = (args.globs ?? []).map(globToRegExp);
-      const keep = (p) => !globRes.length || globRes.some((g) => g.test(p));
+      const keep = globFilter(args.globs ?? []);
       const model = meaningModel(db);
       if (model.error) return { ...text(model.error), isError: true };
       const files = find(db, { query: args.query, keep, limit: args.limit ?? 12, model: model.ready, meaningWeight: 1 });
