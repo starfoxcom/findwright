@@ -30,7 +30,8 @@ const samples = [
   ["c++: a qualified call at the line start is no method", "c-cpp.json", "a.cpp",
     "std::move(x);\nFoo::bar(int x) {\n}\nFoo::Foo() = default;", ["Foo::bar", "Foo::Foo"]],
   ["c++: locals in an inline body are no members", "c-cpp.json", "a.h",
-    "class A {\n  void f(int x);\n  void g() {\n    std::lock_guard<std::mutex> lock(mutex_);\n    Vec3 v(1, 2, 3);\n  }\n};",
+    "class A {\n  void f(int x);\n  void g() {\n" +
+      "    std::lock_guard<std::mutex> lock(mutex_);\n    Vec3 v(1, 2, 3);\n  }\n};",
     ["A", "A::f"]],
   ["markdown: a comment in front matter is no heading", "markdown.json", "a.md",
     "---\n# comment\ntitle: x\n---\n# Real", ["title", "Real"]],
