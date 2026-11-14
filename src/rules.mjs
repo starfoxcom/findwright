@@ -134,8 +134,8 @@ function nameOf(match) {
   return key ? groups[key] : match[0];
 }
 
-// The rule's symbols in file order, and where its first line was cut short by REPEAT_READS (or
-// null), as [line, col].
+// The rule's symbols in file order, and where REPEAT_READS first left a match out (or null), as
+// [line, col] of that match.
 function matchesOf(all, rule, taken, allowed) {
   markAllowed(all, rule, allowed);
   const found = [];
@@ -145,6 +145,10 @@ function matchesOf(all, rule, taken, allowed) {
     let matched = false;
     let reads = REPEAT_READS * all[i].length;
     for (const m of all[i].matchAll(rule.pattern)) {
+      if (reads < 0) {
+        cutAt ??= [i, m.index];
+        break;
+      }
       const name = nameOf(m);
       const matchEnd = m.index + m[0].length;
       if (m[0] && !rule.except.has(name)) {
@@ -154,10 +158,6 @@ function matchesOf(all, rule, taken, allowed) {
       }
       // The next search can read the rest of the line, so each one after the first spends it.
       reads -= all[i].length - matchEnd;
-      if (reads < 0) {
-        cutAt ??= [i, matchEnd];
-        break;
-      }
     }
     if (matched) taken?.add(i);
   }

@@ -175,6 +175,12 @@ const crowded = [
     [...keyNames(100), "a", "a.b"]],
 ];
 
+test("a line whose last match spends its repeat searches loses nothing, so later nested keys stay", () => {
+  const text = `{${keys(32, 1)}, "k32": "${"v".repeat(6000)}"}\n{"b": {"c": 1}}`;
+  const found = fromRules(text, [{ pattern: JSON_KEY, kind: "key", end: "value", nest: true }]).map((s) => s.name);
+  assert.deepEqual(found, [...keyNames(33), "b", "b.c"]);
+});
+
 for (const [name, text, paths] of crowded) {
   test(`a key past a line's repeat searches is dropped, never named under the wrong key: ${name}`, () => {
     const found = fromRules(text, [{ pattern: JSON_KEY, kind: "key", end: "value", nest: true }]).map((s) => s.name);
