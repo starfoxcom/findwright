@@ -315,15 +315,14 @@ function valueEnds(all, symbols) {
 
 // "indent": a block runs through the last filled line indented deeper than the symbol, past
 // blank lines and `#` comment lines, which end no block in YAML, Python or GDScript. A `#` line
-// a symbol starts on is code (a Pug or Sass `#id`), so it ends blocks as any filled line does.
-function indentEnds(all, symbols) {
+// any rule's symbol starts on (`starts`) is code, a Pug or Sass `#id`, so it ends blocks too.
+function indentEnds(all, symbols, starts) {
   const open = new OpenBlocks();
   let next = 0;
   let lastFilled = -1;
   const close = (symbol) => { symbol.end = [Math.max(symbol.line, lastFilled), Infinity]; };
   for (let i = symbols[0]?.line ?? all.length; i < all.length; i++) {
-    const starts = symbols[next]?.line === i;
-    const filled = !isBlank(all[i]) && (starts || !all[i].trimStart().startsWith("#"));
+    const filled = !isBlank(all[i]) && (starts.has(i) || !all[i].trimStart().startsWith("#"));
     if (filled) open.closeAt(indentOf(all[i])).forEach(close);
     while (next < symbols.length && symbols[next].line === i) open.add(symbols[next].indent, symbols[next++]);
     if (filled) lastFilled = i;
@@ -367,12 +366,12 @@ function closeAtNext(all, symbols) {
 }
 
 // Sets `end` ([line, col], 0-based) on each of one rule's symbols, which come in file order.
-function setEnds(all, rule, symbols) {
+function setEnds(all, rule, symbols, starts) {
   for (const symbol of symbols) symbol.end = [symbol.line, symbol.matchEnd];
   if (rule.end === "next") closeAtNext(all, symbols);
   else if (rule.end === "brace") braceEnds(all, symbols);
   else if (rule.end === "value") valueEnds(all, symbols);
-  else if (rule.end === "indent") indentEnds(all, symbols);
+  else if (rule.end === "indent") indentEnds(all, symbols, starts);
   else if (rule.until) untilEnds(all, symbols, rule.until);
 }
 
@@ -411,6 +410,7 @@ export function fromRules(text, rules) {
   const allowed = new Uint8Array(all.length);
   const claimed = new Map();
   const symbols = [];
+  const matched = [];
   let cutAt = null;
   rules.forEach((rule, order) => {
     const normal = normalRule(rule);
@@ -419,9 +419,11 @@ export function fromRules(text, rules) {
     if (compiled.group && !claimed.has(compiled.group)) claimed.set(compiled.group, new Set());
     const { found, cutAt: cut } = matchesOf(all, compiled, claimed.get(compiled.group), allowed);
     if (compiled.nest && cut && (!cutAt || before(cut, cutAt))) cutAt = cut;
-    setEnds(all, compiled, found);
+    matched.push([compiled, found]);
     for (const symbol of found) symbols.push(symbol);
   });
+  const starts = new Set(symbols.map((symbol) => symbol.line));
+  for (const [compiled, found] of matched) setEnds(all, compiled, found, starts);
   return nestNames(symbols, cutAt)
     .map((s) => ({ name: s.fullName, kind: s.rule.kind, line: s.line + 1, endLine: s.end[0] + 1 }));
 }
