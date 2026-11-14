@@ -11,6 +11,7 @@
 //   findwright home status|install-hook|remove-hook   (the search hook in Claude Code's settings)
 //   findwright counts status|share on|share off|project <kind>|send   (opt-in usage counts)
 //   findwright model               (download the meaning model, check its pinned SHA-256, load it)
+//   findwright try <rules.json>    (what draft rules would name, without writing the config)
 // Runs from the repo root (or any folder inside it).
 
 import { gitRoot, openIndex, readConfig, refresh } from "./store.mjs";
@@ -21,6 +22,8 @@ import { send, setProject, setShare, status } from "./counts.mjs";
 import { meaningModel } from "./meaning.mjs";
 import { ensureModel, loadModel, MODEL } from "./embed.mjs";
 import { runHome } from "./home.mjs";
+import { readFileSync } from "node:fs";
+import { tryRules } from "./trial.mjs";
 
 function parse(argv) {
   const opts = { positional: [], globs: [], ignoreCase: false, context: 0, all: false };
@@ -82,6 +85,21 @@ async function installModel() {
   }
 }
 
+// The draft rules in `file`: a list of rules, or a config whose `rules` holds them.
+function printTrial(root, file) {
+  let rules;
+  try {
+    const raw = JSON.parse(readFileSync(file, "utf8"));
+    rules = Array.isArray(raw) ? raw : raw.rules;
+    if (!Array.isArray(rules)) throw new Error("it holds no list of rules");
+  } catch (error) {
+    console.log(JSON.stringify({ error: `cannot read rules from ${file}: ${error.message}` }));
+    process.exitCode = 1;
+    return;
+  }
+  console.log(JSON.stringify(tryRules(root, rules, readConfig(root)), null, 1));
+}
+
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
   // Home settings and counts live outside any repo, so these run before the repo lookup below.
@@ -98,6 +116,8 @@ async function main() {
     console.log(JSON.stringify(recordSession(root, { goal, ...(opts.positional[0] ? { transcript: opts.positional[0] } : {}) })));
     return;
   }
+  // A trial reads the draft rules and the files, never the index.
+  if (command === "try") return printTrial(root, opts.positional[0]);
   const db = openIndex(root);
   const started = performance.now();
   const changes = refresh(db, root, readConfig(root));

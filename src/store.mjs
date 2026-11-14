@@ -213,7 +213,8 @@ export function openIndex(root) {
   return db;
 }
 
-function readText(root, path, size) {
+/** A file's text, or null when it is too large to index or binary. */
+export function readText(root, path, size) {
   if (size > MAX_FILE_BYTES) return null;
   const bytes = readFileSync(join(root, path));
   if (bytes.subarray(0, 8000).includes(0)) return null;
