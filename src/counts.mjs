@@ -4,7 +4,7 @@
 
 import { randomBytes } from "node:crypto";
 import {
-  mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync,
+  mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -52,7 +52,30 @@ function writeState(state) {
   mkdirSync(dirname(file), { recursive: true });
   const temp = `${file}.${process.pid}-${randomBytes(4).toString("hex")}.tmp`;
   writeFileSync(temp, `${JSON.stringify(state, null, 2)}\n`);
-  renameSync(temp, file);
+  try {
+    renameOver(temp, file);
+  } catch (error) {
+    rmSync(temp, { force: true });
+    throw error;
+  }
+}
+
+const RENAME_REFUSED = new Set(["EPERM", "EACCES", "EBUSY"]);
+const RENAME_RETRY_MS = 20;
+const RENAME_GIVE_UP_MS = 1000;
+
+// Windows refuses a rename over a file another process has open, as the server has while it reads
+// the state, so a refused rename is tried again for up to a second.
+function renameOver(temp, file) {
+  for (let waited = 0; ; waited += RENAME_RETRY_MS) {
+    try {
+      renameSync(temp, file);
+      return;
+    } catch (error) {
+      if (waited >= RENAME_GIVE_UP_MS || !RENAME_REFUSED.has(error.code)) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, RENAME_RETRY_MS);
+    }
+  }
 }
 
 const projectOf = (state, root) => state.projects[projectKey(root)];
