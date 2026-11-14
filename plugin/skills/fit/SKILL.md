@@ -18,6 +18,8 @@ Run `node "<helper>/src/cli.mjs" coverage`. It counts the index's files per type
 
 Read the project's own notes (`CLAUDE.md`, the README) for what the work searches for, such as a project's own templating or event names.
 
+When the session was sent here because its recent searches found the file less often than the goal, also run `node "<helper>/src/cli.mjs" assess`. It explains each recent miss: fit the files its `no-symbols` misses name. A miss of another cause needs no rule, and the fit still saves at the end.
+
 ## 2. Start from a reference rule set
 
 `<plugin>/skills/fit/reference/` holds rule sets for common languages, each with a `description` of what it names:
@@ -69,4 +71,6 @@ Try again until the samples read right and the bare files are the ones meant to 
 
 ## 5. Save it
 
-Put the rules under `rules` in `.findwright/config.json`, next to any `include`, `exclude` or `goal` the file already has, and keep the rules already there unless they were the ones being fixed. Show the user what it covers in a few plain lines (which kinds of files gain symbols, how many files stay bare and why) and write it on a yes. The next FindWright call rebuilds the index with it. Run `coverage` again and say how many files gained symbols.
+Put the rules under `rules` in `.findwright/config.json`, next to any `include`, `exclude` or `goal` the file already has, and keep the rules already there unless they were the ones being fixed. Show the user what it covers in a few plain lines (which kinds of files gain symbols, how many files stay bare and why) and write it on a yes. On a no, save the rules list as it was, an empty one when there was none, so the fit still counts as done. The next FindWright call rebuilds the index with it. Run `coverage` again and say how many files gained symbols.
+
+Always save at the end, also when there is nothing to add: write `"rules": []` when the repo needs no rules, and write the file again unchanged when its rules already cover what the misses need. Saving marks the fit as done, which stops the session-start notice that sends a session here.

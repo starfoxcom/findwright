@@ -53,7 +53,7 @@ The hook sends Grep, Glob and shell searches to FindWright in repos that have an
 
 ## 6. Fit the index to this project
 
-Only inside a git repo (`git rev-parse --show-toplevel`). FindWright knows no language by itself, so a project is searchable by name only once it has rules: when `.findwright/config.json` has no `rules` list, say in one line that FindWright is being fitted to this project, which takes a few minutes, and follow `<plugin>/skills/fit/SKILL.md`. Running setup is the yes to the fit, so save the config without asking again, and say what it covers. When the config already has rules, say so and leave them. The first `coverage` run builds the index in `.findwright/`, which keeps itself out of git.
+Only inside a git repo (`git rev-parse --show-toplevel`). FindWright names a project's code with the rules in its config: when `.findwright/config.json` has no `rules` list, say in one line that FindWright is being fitted to this project, which takes a few minutes, and follow `<plugin>/skills/fit/SKILL.md`. Running setup is the yes to the fit, so save the config without asking again, always with a `rules` list (an empty one when the project needs none), and say what it covers. When the config already has rules, say so and leave them. The first `coverage` run builds the index in `.findwright/`, which keeps itself out of git.
 
 ## 7. Anonymous usage counts
 

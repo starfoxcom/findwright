@@ -6,7 +6,7 @@ import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { gitRoot, globFilter, hasRules, openIndex, readConfig, refresh } from "./store.mjs";
+import { checkOwnFolder, gitRoot, globFilter, hasRules, openIndex, readConfig, refresh } from "./store.mjs";
 import { DEFAULT_GOAL, fellShort, history, sinceFit } from "./hits.mjs";
 import { coverage, outline, search, symbols } from "./query.mjs";
 import { find } from "./find.mjs";
@@ -168,8 +168,10 @@ function countsNotice() {
 function fitNotice() {
   if (!root) return undefined;
   try {
+    // A cloned repo's .findwright/ is refused here too, before any of its files is read.
+    checkOwnFolder(root);
     if (!hasRules(root)) {
-      return "This repo has no FindWright rules yet, so searches cannot find its code by name. Before the first "
+      return "This repo has not been fitted for FindWright yet, so searches can miss its code by name. Before the first "
         + "search, run /findwright:fit, and tell the user in one line that it is fitting FindWright to the project.";
     }
     if (fellShort(sinceFit(root, history(root)), readConfig(root).goal ?? DEFAULT_GOAL)) {

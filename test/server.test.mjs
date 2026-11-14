@@ -90,6 +90,9 @@ test("a session is sent to /findwright:fit when the repo has no rules, or its la
   assert.match(instructionsAt(short), /less often than the goal/, "three sessions at 50%");
   log("2020-01-01T00:00:00.000Z");
   assert.equal(instructionsAt(short), undefined, "the same sessions, then a fit saved after them");
+  const refused = fittedRepo();
+  mkdirSync(join(refused, ".findwright", "linked"), { recursive: true });
+  assert.equal(instructionsAt(refused), undefined, "a .findwright folder holding more than plain files");
 });
 
 test("a session started after a failed counts send is told once a day", () => {
