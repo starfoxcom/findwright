@@ -67,6 +67,7 @@ function labelled(rows) {
 
 const element = (tag, className, text = "") =>
   Object.assign(document.createElement(tag), { className, textContent: text });
+const plural = (count, one, many) => (count === 1 ? one : many);
 const percentOf = (part, whole) => Math.round((100 * part) / whole);
 const width = (part, whole) => `${((100 * part) / whole).toFixed(3)}%`;
 
@@ -95,7 +96,8 @@ function projectRow(row, index, largest) {
   bar.append(hits, element("i", "seg-miss"));
   const track = element("span", "project-track");
   track.append(bar);
-  const count = `${row.searches} searches · ${percentOf(row.hits, row.searches)}% found the file`;
+  const searches = `${row.searches} ${plural(row.searches, "search", "searches")}`;
+  const count = `${searches} · ${percentOf(row.hits, row.searches)}% found the file`;
   item.append(
     element("span", "project-name", row.label),
     track,
@@ -128,10 +130,14 @@ function show(total) {
     stats.querySelector(`[data-total="${name}"]`).textContent = format(value);
   }
   const places = total.countries > 1 ? ` in ${total.countries} countries` : "";
-  const one = total.projects === 1;
-  note.textContent = `From ${total.projects} ${one ? "project" : "projects"}${places} `
-    + `whose ${one ? "owner" : "owners"} turned on the anonymous counts. `
+  note.textContent = `From ${total.projects} ${plural(total.projects, "project", "projects")}${places} `
+    + `whose ${plural(total.projects, "owner", "owners")} turned on the anonymous counts. `
     + "An anonymous counter cannot prove a count is real, so read these as a signal.";
+  stats.querySelector('[data-label="searches"]').textContent = plural(total.searches,
+    "search counted, followed by opening a project file",
+    "searches counted, each one followed by opening a project file");
+  stats.querySelector('[data-label="sessions"]').textContent =
+    plural(total.sessions, "session that searched", "sessions that searched");
   const rows = labelled(total.rows);
   const largest = Math.max(...rows.map((row) => row.searches));
   chart.replaceChildren(...rows.map((row, index) => projectRow(row, index, largest)));
