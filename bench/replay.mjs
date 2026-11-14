@@ -13,7 +13,7 @@ const BASE_RULES = ["markdown", "yaml", "json", "javascript-typescript", "python
   // A `.template` file is read as the file it renders to, as the fit globs it.
   .map((rule) => ({ ...rule, globs: rule.globs.flatMap((glob) => [glob, `${glob}.template`]) }));
 const withBase = (config) => ({ ...config, rules: [...BASE_RULES, ...(config.rules ?? [])] });
-// Code is what the old index read as code; every other file is a doc, a `.template` as its target.
+// The extensions scored as code; every other file scores as a doc, a `.template` as its target.
 const CODE = /^(js|mjs|cjs|ts|tsx|jsx|mts|py|css|html|htm|sh|bash)$/;
 const isCode = (path) => CODE.test(typeOf(path.replace(/\.template$/, "")));
 import { search } from "../src/query.mjs";
@@ -161,7 +161,7 @@ function ours2(db, ev, k) {
   const keep = pathFilter(ev.input);
   const t = performance.now();
   const N = db.prepare("SELECT COUNT(*) AS n FROM files").get().n;
-  const paths = [...kinds.keys()].filter(keep);
+  const paths = db.prepare("SELECT path FROM files").all().map((r) => r.path).filter(keep);
   const base = (p) => p.slice(p.lastIndexOf("/") + 1).toLowerCase();
   let ranked;
   let lines = [];
