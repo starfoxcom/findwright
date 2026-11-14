@@ -53,7 +53,7 @@ A glob starting with `!` leaves out the files it matches, as in ripgrep: `--glob
   - `nest`: `true`, or a separator such as `"::"`: the symbol is named under the nesting symbol whose block holds it (`jobs.review.steps`).
   - `group`: rules in the same group share each line, and the first in the list to match it takes it.
   - `except`: names to drop, such as `if` and `for` for a method pattern.
-  - `inside` and `outside`: regions the rule matches only within, or never in, each `{ "start": "<regex>", "end": "indent" | { "until": "<regex>" } }` covering the lines after its start; `"first": true` holds only for a region that starts on line 1, such as front matter.
+  - `inside` and `outside`: regions the rule matches only within, or never in, each `{ "start": "<regex>", "end": "indent" | { "until": "<regex>" } }` covering the lines after its start; `"first": true` holds only for a region that starts on line 1, such as front matter. A rule lists at most 8 `outside` regions; one with more is dropped.
 
 `findwright try <rules.json>` runs draft rules over the repo without writing the config or touching the index, and prints what each kind of symbol finds, with samples, and which matched files still get none. The plugin's `/findwright:fit` skill writes a project's rules this way, starting from the reference rule sets in `plugin/skills/fit/reference/`.
 
