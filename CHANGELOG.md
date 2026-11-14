@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Breaking
+- FindWright has no built-in languages any more: every symbol comes from the rules in the project's `.findwright/config.json`, and the `kinds` setting is gone. A project with no rules still gets full-text and meaning search, but no symbols until `/findwright:fit` writes its rules, which setup and update do for you. `coverage` now counts files per type (their extension) under `types` ([#49](https://github.com/starfoxcom/findwright/issues/49)).
 - FindWright installs from the shared `wrights` marketplace: `/plugin marketplace add starfoxcom/wrights`, then `/plugin install findwright@wrights`. The `findwright` marketplace in this repo is gone, so a computer that installed `findwright@findwright` removes it (`/plugin uninstall findwright@findwright`, then `/plugin marketplace remove findwright`) and installs from `wrights` ([#45](https://github.com/starfoxcom/findwright/issues/45)).
 
 ### Added
@@ -43,6 +44,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2026-11-13
 
 ### Breaking
+- FindWright has no built-in languages any more: every symbol comes from the rules in the project's `.findwright/config.json`, and the `kinds` setting is gone. A project with no rules still gets full-text and meaning search, but no symbols until `/findwright:fit` writes its rules, which setup and update do for you. `coverage` now counts files per type (their extension) under `types` ([#49](https://github.com/starfoxcom/findwright/issues/49)).
 - Find needs the meaning model: without it, or when it does not match its checksum, find says so and points at setup instead of quietly ranking by words alone. The model is no longer downloaded on the first search, and there is no setting that turns meaning search off. Run `/findwright:setup`, or `findwright model` from a shell, once to install it.
 - FindWright now asks for Node 22.16 or later (or Node 24 and up), the first releases whose built-in SQLite has the full-text search the index needs, and says so plainly on an older Node instead of failing with "no such module: fts5". It used to claim 22.13, where every search failed. Node 23 never had it. Update Node if yours is older.
 

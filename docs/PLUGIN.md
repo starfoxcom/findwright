@@ -24,7 +24,7 @@ The plugin directory accepts from an organization that is not Verified only Mark
 3. Installs the meaning model with `findwright model`, which downloads it and checks the pinned SHA-256; find returns an error naming setup without it.
 4. Registers the server for the user: `claude mcp add --scope user findwright -- node "<home>/.findwright/helper/node_modules/findwright/src/server.mjs"`. When a `findwright` server is registered already (Bindwright's copy), it says which copy runs now and switches to the plugin's one, which is the newer.
 5. Offers the search hook, which sends Grep, Glob and shell searches to FindWright in repos that have an index: `findwright home install-hook` merges it into `~/.claude/settings.json` (backup first, refusing a file that is not valid JSON). When Bindwright's `findwright-first.py` is registered, it leaves that one in place, since two would answer every search twice.
-6. In a git repo, offers to fit the index to the project: runs `coverage`, and for file kinds with no symbols proposes `kinds` and `rules` for `.findwright/config.json`, written on a yes.
+6. In a git repo with no rules yet, fits the index to the project with the fit skill: it reads `coverage`, starts from the reference rule sets that match the repo's file types, writes rules for the rest, checks them with `findwright try` and saves `.findwright/config.json`.
 
 `update` reinstalls the helper at the plugin's version, `doctor` checks Node, the helper version, the registration and the hook and says each fix, and `remove` takes out the hook, the registration and the helper folder, then the plugin, each on a yes. Indexes in projects (`.findwright/`) stay unless the user asks.
 

@@ -1,6 +1,6 @@
 # FindWright
 
-FindWright gives Claude a code index that adapts to each project. It indexes every file the project tracks (code, docs, config and templates alike) and answers plain-English questions, names and regular-expression searches from it, with short answers that point at the right lines. A file format no built-in extractor knows gets a pattern rule in the project's `.findwright/config.json`, so it is still searchable by name.
+FindWright gives Claude a code index that adapts to each project. It indexes every file the project tracks (code, docs, config and templates alike) and answers plain-English questions, names and regular-expression searches from it, with short answers that point at the right lines. FindWright knows no language by itself: Claude writes each project's rules in `.findwright/config.json`, starting from the reference rule sets the plugin ships, so any language or file format is searchable by name.
 
 ## Install
 

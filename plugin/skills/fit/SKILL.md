@@ -11,7 +11,7 @@ FindWright knows no language by itself. It runs the rules in `.findwright/config
 
 ## 1. See what the repo holds
 
-Run `node "<helper>/src/cli.mjs" coverage`. It lists every file the index holds and the ones that yield no symbol. Group those files by extension and count them, largest first. For each group, decide whether a search would look for something inside it:
+Run `node "<helper>/src/cli.mjs" coverage`. It counts the index's files per type (their extension) with how many yield no symbol, then lists those bare files. For each type with bare files, largest first, decide whether a search would look for something inside it:
 
 - **Fit it:** code, docs, config and data the work reads by name (functions, classes, keys, headings, tests, translation keys, SQL tables, environment variables, shader entry points).
 - **Leave it:** licenses, lock files, ignore lists, generated or minified files, vendored code, binaries. Full-text search still covers their text.
