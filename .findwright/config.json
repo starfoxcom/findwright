@@ -1,7 +1,7 @@
 {
   "rules": [
     {"globs":["**/*.md","**/*.mdx"],"kind":"front-matter","pattern":"^(?<name>[A-Za-z][\\w-]*):","inside":{"start":"^---\\s*$","end":{"until":"^---\\s*$"},"first":true}},
-    {"globs":["**/*.md","**/*.mdx"],"kind":"heading","pattern":"^(?<level>#{1,6})\\s+(?<name>.+?)\\s*#*\\s*$","end":"next","outside":[{"start":"^\\s*(```|~~~)","end":{"until":"^\\s*(```|~~~)"}}]},
+    {"globs":["**/*.md","**/*.mdx"],"kind":"heading","pattern":"^(?<level>#{1,6})\\s+(?<name>.+?)\\s*#*\\s*$","end":"next","outside":[{"start":"^\\s*(```|~~~)","end":{"until":"^\\s*(```|~~~)"}},{"start":"^---\\s*$","end":{"until":"^---\\s*$"},"first":true}]},
     {"globs":["**/*.yml","**/*.yaml"],"kind":"item","pattern":"^(?<indent>\\s*)-\\s+name:\\s*[\"']?(?<name>.+?)[\"']?\\s*$","end":"indent","outside":[{"start":":\\s*[|>][-+]?\\s*$","end":"indent"}]},
     {"globs":["**/*.yml","**/*.yaml"],"kind":"key","pattern":"^(?<indent>\\s*(?:-\\s+)?)[\"']?(?<name>[\\w.$/@-]+)[\"']?\\s*:(?:\\s|$)","end":"indent","nest":true,"outside":[{"start":":\\s*[|>][-+]?\\s*$","end":"indent"}]},
     {"globs":["**/*.json","**/*.jsonc"],"kind":"key","pattern":"\"(?<name>(?:[^\"\\\\]|\\\\.)*)\"\\s*:\\s*","end":"value","nest":true},
