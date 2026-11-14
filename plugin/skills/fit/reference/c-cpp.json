@@ -70,6 +70,17 @@
    "globs": [
     "**/*.cc",
     "**/*.cpp",
+    "**/*.cxx"
+   ],
+   "kind": "test",
+   "end": "brace",
+   "pattern": "^\\s*(?:TEST|TEST_F|TEST_P|TYPED_TEST)\\s*\\(\\s*\\w+\\s*,\\s*(?<name>\\w+)",
+   "group": "callable"
+  },
+  {
+   "globs": [
+    "**/*.cc",
+    "**/*.cpp",
     "**/*.cxx",
     "**/*.h",
     "**/*.hh",
@@ -81,7 +92,7 @@
    "end": "brace",
    "nest": "::",
    "group": "callable",
-   "pattern": "^(?:template\\s*<.*>\\s*)?[A-Za-z_][\\w:<>,\\*& ]*?\\b(?<name>[A-Za-z_]\\w*::~?[A-Za-z_]\\w*)\\s*\\("
+   "pattern": "^(?:template\\s*<.*>\\s*)?(?:[A-Za-z_][\\w:<>,\\*& ]*?\\b)?(?<name>[A-Za-z_]\\w*::~?[A-Za-z_]\\w*)\\s*\\("
   },
   {
    "globs": [
@@ -117,7 +128,7 @@
     "alignof",
     "static_assert"
    ],
-   "pattern": "^(?:template\\s*<.*>\\s*)?(?:(?:static|inline|constexpr|consteval|extern|virtual|explicit|friend|[A-Z][A-Z0-9_]+)\\s+)*[A-Za-z_][\\w<>,:]*[\\*&\\s]+\\**(?<name>[A-Za-z_]\\w*)\\s*\\([^;]*$"
+   "pattern": "^(?:template\\s*<.*>\\s*)?(?:(?:static|inline|constexpr|consteval|extern|virtual|explicit|friend|const|volatile|unsigned|signed|long|short|struct|enum|union|[A-Z][A-Z0-9_]+)\\s+)*[A-Za-z_][\\w<>,:]*[\\*&\\s]+\\**(?<name>[A-Za-z_]\\w*)\\s*\\([^;]*$"
   },
   {
    "globs": [
@@ -182,17 +193,7 @@
     "decltype",
     "static_assert"
    ],
-   "pattern": "^\\s+(?:(?:virtual|static|inline|constexpr|explicit|friend|const)\\s+)*[A-Za-z_][\\w<>,:]*[\\*&\\s]+\\**(?<name>~?[A-Za-z_]\\w*)\\s*\\([^)]*\\)\\s*(?:const\\s*)?(?:noexcept\\s*)?(?:override\\s*|final\\s*)*(?:=\\s*(?:0|default|delete)\\s*)?;"
-  },
-  {
-   "globs": [
-    "**/*.cc",
-    "**/*.cpp",
-    "**/*.cxx"
-   ],
-   "kind": "test",
-   "end": "brace",
-   "pattern": "^\\s*(?:TEST|TEST_F|TEST_P|TYPED_TEST)\\s*\\(\\s*\\w+\\s*,\\s*(?<name>\\w+)"
+   "pattern": "^\\s+(?:(?:virtual|static|inline|constexpr|explicit|friend|const|(?:un)?signed|short)\\s+)*(?:void|bool|char|int|long|float|double|auto|[A-Z_][\\w<>,:]*|[a-z]\\w*[_\\d:<][\\w<>,:]*)[\\*&\\s]+\\**(?<name>~?[A-Za-z_]\\w*)\\s*\\([^)]*\\)\\s*(?:(?:const|noexcept|override|final)\\s*)*(?:=\\s*(?:0|default|delete)\\s*)?;"
   }
  ]
 }

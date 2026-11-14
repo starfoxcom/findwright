@@ -5,7 +5,7 @@ description: "Fit FindWright's index to this project: read what the repo holds, 
 
 # /findwright:fit
 
-FindWright knows no language by itself. It runs the rules in `.findwright/config.json`, and this skill is how a session writes them: look at what the repo holds, start from a reference rule set where one fits, write rules for the rest, try them on the repo, and save the file. The config is committed, so everyone who works on the project gets the same index.
+FindWright names a project's symbols with the rules in `.findwright/config.json`, and this skill is how a session writes them: look at what the repo holds, start from a reference rule set where one fits, write rules for the rest, try them on the repo, and save the file. The config is committed, so everyone who works on the project gets the same index.
 
 `<helper>` is `$HOME/.findwright/helper/node_modules/findwright`, and `<plugin>` is `${CLAUDE_PLUGIN_ROOT}`. Run every command from the repo root.
 
@@ -37,7 +37,7 @@ Read the project's own notes (`CLAUDE.md`, the README) for what the work searche
 | `dart.json` | `.dart`, Flutter tests |
 | `gdscript.json` | `.gd` |
 
-Copy the rules of each set the repo needs into a draft file in the session's scratch folder, and change their globs when the project keeps a kind of file under another name (a `.yml.template` read as YAML, say). They are starting points: change any rule that misnames this project's code.
+Use a set only for files that step 1 found with no symbol: a kind of file that already yields symbols is covered, and a second set for it would name each symbol twice. Copy the rules of each set the repo needs into a draft file in the session's scratch folder, and change their globs when the project keeps a kind of file under another name (a `.yml.template` read as YAML, say). They are starting points: change any rule that misnames this project's code.
 
 ## 3. Write rules for the rest
 
