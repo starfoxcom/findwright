@@ -51,7 +51,8 @@ export function tryRules(root, rules, config) {
     files: matched,
     bare: bare.length,
     bareFiles: bare.slice(0, MAX_BARE),
-    kinds: Object.fromEntries([...byKind].map(([kind, list]) => [kind, { symbols: list.length, samples: spread(list) }])),
+    kinds: Object.fromEntries([...byKind]
+      .map(([kind, list]) => [kind, { symbols: list.length, samples: spread(list) }])),
     skipped: rules.flatMap((rule, i) => (live.includes(rule) ? [] : [{ rule: i, why: SKIPPED }])),
   };
 }
