@@ -9,7 +9,22 @@
       ],
       "kind": "heading",
       "end": "next",
-      "pattern": "^(?<level>#{1,6})\\s+(?<name>.+?)\\s*#*\\s*$"
+      "pattern": "^(?<level>#{1,6})\\s+(?<name>.+?)\\s*#*\\s*$",
+      "outside": [
+        {
+          "start": "^\\s*(```|~~~)",
+          "end": {
+            "until": "^\\s*(```|~~~)"
+          }
+        },
+        {
+          "start": "^---\\s*$",
+          "end": {
+            "until": "^---\\s*$"
+          },
+          "first": true
+        }
+      ]
     },
     {
       "globs": [

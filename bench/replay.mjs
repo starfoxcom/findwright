@@ -9,8 +9,10 @@ import { openIndex, refresh, UNREADABLE } from "../src/store.mjs";
 // The reference sets for the file types every project has, as a fitted project would carry them.
 const REFERENCE = new URL("../plugin/skills/fit/reference/", import.meta.url);
 const BASE_RULES = ["markdown", "yaml", "json", "javascript-typescript", "python", "css", "html", "shell"]
-  .flatMap((set) => JSON.parse(readFileSync(new URL(`${set}.json`, REFERENCE), "utf8")).rules);
-const withBase = (config) => ({ ...config, rules: [...BASE_RULES, ...config.rules] });
+  .flatMap((set) => JSON.parse(readFileSync(new URL(`${set}.json`, REFERENCE), "utf8")).rules)
+  // A `.template` file is read as the file it renders to, as the fit globs it.
+  .map((rule) => ({ ...rule, globs: rule.globs.flatMap((glob) => [glob, `${glob}.template`]) }));
+const withBase = (config) => ({ ...config, rules: [...BASE_RULES, ...(config.rules ?? [])] });
 import { search } from "../src/query.mjs";
 import { find } from "../src/find.mjs";
 import { ensureModel, loadModel } from "../src/embed.mjs";
