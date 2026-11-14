@@ -16,7 +16,7 @@ Run each, and keep every one that fails as a finding with its fix:
 3. **Registration:** `claude mcp get findwright` names `<helper>/src/server.mjs`. Another copy (such as Bindwright's) is a note, not a failure: say which one runs. Missing is a finding. Fix: step 4 of the setup skill.
 4. **The server starts:** `node "<helper>/src/cli.mjs" coverage` inside a git repo prints the index's file counts, and `node "<helper>/src/cli.mjs" find setup` exits without an error. An error naming the meaning model is a finding. Fix: step 3 of the setup skill. Outside a repo, skip it.
 5. **Hook:** `node "<helper>/src/cli.mjs" home status`. With `hook` false and `others` empty, the hook is missing (a note: searches still work, they just are not routed). With both, two hooks answer each search: a finding, fixed with `node "<helper>/src/cli.mjs" home remove-hook`.
-6. **This repo's config:** when `.findwright/config.json` exists, it must parse as JSON. Fix: show the parse error and the line.
+6. **This repo's config:** when `.findwright/config.json` exists, it must parse as JSON. Fix: show the parse error and the line. Inside a git repo, a config with no `rules` list is a finding: the project's code has no symbols to search by name. Fix: `/findwright:fit`.
 
 ## 2. Report
 

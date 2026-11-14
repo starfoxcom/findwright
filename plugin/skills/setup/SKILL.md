@@ -5,7 +5,7 @@ description: "Install FindWright on this computer, register it with Claude Code 
 
 # /findwright:setup
 
-Sets FindWright up: a supported Node with every security fix, the helper (the part that runs on this computer), its meaning model and its registration with Claude Code, then offers the search hook and, inside a git repo, to fit the index to the project. Running setup is the yes to everything FindWright needs to work: say what each step installs, then install it, without asking again. FindWright is on only when all of it is in place. When a requirement cannot be installed, or the user does not want it, stop and say FindWright stays off until it is there; there is no half-working mode.
+Sets FindWright up: a supported Node with every security fix, the helper (the part that runs on this computer), its meaning model and its registration with Claude Code, then offers the search hook and, inside a git repo, fits the index to the project. Running setup is the yes to everything FindWright needs to work: say what each step installs, then install it, without asking again. FindWright is on only when all of it is in place. When a requirement cannot be installed, or the user does not want it, stop and say FindWright stays off until it is there; there is no half-working mode.
 
 `<helper>` is `$HOME/.findwright/helper/node_modules/findwright` in every FindWright skill, and `<plugin>` is `${CLAUDE_PLUGIN_ROOT}`. `<home>` is the user's home folder, `$HOME`, written out in full in each command.
 
@@ -53,9 +53,7 @@ The hook sends Grep, Glob and shell searches to FindWright in repos that have an
 
 ## 6. Fit the index to this project
 
-Only inside a git repo (`git rev-parse --show-toplevel`). Ask, "Fit FindWright's index to this project now? It takes a minute.", "Yes" first. On a yes:
-
-Follow `<plugin>/skills/fit/SKILL.md`: it reads what the repo holds, starts from the reference rule sets that fit, writes rules for the rest, tries them on the repo and saves `.findwright/config.json` on a yes. The first `coverage` run builds the index in `.findwright/`, which keeps itself out of git.
+Only inside a git repo (`git rev-parse --show-toplevel`). FindWright knows no language by itself, so a project is searchable by name only once it has rules: when `.findwright/config.json` has no `rules` list, say in one line that FindWright is being fitted to this project, which takes a few minutes, and follow `<plugin>/skills/fit/SKILL.md`. Running setup is the yes to the fit, so save the config without asking again, and say what it covers. When the config already has rules, say so and leave them. The first `coverage` run builds the index in `.findwright/`, which keeps itself out of git.
 
 ## 7. Anonymous usage counts
 
