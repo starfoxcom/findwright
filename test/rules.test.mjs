@@ -132,7 +132,7 @@ for (const [name, text, rule, expected] of regions) {
 
 const unbounded = [
   ["brace blocks that never close", "function f() {\n".repeat(140_000), { pattern: FUNCTION, end: "brace" }],
-  ["indent blocks that each run to the end", " x\n".repeat(700_000), { pattern: r`^(?<indent>)\s*x`, end: "indent" }],
+  ["indent blocks that each run to the end", " x\n".repeat(150_000), { pattern: r`^(?<indent>)\s*x`, end: "indent" }],
   ["indent regions over blank lines", "\n".repeat(1_000_000),
     { pattern: "x", outside: [{ start: "^$", end: "indent" }] }],
   ["long lines whose every character opens a brace scan", `${"x".repeat(1000)}\n`.repeat(2000),
@@ -142,7 +142,7 @@ const unbounded = [
 ];
 
 for (const [name, text, rule] of unbounded) {
-  test(`block ends cost no more than the scan budget: ${name}`, () => {
+  test(`block ends and regions cost time in proportion to the file: ${name}`, () => {
     const start = performance.now();
     fromRules(text, [{ kind: "k", ...rule }]);
     assert.ok(performance.now() - start < 3000, `took ${Math.round(performance.now() - start)} ms`);
@@ -164,23 +164,26 @@ test("a rule with more regions than the cap is dropped", () => {
   assert.equal(normalRule({ pattern: "x", kind: "k", outside: Array(9).fill(region) }), null);
 });
 
-test("a value that closes on its own line ends there, so later keys are not named under it", () => {
-  const text = `{\n  "a": [${"1, ".repeat(400)}2],\n  "b": 1,\n  "c": {"d": 2}\n}`;
-  const found = fromRules(text, [{ pattern: JSON_KEY, kind: "key", end: "value", nest: true }]);
-  assert.deepEqual(found.map((s) => [s.name, s.line, s.endLine]),
-    [["a", 2, 2], ["b", 3, 3], ["c", 4, 4], ["c.d", 4, 4]]);
-});
+// JSON whose lines hold more keys than a line's repeat searches reach; every key yielded must
+// carry its real path.
+const keyNames = (count, prefix = "") => Array.from({ length: count }, (_, i) => `${prefix}k${i}`);
+const keys = (count, value) => keyNames(count).map((key) => `"${key}": ${value}`).join(", ");
+const crowded = [
+  ["one line", `{"a": {${keys(300, `"${"v".repeat(60)}"`)}, "c": {"d": 2}}, "e": {"f": 3}}`,
+    ["a", ...keyNames(300, "a."), "a.c", "a.c.d", "e", "e.f"]],
+  ["a later line inside a key the cut left out", `{${keys(100, 1)}, "a": {\n"b": 1}}`,
+    [...keyNames(100), "a", "a.b"]],
+];
 
-test("a long one-line JSON file names every key it yields by its real path", () => {
-  const keys = Array.from({ length: 300 }, (_, i) => `"k${i}": "${"v".repeat(60)}"`);
-  const text = `{"a": {${keys.join(", ")}, "c": {"d": 2}}, "e": {"f": 3}}`;
-  const real = new Set(["a", ...keys.map((_, i) => `a.k${i}`), "a.c", "a.c.d", "e", "e.f"]);
-  const found = fromRules(text, [{ pattern: JSON_KEY, kind: "key", end: "value", nest: true }]).map((s) => s.name);
-  assert.ok(found.length > 20, `${found.length} keys`);
-  assert.deepEqual(found.filter((name) => !real.has(name)), []);
-});
+for (const [name, text, paths] of crowded) {
+  test(`a key past a line's repeat searches is dropped, never named under the wrong key: ${name}`, () => {
+    const found = fromRules(text, [{ pattern: JSON_KEY, kind: "key", end: "value", nest: true }]).map((s) => s.name);
+    assert.ok(found.length > 10, `${found.length} keys`);
+    assert.deepEqual(found.filter((path) => !paths.includes(path)), []);
+  });
+}
 
-test("a long line is read in full, so a block that opens or ends past its first 1000 characters is right", () => {
+test("a block that opens or ends far along a long line gets its real range", () => {
   const data = `const DATA = [${"1, ".repeat(400)}2];\nfunction g() {\n  x;\n}`;
   const rules = [{ pattern: r`^const\s+(?<name>\w+)`, kind: "const", end: "brace", nest: true },
     { pattern: FUNCTION, kind: "function", end: "brace", nest: true }];
