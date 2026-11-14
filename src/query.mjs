@@ -1,7 +1,7 @@
 // Queries over the index: regex search with the enclosing symbol of each hit,
 // symbol lookup, a file's outline, and the coverage report.
 
-import { globFilter } from "./store.mjs";
+import { globFilter, UNREADABLE } from "./store.mjs";
 import vm from "node:vm";
 import { linearRegExp } from "./linear.mjs";
 
@@ -235,9 +235,10 @@ export function outline(db, path) {
   return db.prepare("SELECT name, kind, line, end_line FROM symbols WHERE path = ? ORDER BY line").all(path);
 }
 
-// What the index covers: files per kind, and how many of them yielded no symbol.
+// What the index covers: files per type (extension), and how many of them yielded no symbol.
 export function coverage(db) {
-  const rows = db.prepare("SELECT kind, COUNT(*) AS files, SUM(symbols = 0) AS bare FROM files GROUP BY kind ORDER BY files DESC").all();
-  const bare = db.prepare("SELECT path, kind FROM files WHERE symbols = 0 AND kind != 'binary' ORDER BY path").all();
-  return { kinds: rows, bare };
+  const types = db.prepare("SELECT kind AS type, COUNT(*) AS files, SUM(symbols = 0) AS bare FROM files "
+    + "GROUP BY kind ORDER BY files DESC").all();
+  const bare = db.prepare("SELECT path, kind AS type FROM files WHERE symbols = 0 AND kind != ? ORDER BY path").all(UNREADABLE);
+  return { types, bare };
 }

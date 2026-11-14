@@ -7,7 +7,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { find } from "./find.mjs";
-import { checkOwnFolder, configChangedAt } from "./store.mjs";
+import { checkOwnFolder, configChangedAt, UNREADABLE } from "./store.mjs";
 
 const SEARCH_TOOL = /^mcp__findwright__(find|search)$/;
 const OPEN_TOOLS = { Read: "file_path", Edit: "file_path", Write: "file_path", MultiEdit: "file_path" };
@@ -168,7 +168,7 @@ export function recordSession(root, { goal = DEFAULT_GOAL, transcript = newestTr
 function diagnose(db, miss, model) {
   const file = db.prepare("SELECT kind, symbols FROM files WHERE path = ?").get(miss.wanted);
   if (!file) return { reason: "not-indexed", path: miss.wanted };
-  if (file.kind === "binary") return { reason: "binary", path: miss.wanted };
+  if (file.kind === UNREADABLE) return { reason: "binary", path: miss.wanted };
   const rank = find(db, { query: miss.query, limit: 200, model }).findIndex((f) => f.path === miss.wanted);
   if (rank >= 0) return { reason: "ranked-low", path: miss.wanted, rank: rank + 1 };
   if (file.symbols === 0) return { reason: "no-symbols", path: miss.wanted, kind: file.kind };

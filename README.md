@@ -2,7 +2,7 @@
 
 # FindWright
 
-A code index and search tool that adapts to each project. It indexes every file the project tracks, answers plain-English questions, names and regular-expression searches over all of them, and pulls symbols out of each file with built-in extractors plus pattern rules the project defines, so a language or file format no extractor knows is still searchable by name. It serves the index to Claude Code, or any coding assistant, over MCP.
+A code index and search tool that adapts to each project. It indexes every file the project tracks, answers plain-English questions, names and regular-expression searches over all of them, and pulls symbols out of each file with pattern rules the project keeps in `.findwright/config.json`. FindWright knows no language by itself: the agent writes the rules for each project, starting from reference rule sets, so any language or file format is searchable by name without waiting for FindWright to support it. It serves the index to Claude Code, or any coding assistant, over MCP.
 
 On 169 searches replayed from real coding sessions on four projects, the file the session went on to open was in FindWright's answer 69% of the time, against 53% for the code-search tool it replaced, with answers about a sixth the size. `bench/` holds the replay.
 
@@ -31,7 +31,7 @@ findwright find <question or name>         # the files that answer it, best firs
 findwright search <regex> [--glob G] [-i] [-C N]
 findwright symbols <name> [--kind K]
 findwright outline <path>
-findwright coverage                        # files per kind, and files with no symbols
+findwright coverage                        # files per type, and files with no symbols
 findwright refresh                         # bring the index level with the working tree
 findwright try <rules.json>                # what draft rules would name, without saving them
 findwright counts status|share on|share off|project <kind>|send   # the opt-in usage counts
@@ -47,13 +47,7 @@ A glob starting with `!` leaves out the files it matches, as in ripgrep: `--glob
 
 - `include`: globs for files git ignores that the work still reads, such as generated typings.
 - `exclude`: globs to leave out.
-- `kinds`: which extractor reads which files, e.g. `{ "*.mdc": "markdown" }`.
-- `rules`: pattern rules for anything else, each `{ "globs": [...], "kind": "function", "pattern": "^\s*func\s+(?<name>\w+)" }`; the `name` group is the symbol's name. Optional fields give a symbol its structure:
-  - `end`: where its block ends, so `outline` shows the range: `"brace"` (the closing `}`), `"value"` (the bracket closing a JSON value), `"indent"` (the last line indented deeper; an `indent` group sets the depth), `"next"` (the line before the rule's next match whose `level` group is no longer, as headings do), or `{ "until": "<regex>" }`. Without it the symbol is its own line.
-  - `nest`: `true`, or a separator such as `"::"`: the symbol is named under the nesting symbol whose block holds it (`jobs.review.steps`).
-  - `group`: rules in the same group share each line, and the first in the list to match it takes it.
-  - `except`: names to drop, such as `if` and `for` for a method pattern.
-  - `inside` and `outside`: regions the rule matches only within, or never in, each `{ "start": "<regex>", "end": "indent" | { "until": "<regex>" } }` covering the lines after its start; `"first": true` holds only for a region that starts on line 1, such as front matter. A rule lists at most 8 `outside` regions; one with more is dropped.
+- `rules`: the pattern rules that name the project's symbols, each `{ "globs": [...], "kind": "function", "pattern": "^\s*func\s+(?<name>\w+)" }`; the `name` group is the symbol's name. Optional fields give a symbol its structure (where its block ends, the symbol it sits under, comment lines, regions it skips); the fit skill's [rule fields](plugin/skills/fit/SKILL.md#3-write-rules-for-the-rest) list each one and its limits.
 
 `findwright try <rules.json>` runs draft rules over the repo without writing the config or touching the index, and prints what each kind of symbol finds, with samples, and which matched files still get none. The plugin's `/findwright:fit` skill writes a project's rules this way, starting from the reference rule sets in `plugin/skills/fit/reference/`.
 

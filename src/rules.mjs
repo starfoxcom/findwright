@@ -13,6 +13,7 @@
 //            nesting symbol whose block holds it (`jobs.review.steps`), and can hold others
 //   group    rules sharing a group claim lines: the first rule in the list to match a line takes it
 //   except   names to drop (`if`, `for` for a method pattern)
+//   comment  a regex for comment lines, which close no "indent" block
 //   inside   a region the rule matches only within; outside: regions it never matches in.
 //            A region is { start: <regex>, end: "indent" | { until: <regex> }, first?: true } and
 //            covers the lines after its start line through its end; `first` holds only on line 1.
@@ -61,6 +62,10 @@ export function normalRule(rule) {
   if (rule.nest === true || separator) out.nest = separator || ".";
   if (typeof rule.group === "string") out.group = rule.group;
   if (Array.isArray(rule.except)) out.except = strings(rule.except);
+  if (rule.comment !== undefined) {
+    if (!isPattern(rule.comment)) return null;
+    out.comment = rule.comment;
+  }
   if (rule.inside !== undefined) {
     out.inside = normalRegion(rule.inside);
     if (!out.inside) return null;
@@ -82,15 +87,16 @@ const compileRegion = (region) => {
 function compile(rule, order) {
   const pattern = isPattern(rule.pattern) ? linearRegExp(rule.pattern, "g") : null;
   const until = rule.end.until === undefined ? null : linearRegExp(rule.end.until);
+  const comment = rule.comment === undefined ? null : linearRegExp(rule.comment);
   const inside = rule.inside ? compileRegion(rule.inside) : null;
   const outside = (rule.outside ?? []).map(compileRegion);
-  const unreadable = (rule.end.until !== undefined && !until) || (rule.inside && !inside) || outside.includes(null);
+  const unreadable = (rule.end.until !== undefined && !until) || (rule.comment !== undefined && !comment)
+    || (rule.inside && !inside) || outside.includes(null);
   if (!pattern || unreadable) return null;
-  return { ...rule, order, pattern, until, inside, outside, except: new Set(rule.except ?? []) };
+  return { ...rule, order, pattern, until, comment, inside, outside, except: new Set(rule.except ?? []) };
 }
 
-/** How far a line is indented, in characters. */
-export const indentOf = (line) => line.length - line.trimStart().length;
+const indentOf = (line) => line.length - line.trimStart().length;
 
 const isBlank = (line) => line.trim() === "";
 
@@ -314,18 +320,52 @@ function valueEnds(all, symbols) {
   for (const symbol of brackets.flat()) symbol.end = [all.length - 1, Infinity];
 }
 
-// "indent": a block runs through the last filled line indented deeper than the symbol, past
-// blank lines.
-function indentEnds(all, symbols) {
+// The comment lines since the last filled line, as [line, indent] with indents falling toward the
+// end: a later comment at least as deep sits in every block an earlier one does, so it replaces it.
+class Remarks {
+  #items = [];
+
+  add(line, indent) {
+    while (this.#items.length && this.#items.at(-1)[1] <= indent) this.#items.pop();
+    this.#items.push([line, indent]);
+  }
+
+  clear() {
+    this.#items = [];
+  }
+
+  // The last comment line indented deeper than `indent`, or -1 when there is none.
+  lastInside(indent) {
+    let low = 0;
+    let high = this.#items.length;
+    while (low < high) {
+      const middle = (low + high) >> 1;
+      if (this.#items[middle][1] > indent) low = middle + 1;
+      else high = middle;
+    }
+    return low ? this.#items[low - 1][0] : -1;
+  }
+}
+
+// "indent": a block runs through the last line indented deeper than the symbol, past blank lines.
+// A line the rule's `comment` pattern matches closes no block, and belongs to each open block it
+// is indented deeper than.
+function indentEnds(all, symbols, comment) {
   const open = new OpenBlocks();
+  const remarks = new Remarks();
   let next = 0;
   let lastFilled = -1;
-  const close = (symbol) => { symbol.end = [Math.max(symbol.line, lastFilled), Infinity]; };
+  const close = (symbol) => {
+    symbol.end = [Math.max(symbol.line, lastFilled, remarks.lastInside(symbol.indent)), Infinity];
+  };
   for (let i = symbols[0]?.line ?? all.length; i < all.length; i++) {
-    const filled = !isBlank(all[i]);
-    if (filled) open.closeAt(indentOf(all[i])).forEach(close);
+    if (comment?.test(all[i])) remarks.add(i, indentOf(all[i]));
+    else if (!isBlank(all[i])) {
+      open.closeAt(indentOf(all[i])).forEach(close);
+      lastFilled = i;
+      remarks.clear();
+    }
     while (next < symbols.length && symbols[next].line === i) open.add(symbols[next].indent, symbols[next++]);
-    if (filled) lastFilled = i;
     if (!open.size) {
       if (next === symbols.length) return;
       i = symbols[next].line - 1;
@@ -371,7 +411,7 @@ function setEnds(all, rule, symbols) {
   if (rule.end === "next") closeAtNext(all, symbols);
   else if (rule.end === "brace") braceEnds(all, symbols);
   else if (rule.end === "value") valueEnds(all, symbols);
-  else if (rule.end === "indent") indentEnds(all, symbols);
+  else if (rule.end === "indent") indentEnds(all, symbols, rule.comment);
   else if (rule.until) untilEnds(all, symbols, rule.until);
 }
 

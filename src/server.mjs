@@ -61,7 +61,7 @@ const TOOLS = {
     run: (args) => text(formatSearch(search(db, args))),
   },
   symbols: {
-    description: "Find symbols by name (a regex or a substring): functions, classes, Markdown headings, YAML and JSON keys, and the project's own kinds (template placeholders, text keys).",
+    description: "Find symbols by name (a regex or a substring): whatever the project's rules name, such as functions, classes, headings, config keys, tests and text keys.",
     inputSchema: {
       type: "object",
       properties: { query: { type: "string" }, kind: { type: "string" }, globs, limit: { type: "number" } },
@@ -75,7 +75,7 @@ const TOOLS = {
     run: (args) => text(outline(db, args.path).map((s) => `${s.line}-${s.end_line}  ${s.kind} ${s.name}`).join("\n") || "No symbols in that file."),
   },
   coverage: {
-    description: "What the index covers: files per kind, and the files no extractor found a symbol in.",
+    description: "What the index covers: files per type (extension), and the files no rule found a symbol in.",
     inputSchema: { type: "object", properties: {} },
     run: () => text(JSON.stringify(coverage(db), null, 1)),
   },

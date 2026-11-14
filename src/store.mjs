@@ -7,7 +7,6 @@ import { DatabaseSync } from "node:sqlite";
 import { execFileSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, sep } from "node:path";
-import { EXTRACTORS } from "./extract.mjs";
 import { fromRules, isObject, normalRule, strings } from "./rules.mjs";
 
 export { isObject };
@@ -26,17 +25,6 @@ export function gitRoot() {
 // Files past this size are listed but not read: they are data, not code.
 const MAX_FILE_BYTES = 2 * 1024 * 1024;
 
-const DEFAULT_KINDS = {
-  "*.md": "markdown", "*.mdx": "markdown",
-  "*.yml": "yaml", "*.yaml": "yaml",
-  "*.json": "json", "*.jsonc": "json",
-  "*.js": "javascript", "*.mjs": "javascript", "*.cjs": "javascript",
-  "*.ts": "javascript", "*.tsx": "javascript", "*.jsx": "javascript", "*.mts": "javascript",
-  "*.py": "python",
-  "*.css": "css",
-  "*.html": "html", "*.htm": "html",
-  "*.sh": "shell", "*.bash": "shell",
-};
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, size INTEGER, mtime REAL, kind TEXT, symbols INTEGER);
@@ -104,11 +92,9 @@ export const matchesAny = (path, globs) => globs.some((g) => globToRegExp(g).tes
 // config.json can make FindWright index less, never fail.
 export function normalConfig(raw) {
   const config = isObject(raw) ? raw : {};
-  const kinds = Object.fromEntries(Object.entries(isObject(config.kinds) ? config.kinds : {})
-    .filter(([, kind]) => typeof kind === "string"));
   const rules = (Array.isArray(config.rules) ? config.rules : []).map(normalRule).filter(Boolean);
   const goal = typeof config.goal === "number" && config.goal > 0 && config.goal <= 100 ? config.goal : undefined;
-  return { include: strings(config.include), exclude: strings(config.exclude), kinds, rules, goal };
+  return { include: strings(config.include), exclude: strings(config.exclude), rules, goal };
 }
 
 /** True when the repo's config lists rules, an empty list included: a project fitted with no
@@ -138,15 +124,14 @@ export function readConfig(root) {
   }
 }
 
-// The kind a path is read as: the config's own globs first, then the defaults.
-// A `.template` file is read as the file it renders to (`ci.yml.template` as YAML).
-export function kindOf(path, config) {
-  const kinds = { ...DEFAULT_KINDS, ...(config.kinds ?? {}) };
-  const target = path.endsWith(".template") ? path.slice(0, -".template".length) : path;
-  const own = Object.entries(config.kinds ?? {}).find(([glob]) => globToRegExp(glob).test(path));
-  if (own) return own[1];
-  const found = Object.entries(kinds).find(([glob]) => globToRegExp(glob).test(target));
-  return found ? found[1] : "text";
+/** The type stored for a file that cannot be read as text; no extension holds a dot. */
+export const UNREADABLE = ".binary";
+
+/** A file's type as coverage groups it: its extension (`cpp`), or `text` for a name with none. */
+export function typeOf(path) {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(dot + 1).toLowerCase() : "text";
 }
 
 function walk(root, folder, out) {
@@ -241,11 +226,8 @@ export function readText(root, path, size) {
   return bytes.toString("utf8");
 }
 
-function symbolsOf(text, path, kind, config) {
-  const extractor = EXTRACTORS[kind];
-  const own = extractor ? extractor(text) : [];
-  const rules = (config.rules ?? []).filter((rule) => matchesAny(path, rule.globs ?? ["**"]));
-  return own.concat(fromRules(text, rules));
+function symbolsOf(text, path, config) {
+  return fromRules(text, (config.rules ?? []).filter((rule) => matchesAny(path, rule.globs ?? ["**"])));
 }
 
 // This copy's version, stamped on the index with the config it read: a session can keep an older
@@ -270,12 +252,12 @@ function refuseNewerIndex(stored) {
 }
 
 // Brings the index level with the working tree; returns what changed. A change to the config's
-// kinds or rules, or to this copy's version, sends every indexed file through indexFile again,
+// rules, or to this copy's version, sends every indexed file through indexFile again,
 // the path a fresh index takes.
 // The stored settings are checked and those files chosen under the write lock, so whenever the
 // settings are written, every file row in the index was indexed with them.
 export function refresh(db, root, config = readConfig(root)) {
-  const extraction = JSON.stringify({ engine: ENGINE, kinds: config.kinds, rules: config.rules });
+  const extraction = JSON.stringify({ engine: ENGINE, rules: config.rules });
   const indexedWith = storedExtraction(db);
   refuseNewerIndex(indexedWith);
   const sameExtraction = indexedWith === extraction;
@@ -329,7 +311,7 @@ function reindexOthers(db, root, done, config) {
   return others.length;
 }
 
-// The copy's version and the config's kinds and rules the index was built with, as JSON,
+// The copy's version and the config's rules the index was built with, as JSON,
 // or undefined before the first build.
 function storedExtraction(db) {
   return db.prepare("SELECT value FROM settings WHERE key = 'extraction'").get()?.value;
@@ -351,9 +333,9 @@ function indexFile(db, root, path, stat, config) {
   try { text = readText(root, path, stat.size); } catch { text = null; }
   const sameText = text !== null && old?.size === stat.size && old?.mtime === stat.mtimeMs;
   dropFile(db, path, { keepVectors: sameText });
-  const kind = kindOf(path, config);
-  const symbols = text === null ? [] : symbolsOf(text, path, kind, config);
-  db.prepare("INSERT INTO files VALUES (?, ?, ?, ?, ?)").run(path, stat.size, stat.mtimeMs, text === null ? "binary" : kind, symbols.length);
+  const symbols = text === null ? [] : symbolsOf(text, path, config);
+  const type = text === null ? UNREADABLE : typeOf(path);
+  db.prepare("INSERT INTO files VALUES (?, ?, ?, ?, ?)").run(path, stat.size, stat.mtimeMs, type, symbols.length);
   if (text === null) return;
   db.prepare("INSERT INTO body (path, text) VALUES (?, ?)").run(path, text);
   writeSymbols(db, path, symbols);

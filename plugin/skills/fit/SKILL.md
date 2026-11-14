@@ -11,7 +11,7 @@ FindWright names a project's symbols with the rules in `.findwright/config.json`
 
 ## 1. See what the repo holds
 
-Run `node "<helper>/src/cli.mjs" coverage`. It lists every file the index holds and the ones that yield no symbol. Group those files by extension and count them, largest first. For each group, decide whether a search would look for something inside it:
+Run `node "<helper>/src/cli.mjs" coverage`. It counts the index's files per type (their extension) with how many yield no symbol, then lists those bare files. For each type with bare files, largest first, decide whether a search would look for something inside it:
 
 - **Fit it:** code, docs, config and data the work reads by name (functions, classes, keys, headings, tests, translation keys, SQL tables, environment variables, shader entry points).
 - **Leave it:** licenses, lock files, ignore lists, generated or minified files, vendored code, binaries. Full-text search still covers their text.
@@ -52,6 +52,7 @@ For a kind of file no reference set covers, open three to five typical files, li
 - `pattern` is a regular expression run on each line; its `name` group names the symbol. When alternatives each hold the name, call them `name`, `name2`, `name3`.
 - `kind` is the word a search filters by: `function`, `class`, `key`, `heading`, `test`.
 - `end` gives the symbol its range, which `outline` and the search results show: `"brace"` for code in braces, `"indent"` for code by indentation (an `indent` group sets the depth), `"value"` for a JSON value, `"next"` for sections that run to the next heading of their level (a `level` group holds the `#` marks), `{ "until": "<regex>" }` for a closing line. Without it, the symbol is its one line.
+- `comment`: for an `"indent"` rule, a regex for the language's comment lines (`"^\\s*#"` for YAML, Python and GDScript). Those lines close no block, and count as part of each block they are indented inside, so a comment written at the left edge inside a block keeps the block whole. Leave it out where a `#` line is code, as in Pug or Sass.
 - `nest`: `true`, or a separator such as `"::"`, names a symbol under the one that holds it (`jobs.review.steps`, `Grid::build`). Give it to every rule whose symbols hold others.
 - `group`: rules in one group share each line, and the first in the list to match it takes it, so put the more specific rule first (a `const` holding an arrow function before a plain `const`).
 - `except`: names to drop, such as `if`, `for` and `return` for a call-shaped pattern.
