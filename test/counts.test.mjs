@@ -195,6 +195,17 @@ test("a failed send is reported once a day until a send gets through", async () 
   assert.equal(failureToReport(ctx.repo, morning + 48 * HOUR), null, "a send got through");
 });
 
+test("a send with nothing left to send clears an old failure", async () => {
+  setShare(true);
+  setProject(ctx.repo, "game");
+  process.env.FINDWRIGHT_COUNTER_URL = "http://127.0.0.1:1";
+  writeSession("only", [hitSearch], 2 * HOUR);
+  await send(ctx.repo, { now: NOW });
+  rmSync(ctx.transcripts, { recursive: true, force: true });
+  assert.equal((await send(ctx.repo, { now: NOW + 25 * HOUR })).reason, "nothing new");
+  assert.equal(failureToReport(ctx.repo, new Date(2030, 0, 1, 9).getTime()), null);
+});
+
 test("a damaged counts.json reads as empty state", async () => {
   writeSession("only", [hitSearch], 2 * HOUR);
   mkdirSync(ctx.home, { recursive: true });

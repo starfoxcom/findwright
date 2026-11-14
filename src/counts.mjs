@@ -45,11 +45,12 @@ function readState() {
   return emptyState();
 }
 
-// Written beside the file, then renamed over it: a crash keeps the old state, never half a new one.
+// Written beside the file under a name of its own, then renamed over it: a crash keeps the old
+// state, and two processes writing at once each rename a whole file, never half of one.
 function writeState(state) {
   const file = stateFile();
   mkdirSync(dirname(file), { recursive: true });
-  const temp = `${file}.tmp`;
+  const temp = `${file}.${process.pid}-${randomBytes(4).toString("hex")}.tmp`;
   writeFileSync(temp, `${JSON.stringify(state, null, 2)}\n`);
   renameSync(temp, file);
 }
@@ -196,7 +197,7 @@ async function attempt(root, now, fetch) {
   if (blocked) return { sent: false, reason: blocked };
   const body = gather(root, project, now);
   if (!body) {
-    record(root, { lastTry: now });
+    record(root, { lastTry: now, failedAt: null });
     return { sent: false, reason: "nothing new" };
   }
   let reply;
