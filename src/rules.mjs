@@ -25,8 +25,9 @@ import { linearRegExp } from "./linear.mjs";
 const MAX_PATTERN = 300;
 // A nested name past this is dropped with everything under it, which keeps deep nesting linear.
 const MAX_NAME = 400;
-// Most characters one file's block ends and regions may scan in all, every line read in full; past
-// it a block ends on its first line and a region covers nothing.
+// Most characters one file's block ends, regions and repeat matches on a line may scan in all,
+// every line read in full; past it a block ends on its first line, a region covers nothing and a
+// rule takes only its first match on a line.
 const SCAN_CHARACTERS = 8_000_000;
 const OPEN_WITHIN = 3;
 const MAX_SEPARATOR = 4;
@@ -157,11 +158,15 @@ function matchesOf(all, rule, taken, budget, allowed) {
     let matched = false;
     for (const m of all[i].matchAll(rule.pattern)) {
       const name = nameOf(m);
-      if (!m[0] || rule.except.has(name)) continue;
-      matched = true;
-      const indent = m.groups?.indent === undefined ? indentOf(all[i]) : m.index + m.groups.indent.length;
-      const level = m.groups?.level?.length ?? 0;
-      found.push({ name, rule, line: i, col: m.index, matchEnd: m.index + m[0].length, indent, level });
+      const matchEnd = m.index + m[0].length;
+      if (m[0] && !rule.except.has(name)) {
+        matched = true;
+        const indent = m.groups?.indent === undefined ? indentOf(all[i]) : m.index + m.groups.indent.length;
+        found.push({ name, rule, line: i, col: m.index, matchEnd, indent, level: m.groups?.level?.length ?? 0 });
+      }
+      // The next search can read the rest of the line, so each one after the first spends it.
+      budget.left -= all[i].length - matchEnd;
+      if (budget.left < 0) break;
     }
     if (matched) taken?.add(i);
   }
