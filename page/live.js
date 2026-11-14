@@ -142,8 +142,6 @@ function show(total) {
   const largest = Math.max(...rows.map((row) => row.searches));
   chart.replaceChildren(...rows.map((row, index) => projectRow(row, index, largest)));
   section.hidden = false;
-  // reveal.js could not see these blocks while the section was hidden, so they join its fade here.
-  for (const block of section.children) onEnter(block, () => block.classList.add("shown"));
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
     chart.classList.add("counted");
     return;
