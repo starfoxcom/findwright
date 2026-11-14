@@ -95,8 +95,9 @@ function compile(rule, order) {
 /** How far a line is indented, in characters. */
 export const indentOf = (line) => line.length - line.trimStart().length;
 
-/** The last line (0-based) of the block that starts on `start` and runs while `isInside` holds; blank lines run on.
-// With a budget, each line read spends one, and past it the block ends on its first line. */
+/** The last line (0-based) of the block that starts on `start` and runs while `isInside` holds;
+ * blank lines run on. With a budget, each line read spends one, and past it the block ends on its
+ * first line. */
 export function blockEnd(all, start, isInside, budget = null) {
   let end = start;
   for (let i = start + 1; i < all.length; i++) {
