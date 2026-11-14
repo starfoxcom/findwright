@@ -124,6 +124,9 @@ export function readConfig(root) {
   }
 }
 
+/** The type stored for a file that cannot be read as text; no extension holds a dot. */
+export const UNREADABLE = ".binary";
+
 /** A file's type as coverage groups it: its extension (`cpp`), or `text` for a name with none. */
 export function typeOf(path) {
   const name = path.slice(path.lastIndexOf("/") + 1);
@@ -331,7 +334,7 @@ function indexFile(db, root, path, stat, config) {
   const sameText = text !== null && old?.size === stat.size && old?.mtime === stat.mtimeMs;
   dropFile(db, path, { keepVectors: sameText });
   const symbols = text === null ? [] : symbolsOf(text, path, config);
-  const type = text === null ? "binary" : typeOf(path);
+  const type = text === null ? UNREADABLE : typeOf(path);
   db.prepare("INSERT INTO files VALUES (?, ?, ?, ?, ?)").run(path, stat.size, stat.mtimeMs, type, symbols.length);
   if (text === null) return;
   db.prepare("INSERT INTO body (path, text) VALUES (?, ?)").run(path, text);
