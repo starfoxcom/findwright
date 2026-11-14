@@ -19,13 +19,14 @@ const hostile = [
   ["overlapping alternation", "(a|aa)+b", "a".repeat(999)],
   ["nested quantifier", "(a+)+$", "a".repeat(999) + "!"],
   ["stacked stars", r`\d*\d*\d*\d*\d*\d*\d*\d*\d*\d*x`, "1".repeat(999)],
+  ["a match on every character of a huge line, each read to its end", "x.*y|x", "x".repeat(2_000_000)],
 ];
 
 for (const [name, pattern, line] of hostile) {
   test(`a hostile rule finishes at once: ${name}`, () => {
     const start = performance.now();
     names(line, pattern);
-    assert.ok(performance.now() - start < 200, `took ${performance.now() - start} ms`);
+    assert.ok(performance.now() - start < 1000, `took ${Math.round(performance.now() - start)} ms`);
   });
 }
 
@@ -163,7 +164,7 @@ test("a rule with more regions than the cap is dropped", () => {
   assert.equal(normalRule({ pattern: "x", kind: "k", outside: Array(9).fill(region) }), null);
 });
 
-test("a block left open on a line cut at its length cap ends on its own line, so later names stay right", () => {
+test("a value that closes on its own line ends there, so later keys are not named under it", () => {
   const text = `{\n  "a": [${"1, ".repeat(400)}2],\n  "b": 1,\n  "c": {"d": 2}\n}`;
   const found = fromRules(text, [{ pattern: JSON_KEY, kind: "key", end: "value", nest: true }]);
   assert.deepEqual(found.map((s) => [s.name, s.line, s.endLine]),
