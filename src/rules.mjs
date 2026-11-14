@@ -33,6 +33,9 @@ const MAX_NAME = 400;
 const SCAN_LINES = 200_000;
 const OPEN_WITHIN = 3;
 const MAX_SEPARATOR = 4;
+// Most `outside` regions one rule may list; a rule past it is dropped, so a config cannot make
+// one file's scan cost more than a few passes per rule.
+const MAX_REGIONS = 8;
 const END_WORDS = new Set(["line", "brace", "value", "indent", "next"]);
 
 /** True for a plain JSON object: not null, not an array. */
@@ -67,7 +70,7 @@ export function normalRule(rule) {
   }
   if (rule.outside !== undefined) {
     out.outside = (Array.isArray(rule.outside) ? rule.outside : [rule.outside]).map(normalRegion);
-    if (out.outside.some((region) => !region)) return null;
+    if (out.outside.length > MAX_REGIONS || out.outside.some((region) => !region)) return null;
   }
   return out;
 }
@@ -89,11 +92,12 @@ function compile(rule, order) {
   return { ...rule, order, pattern, until, inside, outside, except: new Set(rule.except ?? []) };
 }
 
-const indentOf = (line) => line.length - line.trimStart().length;
+/** How far a line is indented, in characters. */
+export const indentOf = (line) => line.length - line.trimStart().length;
 
-// The last line (0-based) of the block that starts on `start` and runs while `isInside` holds; blank lines run on.
-// With a budget, each line read spends one, and past it the block ends on its first line.
-function blockEnd(all, start, isInside, budget = null) {
+/** The last line (0-based) of the block that starts on `start` and runs while `isInside` holds; blank lines run on.
+// With a budget, each line read spends one, and past it the block ends on its first line. */
+export function blockEnd(all, start, isInside, budget = null) {
   let end = start;
   for (let i = start + 1; i < all.length; i++) {
     if (budget && --budget.left < 0) return start;
@@ -115,24 +119,24 @@ function regionEnd(all, start, region, budget) {
   return all.length - 1;
 }
 
-// Per line, whether it lies in one of the regions.
-function regionLines(all, region, budget) {
-  const covered = new Array(all.length).fill(false);
+// Sets `mask` to `value` on every line the region covers.
+function markRegion(all, region, budget, mask, value) {
   for (let i = 0; i < all.length; i++) {
     if (region.first && i > 0) break;
     if (!region.start.test(all[i])) continue;
     const end = regionEnd(all, i, region, budget);
-    for (let j = i + 1; j <= end; j++) covered[j] = true;
+    mask.fill(value, i + 1, end + 1);
     i = end;
   }
-  return covered;
 }
 
-// Per line, whether the rule may match there.
-function allowedLines(all, rule, budget) {
-  const inside = rule.inside ? regionLines(all, rule.inside, budget) : null;
-  const outside = rule.outside.map((region) => regionLines(all, region, budget));
-  return all.map((_, i) => (!inside || inside[i]) && !outside.some((covered) => covered[i]));
+// Fills `mask`, one entry per line, with whether the rule may match there: inside its `inside`
+// region (anywhere without one) and in none of its `outside` regions. One mask serves every rule
+// of a file in turn, so memory stays one byte per line however many rules and regions there are.
+function markAllowed(all, rule, budget, mask) {
+  mask.fill(rule.inside ? 0 : 1);
+  if (rule.inside) markRegion(all, rule.inside, budget, mask, 1);
+  for (const region of rule.outside) markRegion(all, region, budget, mask, 0);
 }
 
 // The `name` group, else the first of `name2`, `name3` ... that took part (one per alternative),
@@ -143,8 +147,8 @@ function nameOf(match) {
   return key ? groups[key] : match[0];
 }
 
-function matchesOf(all, rule, taken, budget) {
-  const allowed = allowedLines(all, rule, budget);
+function matchesOf(all, rule, taken, budget, allowed) {
+  markAllowed(all, rule, budget, allowed);
   const found = [];
   for (let i = 0; i < all.length; i++) {
     if (!allowed[i] || taken?.has(i)) continue;
@@ -193,6 +197,8 @@ function braceEnd(all, symbol, budget) {
       if (ch === ";" && !opened) return null;
       if (ch === "{") { depth++; opened = true; } else if (ch === "}") depth--;
     }
+    // A line cut at MAX_LINE may hide the closing brace, so an end past it would be a guess.
+    if (budget.cut[i] && opened && depth > 0) return null;
     if (opened && depth <= 0) return [i, Infinity];
     if (!opened && i >= symbol.line + OPEN_WITHIN - 1) return null;
   }
@@ -211,6 +217,7 @@ function valueEnd(all, symbol, budget) {
       else if (depth === 0) return null;
       else if ((ch === "}" || ch === "]") && --depth === 0) return [i, j];
     }
+    if (budget.cut[i] && depth > 0) return null;
     if (depth === 0 && i >= symbol.line + OPEN_WITHIN - 1) return null;
   }
   return depth > 0 ? [all.length - 1, Infinity] : null;
@@ -275,8 +282,13 @@ function nestNames(symbols) {
 
 /** The symbols `rules` name in `text`, each { name, kind, line, endLine } with 1-based, inclusive lines. */
 export function fromRules(text, rules) {
-  const all = text.split(/\r?\n/).map((line) => line.slice(0, MAX_LINE));
-  const budget = { left: SCAN_LINES };
+  const lines = text.split(/\r?\n/);
+  const all = lines.map((line) => line.slice(0, MAX_LINE));
+  // The scan's budget, with the lines cut at MAX_LINE: a block left open on one of them falls
+  // back to the symbol's own line, so a cut line costs a range, never a wrong name.
+  const cut = Uint8Array.from(lines, (line) => (line.length > MAX_LINE ? 1 : 0));
+  const budget = { left: SCAN_LINES, cut };
+  const allowed = new Uint8Array(all.length);
   const claimed = new Map();
   const symbols = [];
   rules.forEach((rule, order) => {
@@ -284,7 +296,7 @@ export function fromRules(text, rules) {
     const compiled = normal && compile(normal, order);
     if (!compiled) return;
     if (compiled.group && !claimed.has(compiled.group)) claimed.set(compiled.group, new Set());
-    const found = matchesOf(all, compiled, claimed.get(compiled.group), budget);
+    const found = matchesOf(all, compiled, claimed.get(compiled.group), budget, allowed);
     setEnds(all, compiled, found, budget);
     for (const symbol of found) symbols.push(symbol);
   });

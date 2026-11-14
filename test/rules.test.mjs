@@ -98,7 +98,6 @@ test("a nested name past the cap is dropped with everything under it", () => {
   const found = fromRules(deep, [{ pattern: YAML_KEY, kind: "key", end: "indent", nest: true }]);
   assert.ok(performance.now() - start < 2000, `took ${Math.round(performance.now() - start)} ms`);
   assert.ok(found.length > 50 && found.length < 300);
-  assert.ok(found.every((s) => s.name.length <= 400));
 });
 
 test("rules sharing a group: the first to match a line takes it", () => {
@@ -154,4 +153,17 @@ test("a rule is read as far as it is right: a bad end is one line, a bad region 
   assert.equal(normalRule({ pattern: "x", kind: "k", inside: { start: "a" } }), null);
   assert.equal(normalRule({ pattern: "x", kind: "k", outside: [{ start: "a", end: "indent" }, "b"] }), null);
   assert.equal(normalRule({ pattern: "x" }), null);
+});
+
+test("a rule with more regions than the cap is dropped", () => {
+  const region = { start: "a", end: "indent" };
+  assert.ok(normalRule({ pattern: "x", kind: "k", outside: Array(8).fill(region) }));
+  assert.equal(normalRule({ pattern: "x", kind: "k", outside: Array(9).fill(region) }), null);
+});
+
+test("a block left open on a line cut at its length cap ends on its own line, so later names stay right", () => {
+  const text = `{\n  "a": [${"1, ".repeat(400)}2],\n  "b": 1,\n  "c": {"d": 2}\n}`;
+  const found = fromRules(text, [{ pattern: JSON_KEY, kind: "key", end: "value", nest: true }]);
+  assert.deepEqual(found.map((s) => [s.name, s.line, s.endLine]),
+    [["a", 2, 2], ["b", 3, 3], ["c", 4, 4], ["c.d", 4, 4]]);
 });

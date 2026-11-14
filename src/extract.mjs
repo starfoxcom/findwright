@@ -6,22 +6,14 @@
 // declaration) are read as blank, so no file can make extraction slow.
 
 import { linear } from "./linear.mjs";
+import { blockEnd, indentOf } from "./rules.mjs";
+
+// The 1-based last line of the block opened on line `i` whose lines sit deeper than `indent`.
+const indentedEnd = (all, i, indent) => blockEnd(all, i, (l) => indentOf(l) > indent) + 1;
 
 const MAX_LINE = 1000;
 const lines = (text) => text.split(/\r?\n/).map((line) => (line.length > MAX_LINE ? "" : line));
 
-// The last line of a block that starts at `start` and runs while `isInside` holds.
-function blockEnd(all, start, isInside) {
-  let end = start;
-  for (let i = start + 1; i < all.length; i++) {
-    if (all[i].trim() === "") continue;
-    if (!isInside(all[i])) break;
-    end = i;
-  }
-  return end + 1;
-}
-
-const indentOf = (line) => line.length - line.trimStart().length;
 
 const FRONT_MATTER_KEY = linear(/^([A-Za-z][\w-]*):/);
 const FENCE = linear(/^\s*(```|~~~)/);
@@ -75,7 +67,7 @@ export function yaml(text) {
     scalarIndent = -1;
     const item = YAML_ITEM.exec(line);
     if (item) {
-      found.push({ name: item[2], kind: "item", line: i + 1, endLine: blockEnd(all, i, (l) => indentOf(l) > indent) });
+      found.push({ name: item[2], kind: "item", line: i + 1, endLine: indentedEnd(all, i, indent) });
     }
     const key = YAML_KEY.exec(line);
     if (!key) continue;
@@ -83,7 +75,7 @@ export function yaml(text) {
     while (path.length && path.at(-1).depth >= depth) path.pop();
     path.push({ depth, name: key[2] });
     const name = path.map((p) => p.name).join(".");
-    found.push({ name, kind: "key", line: i + 1, endLine: blockEnd(all, i, (l) => indentOf(l) > indent) });
+    found.push({ name, kind: "key", line: i + 1, endLine: indentedEnd(all, i, indent) });
     if (BLOCK_SCALAR.test(key[3].trim())) scalarIndent = indent;
   }
   return found;
@@ -229,7 +221,7 @@ export function python(text) {
     if (def) {
       const indent = def[1].length;
       const kind = def[2] === "class" ? "class" : indent ? "method" : "function";
-      found.push({ name: def[3], kind, line: i + 1, endLine: blockEnd(all, i, (l) => indentOf(l) > indent) });
+      found.push({ name: def[3], kind, line: i + 1, endLine: indentedEnd(all, i, indent) });
     } else if (name) {
       found.push({ name: name[1], kind: "const", line: i + 1, endLine: i + 1 });
     }
