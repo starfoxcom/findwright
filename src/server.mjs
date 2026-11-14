@@ -75,7 +75,7 @@ const TOOLS = {
     run: (args) => text(outline(db, args.path).map((s) => `${s.line}-${s.end_line}  ${s.kind} ${s.name}`).join("\n") || "No symbols in that file."),
   },
   coverage: {
-    description: "What the index covers: files per kind, and the files no extractor found a symbol in.",
+    description: "What the index covers: files per type (extension), and the files no rule found a symbol in.",
     inputSchema: { type: "object", properties: {} },
     run: () => text(JSON.stringify(coverage(db), null, 1)),
   },

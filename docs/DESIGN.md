@@ -18,14 +18,14 @@ The code-research tool Bindwright installed before FindWright parses a fixed lis
   - `include`: git-ignored files the work reads (generated typings).
   - `exclude`: files to leave out.
   - `rules`: regexes whose `name` group names a symbol of a project kind (i18n text keys, template placeholders, toggles, SQL tables, environment variables). A rule can also say where its block ends (a brace, a JSON value, indentation, the next heading, or a closing pattern), nest its symbols into paths, share lines with other rules in a group, and match only inside or outside regions such as front matter and code fences, with their range and path.
-- **The adapting loop.** At project setup the session runs `coverage`, reads which kinds and files yield no symbol, and adds kinds or rules until every file it cares about has structure. The searches that still go to plain grep get logged, so a later session extends the config.
+- **The adapting loop.** At project setup the session runs `coverage`, reads which file types and files yield no symbol, and adds rules until every file it cares about has structure. The searches that still go to plain grep get logged, so a later session extends the config.
 
 ## Tools (MCP, stdio)
 
 - `search`: regexes (several at once, OR or `all`), globs, context lines, case flag, limit. Output reads like `grep -n`, grouped by file, and each hit names its enclosing symbol.
 - `symbols`: by name (regex or substring), kind and glob; exact names first.
 - `outline`: one file's symbols with line ranges.
-- `coverage`: files per kind and the files with no symbol.
+- `coverage`: files per type and the files with no symbol.
 
 Still to build: `context` (a ranked map for a task, after aider's repo map: references between files ranked with PageRank) and `references` (word-boundary text references, plus parsed ones where a grammar exists).
 
