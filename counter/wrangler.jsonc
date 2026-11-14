@@ -13,7 +13,7 @@
     {
       "binding": "DB",
       "database_name": "findwright-counter",
-      "database_id": "REPLACE_WITH_ID_FROM_wrangler_d1_create"
+      "database_id": "ccd5ecfa-3f60-4e18-96f3-6fbdb5508415"
     }
   ],
   // Five sends a minute per IP, held by Cloudflare's limiter and not stored by the Worker.

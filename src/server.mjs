@@ -2,30 +2,25 @@
 // FindWright's MCP server over stdio (JSON-RPC 2.0, one message per line).
 // Every tool call first brings the index level with the working tree.
 
-import { execFileSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { globToRegExp, openIndex, readConfig, refresh } from "./store.mjs";
+import { gitRoot, globFilter, openIndex, readConfig, refresh } from "./store.mjs";
 import { coverage, outline, search, symbols } from "./query.mjs";
 import { find } from "./find.mjs";
 import { meaningModel } from "./meaning.mjs";
-import { status } from "./counts.mjs";
+import { failureToReport, sendDue } from "./counts.mjs";
+
+const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
 // The repo the session runs in; outside a git repo every tool says so instead of indexing.
-function repoRoot() {
-  try {
-    return process.env.FINDWRIGHT_ROOT ?? execFileSync("git", ["rev-parse", "--show-toplevel"],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-  } catch {
-    return null;
-  }
-}
-const root = repoRoot();
+const root = process.env.FINDWRIGHT_ROOT ?? gitRoot();
 // Opened on the first tool call, so a session that never searches leaves the repo untouched.
 let db = null;
 
 const text = (value) => ({ content: [{ type: "text", text: value }] });
-const globs = { type: "array", items: { type: "string" }, description: "Path globs (`page/**`, `*.md`); any file when empty." };
+const globs = { type: "array", items: { type: "string" }, description: "Path globs (`page/**`, `*.md`); any file when empty. A glob starting with `!` leaves out the files it matches (`!CHANGELOG.md`); with only `!` globs, every other file is kept." };
 
 const TOOLS = {
   find: {
@@ -40,8 +35,7 @@ const TOOLS = {
       required: ["query"],
     },
     run: async (args) => {
-      const globRes = (args.globs ?? []).map(globToRegExp);
-      const keep = (p) => !globRes.length || globRes.some((g) => g.test(p));
+      const keep = globFilter(args.globs ?? []);
       const model = meaningModel(db);
       if (model.error) return { ...text(model.error), isError: true };
       const files = find(db, { query: args.query, keep, limit: args.limit ?? 12, model: model.ready, meaningWeight: 1 });
@@ -104,7 +98,9 @@ function formatSearch(result) {
 async function answer(message) {
   const { id, method, params } = message;
   if (method === "initialize") {
-    return { protocolVersion: params?.protocolVersion ?? "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "findwright", version: "0.1.0" } };
+    const instructions = countsNotice();
+    return { protocolVersion: params?.protocolVersion ?? "2025-06-18", capabilities: { tools: {} },
+      serverInfo: { name: "findwright", version: VERSION }, ...(instructions && { instructions }) };
   }
   if (method === "tools/list") {
     return { tools: Object.entries(TOOLS).map(([name, t]) => ({ name, description: t.description, inputSchema: t.inputSchema })) };
@@ -113,6 +109,7 @@ async function answer(message) {
     const tool = TOOLS[params.name];
     if (!tool) throw new Error(`No tool named ${params.name}`);
     if (!root) throw new Error("FindWright works inside a git repository; this folder is not in one.");
+    sendCountsIfDue();
     db ??= openIndex(root);
     refresh(db, root, readConfig(root));
     return await tool.run(params.arguments ?? {});
@@ -126,17 +123,44 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   queue = queue.then(() => handle(line)).catch((error) => process.stderr.write(`findwright: ${error.message}\n`));
 });
 
-// The counts go out from a detached child, so a slow counter never delays an answer. Only the
-// computer-wide setting is read here, so nothing about the counts can stop the server starting.
-function sendCountsInBackground() {
-  if (!root || !status().share) return;
+// A started send records its try within seconds; until then this pause keeps a second one from starting.
+const SEND_PAUSE_MS = 60 * 60 * 1000;
+let sendPausedUntil = 0;
+
+// Tried at start and before every tool call, so a session open for days still sends once a day.
+// The counts go out from a detached child, so a slow counter never delays an answer, and a counts
+// file that cannot be read never stops the server.
+function sendCountsIfDue() {
+  if (!root || Date.now() < sendPausedUntil) return;
+  try {
+    if (!sendDue(root)) return;
+  } catch {
+    return;
+  }
+  sendPausedUntil = Date.now() + SEND_PAUSE_MS;
   const cli = fileURLToPath(new URL("./cli.mjs", import.meta.url));
   const child = spawn(process.execPath, [cli, "counts", "send"],
     { cwd: root, detached: true, stdio: "ignore", windowsHide: true });
   child.on("error", () => {}); // a launch that fails leaves the answers unaffected
   child.unref();
 }
-sendCountsInBackground();
+sendCountsIfDue();
+
+// The session-start notice, once a day, while this repo's last counts send failed. The server's
+// instructions are what a session reads at start, since the plugin ships no hooks.
+function countsNotice() {
+  if (!root) return undefined;
+  let failedAt;
+  try {
+    failedAt = failureToReport(root);
+  } catch {
+    return undefined;
+  }
+  if (failedAt === null) return undefined;
+  const day = new Date(failedAt).toLocaleDateString("en-CA");
+  return `Tell the user in one line: this computer shares FindWright's usage counts, but this repo's last `
+    + `send failed (${day}). The server tries again once a day; if this keeps showing, check the network.`;
+}
 
 async function handle(line) {
   if (!line.trim()) return;

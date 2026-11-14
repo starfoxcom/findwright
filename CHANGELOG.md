@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-13
+
+### Added
+- With usage counts turned on, a session started in a repo whose last send failed now says so, once a day, until a send gets through. A send that kept failing used to go unnoticed ([#35](https://github.com/starfoxcom/findwright/issues/35)).
+
+### Fixed
+- A glob starting with `!` in `search`, `find` and `symbols` (`!CHANGELOG.md`) now leaves out the files it matches, as it does in ripgrep. It used to be read as a file name, matched nothing, and the search answered "No matches." for text the repo holds ([#33](https://github.com/starfoxcom/findwright/issues/33)).
+
+## [1.0.2] - 2026-11-13
+
+### Fixed
+- With usage counts turned on, a session that stays open for days now sends them once a day. The send used to run only when a session started, so a long session sent nothing until the next one. The server now checks before each search whether a day has passed since the last try.
+- The plugin's skills no longer put an environment variable or a word like "tokens" on the same line as a web address or a download command. The plugin directory's scan reads such a line as using a credential from the user's computer and holds the plugin back. The pack now refuses those lines.
+
+## [1.0.1] - 2026-11-13
+
+### Fixed
+- A new rule or file kind in `.findwright/config.json` now applies to every file at the next search. It used to reach only files that changed afterwards, so setup's fit-the-index step showed no new symbols.
+
+## [1.0.0] - 2026-11-13
+
+### Breaking
+- Find needs the meaning model: without it, or when it does not match its checksum, find says so and points at setup instead of quietly ranking by words alone. The model is no longer downloaded on the first search, and there is no setting that turns meaning search off. Run `/findwright:setup`, or `findwright model` from a shell, once to install it.
+- FindWright now asks for Node 22.16 or later (or Node 24 and up), the first releases whose built-in SQLite has the full-text search the index needs, and says so plainly on an older Node instead of failing with "no such module: fts5". It used to claim 22.13, where every search failed. Node 23 never had it. Update Node if yours is older.
+
 ### Added
 - FindWright installs as a Claude Code plugin of its own, from its marketplace (`/plugin marketplace add starfoxcom/findwright`) and later from the plugin directory, without Bindwright. `/findwright:setup` installs the helper the plugin pins by SHA-256 into `~/.findwright/helper`, registers the server for every project, offers the search hook and fits the index to the project; `/findwright:update`, `/findwright:doctor` and `/findwright:remove` keep it current, check it and take it back out.
 - The search hook in Node (`hooks/findwright-first.mjs`) and `findwright home status|install-hook|remove-hook`, which add it to and take it out of the user's settings with a backup first.
@@ -19,12 +44,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Setup installs everything FindWright needs once you run it, saying what each step installs instead of asking again, and stops with FindWright off when a requirement is missing. It switches the registration to the plugin's own copy of the server.
-- Find needs the meaning model: without it, or when it does not match its checksum, find says so and points at setup instead of quietly ranking by words alone. The model is no longer downloaded on the first search, and there is no setting that turns meaning search off.
-
-### Fixed
-- FindWright now asks for Node 22.16 or later (or Node 24 and up), the first releases whose built-in SQLite has the full-text search the index needs, and says so plainly on an older Node instead of failing with "no such module: fts5". It used to claim 22.13, where every search failed. Node 23 never had it.
-
-### Removed
 
 ---
 

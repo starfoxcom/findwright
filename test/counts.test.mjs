@@ -6,7 +6,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { LEFT_OUT, send, setProject, setShare, status } from "../src/counts.mjs";
+import { failureToReport, LEFT_OUT, send, setProject, setShare, status } from "../src/counts.mjs";
 
 const HOUR = 60 * 60 * 1000;
 const NOW = Date.now();
@@ -175,6 +175,35 @@ test("a 500 or an unreachable counter covers nothing and waits a day", async () 
   assert.equal((await send(ctx.repo, { now: NOW + 25 * HOUR })).sent, false);
   assert.equal(projectState().coveredTo, undefined);
   assert.equal(projectState().lastTry, NOW + 25 * HOUR);
+});
+
+test("a failed send is reported once a day until a send gets through", async () => {
+  writeSession("only", [hitSearch], 2 * HOUR);
+  setShare(true);
+  setProject(ctx.repo, "game");
+  const morning = new Date(2030, 0, 1, 9).getTime();
+  assert.equal(failureToReport(ctx.repo, morning), null, "no send failed yet");
+  replies.push({ status: 500, body: {} });
+  await send(ctx.repo, { now: NOW });
+  assert.equal(failureToReport(ctx.repo, morning), NOW, "first session of the day");
+  assert.equal(failureToReport(ctx.repo, morning + HOUR), null, "later that day");
+  setShare(false);
+  assert.equal(failureToReport(ctx.repo, morning + 24 * HOUR), null, "sharing off");
+  setShare(true);
+  assert.equal(failureToReport(ctx.repo, morning + 25 * HOUR), NOW, "next day, sharing on");
+  assert.equal((await send(ctx.repo, { now: NOW + 25 * HOUR })).sent, true);
+  assert.equal(failureToReport(ctx.repo, morning + 48 * HOUR), null, "a send got through");
+});
+
+test("a send with nothing left to send clears an old failure", async () => {
+  setShare(true);
+  setProject(ctx.repo, "game");
+  process.env.FINDWRIGHT_COUNTER_URL = "http://127.0.0.1:1";
+  writeSession("only", [hitSearch], 2 * HOUR);
+  await send(ctx.repo, { now: NOW });
+  rmSync(ctx.transcripts, { recursive: true, force: true });
+  assert.equal((await send(ctx.repo, { now: NOW + 25 * HOUR })).reason, "nothing new");
+  assert.equal(failureToReport(ctx.repo, new Date(2030, 0, 1, 9).getTime()), null);
 });
 
 test("a damaged counts.json reads as empty state", async () => {

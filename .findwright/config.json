@@ -1,0 +1,9 @@
+{
+  "rules": [
+    {
+      "globs": ["**/*.sql"],
+      "kind": "table",
+      "pattern": "^CREATE TABLE (?:IF NOT EXISTS )?(?<name>\\w+)"
+    }
+  ]
+}

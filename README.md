@@ -4,7 +4,7 @@
 
 A code index and search tool that adapts to each project. It indexes every file the project tracks, answers plain-English questions, names and regular-expression searches over all of them, and pulls symbols out of each file with built-in extractors plus pattern rules the project defines, so a language or file format no extractor knows is still searchable by name. It serves the index to Claude Code, or any coding assistant, over MCP.
 
-Status: early (0.1). On 169 searches replayed from real coding sessions on four projects, the file the session went on to open was in FindWright's answer 69% of the time, against 53% for the code-search tool it replaced, with answers about a sixth the size. The page at https://starfoxcom.github.io/findwright/ has the full numbers.
+On 169 searches replayed from real coding sessions on four projects, the file the session went on to open was in FindWright's answer 69% of the time, against 53% for the code-search tool it replaced, with answers about a sixth the size. `bench/` holds the replay.
 
 ## Install as a plugin
 
@@ -34,6 +34,8 @@ findwright refresh                         # bring the index level with the work
 findwright counts status|share on|share off|project <kind>|send   # the opt-in usage counts
 ```
 
+A glob starting with `!` leaves out the files it matches, as in ripgrep: `--glob '*.md' --glob '!CHANGELOG.md'` searches every Markdown file but the changelog, and `!` globs alone search every other file.
+
 `findwright-mcp` runs the same queries as an MCP server over stdio. Every call first re-reads the files whose size or modified time changed, so answers match the working tree.
 
 ## Per-project settings
@@ -60,7 +62,7 @@ The index and any project settings stay in each project's `.findwright/` folder.
 
 ## Bench
 
-`bench/` replays real searches from past sessions through FindWright and a baseline tool, and scores each answer against the files the session used next. The baseline's command lives in the git-ignored `bench/baseline.local.json`. `bench/page_metrics.py` turns a replay into the page's numbers. See `docs/DESIGN.md` for the design.
+`bench/` replays real searches from past sessions through FindWright and a baseline tool, and scores each answer against the files the session used next. The baseline's command lives in the git-ignored `bench/baseline.local.json`. `bench/harvest.py` collects the searches, `bench/replay.mjs` replays them, and `bench/summarize4.py` turns a replay into hit rates. See `docs/DESIGN.md` for the design.
 
 ## Development
 

@@ -4,11 +4,12 @@
 
 import { randomBytes } from "node:crypto";
 import {
-  mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync,
+  mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { scoredSearches, transcriptsOf } from "./hits.mjs";
+import { isObject } from "./store.mjs";
 
 /** The project kinds a person can pick. */
 const KINDS = ["game", "business-app", "developer-tool", "mobile-app", "website", "other"];
@@ -22,7 +23,6 @@ const MAX_SESSIONS = 2000;
 const TIMEOUT_MS = 2000;
 const DEFAULT_COUNTER_URL = "https://findwright-counter.starfoxcom.workers.dev";
 
-const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const emptyState = () => ({ asked: false, share: false, projects: {} });
 const stateFile = () =>
   join(process.env.FINDWRIGHT_HOME ?? join(homedir(), ".findwright"), "counts.json");
@@ -45,13 +45,37 @@ function readState() {
   return emptyState();
 }
 
-// Written beside the file, then renamed over it: a crash keeps the old state, never half a new one.
+// Written beside the file under a name of its own, then renamed over it: a crash keeps the old
+// state, and two processes writing at once each rename a whole file, never half of one.
 function writeState(state) {
   const file = stateFile();
   mkdirSync(dirname(file), { recursive: true });
-  const temp = `${file}.tmp`;
+  const temp = `${file}.${process.pid}-${randomBytes(4).toString("hex")}.tmp`;
   writeFileSync(temp, `${JSON.stringify(state, null, 2)}\n`);
-  renameSync(temp, file);
+  try {
+    renameOver(temp, file);
+  } catch (error) {
+    rmSync(temp, { force: true });
+    throw error;
+  }
+}
+
+const RENAME_REFUSED = new Set(["EPERM", "EACCES", "EBUSY"]);
+const RENAME_RETRY_MS = 20;
+const RENAME_GIVE_UP_MS = 1000;
+
+// Windows refuses a rename over a file another process has open, as the server has while it reads
+// the state, so a refused rename is tried again for up to a second.
+function renameOver(temp, file) {
+  for (let waited = 0; ; waited += RENAME_RETRY_MS) {
+    try {
+      renameSync(temp, file);
+      return;
+    } catch (error) {
+      if (waited >= RENAME_GIVE_UP_MS || !RENAME_REFUSED.has(error.code)) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, RENAME_RETRY_MS);
+    }
+  }
 }
 
 const projectOf = (state, root) => state.projects[projectKey(root)];
@@ -151,19 +175,43 @@ function blockedReason(state, project, now) {
   return null;
 }
 
+/**
+ * When `root` shares its counts and its last send failed, the time it failed (ms), once a day:
+ * the first call on a day marks the failure reported, so later calls that day return null.
+ */
+export function failureToReport(root, now = Date.now()) {
+  const state = readState();
+  const project = projectOf(state, root);
+  if (!state.share || !KINDS.includes(project?.kind) || typeof project.failedAt !== "number") return null;
+  const today = new Date(now).toLocaleDateString("en-CA");
+  if (project.failureReportedOn === today) return null;
+  project.failureReportedOn = today;
+  writeState(state);
+  return project.failedAt;
+}
+
+/** Whether a send for `root` would try at `now`: sharing on, a kind, and no try in the last day. */
+export function sendDue(root, now = Date.now()) {
+  const state = readState();
+  return blockedReason(state, projectOf(state, root), now) === null;
+}
+
 // Moves what the counter holds forward and, unless the try is to run again at once, starts the
-// day's wait. A project removed meanwhile stays removed.
-function record(root, { coveredTo, lastTry }) {
+// day's wait. `failedAt` is when a send failed, or null once one gets through.
+// A project removed meanwhile stays removed.
+function record(root, { coveredTo, lastTry, failedAt }) {
   const state = readState();
   const project = projectOf(state, root);
   if (!project) return;
   if (coveredTo !== undefined) project.coveredTo = Math.max(project.coveredTo ?? 0, coveredTo);
   if (lastTry !== undefined) project.lastTry = lastTry;
+  if (failedAt === null) delete project.failedAt;
+  else if (failedAt !== undefined) project.failedAt = failedAt;
   writeState(state);
 }
 
 // A 200 covers the span. A 409 means an earlier send was counted though its answer was lost:
-// nothing is resent, and the next try, at the next server start, begins where the counter's
+// nothing is resent, and the next try begins where the counter's
 // count stops, so no search counts twice. Any other outcome waits a day.
 async function attempt(root, now, fetch) {
   const state = readState();
@@ -172,25 +220,25 @@ async function attempt(root, now, fetch) {
   if (blocked) return { sent: false, reason: blocked };
   const body = gather(root, project, now);
   if (!body) {
-    record(root, { lastTry: now });
+    record(root, { lastTry: now, failedAt: null });
     return { sent: false, reason: "nothing new" };
   }
   let reply;
   try {
     reply = await post(fetch, { project: project.id, kind: project.kind, ...body });
   } catch (error) {
-    record(root, { lastTry: now });
+    record(root, { lastTry: now, failedAt: now });
     return { sent: false, reason: `not sent: ${error.message}` };
   }
   if (reply.status === 200) {
-    record(root, { coveredTo: body.to, lastTry: now });
+    record(root, { coveredTo: body.to, lastTry: now, failedAt: null });
     return { sent: true, ...body };
   }
   if (reply.status === 409 && Number.isSafeInteger(reply.body?.coveredTo)) {
-    record(root, { coveredTo: reply.body.coveredTo });
+    record(root, { coveredTo: reply.body.coveredTo, failedAt: null });
     return { sent: false, reason: "already counted; the next send starts after it" };
   }
-  record(root, { lastTry: now });
+  record(root, { lastTry: now, failedAt: now });
   return { sent: false, reason: `the counter answered ${reply.status}` };
 }
 
