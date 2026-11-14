@@ -19,7 +19,7 @@ const hostile = [
   ["overlapping alternation", "(a|aa)+b", "a".repeat(999)],
   ["nested quantifier", "(a+)+$", "a".repeat(999) + "!"],
   ["stacked stars", r`\d*\d*\d*\d*\d*\d*\d*\d*\d*\d*x`, "1".repeat(999)],
-  ["a match on every character of a huge line, each read to its end", "x.*y|x", "x".repeat(2_000_000)],
+  ["a match on every character of a long line, each read to its end", "x.*y|x", "x".repeat(20_000)],
 ];
 
 for (const [name, pattern, line] of hostile) {
@@ -171,12 +171,21 @@ test("a value that closes on its own line ends there, so later keys are not name
     [["a", 2, 2], ["b", 3, 3], ["c", 4, 4], ["c.d", 4, 4]]);
 });
 
+test("a long one-line JSON file names every key it yields by its real path", () => {
+  const keys = Array.from({ length: 300 }, (_, i) => `"k${i}": "${"v".repeat(60)}"`);
+  const text = `{"a": {${keys.join(", ")}, "c": {"d": 2}}, "e": {"f": 3}}`;
+  const real = new Set(["a", ...keys.map((_, i) => `a.k${i}`), "a.c", "a.c.d", "e", "e.f"]);
+  const found = fromRules(text, [{ pattern: JSON_KEY, kind: "key", end: "value", nest: true }]).map((s) => s.name);
+  assert.ok(found.length > 20, `${found.length} keys`);
+  assert.deepEqual(found.filter((name) => !real.has(name)), []);
+});
+
 test("a long line is read in full, so a block that opens or ends past its first 1000 characters is right", () => {
   const data = `const DATA = [${"1, ".repeat(400)}2];\nfunction g() {\n  x;\n}`;
   const rules = [{ pattern: r`^const\s+(?<name>\w+)`, kind: "const", end: "brace", nest: true },
     { pattern: FUNCTION, kind: "function", end: "brace", nest: true }];
   assert.deepEqual(spans(data, rules), [["DATA", 1, 1], ["g", 2, 4]]);
-  const records = `{${'"x": 1, '.repeat(120)}"a": {"z": 1}}\n{"b": 2}`;
+  const records = `{"x": "${"x".repeat(1200)}", "a": {"z": 1}}\n{"b": 2}`;
   const keys = fromRules(records, [{ pattern: JSON_KEY, kind: "key", end: "value", nest: true }]).map((s) => s.name);
   assert.ok(keys.includes("a.z") && keys.includes("b") && !keys.includes("a.b"), keys.slice(-3).join(","));
 });

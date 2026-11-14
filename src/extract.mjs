@@ -6,10 +6,19 @@
 // declaration) are read as blank, so no file can make extraction slow.
 
 import { linear } from "./linear.mjs";
-import { blockEnd, indentOf } from "./rules.mjs";
+import { indentOf } from "./rules.mjs";
 
-// The 1-based last line of the block opened on line `i` whose lines sit deeper than `indent`.
-const indentedEnd = (all, i, indent) => blockEnd(all, i, (l) => indentOf(l) > indent) + 1;
+// The 1-based last line of the block opened on line `i` whose filled lines sit deeper than
+// `indent`; blank lines run on.
+function indentedEnd(all, i, indent) {
+  let end = i;
+  for (let j = i + 1; j < all.length; j++) {
+    if (all[j].trim() === "") continue;
+    if (indentOf(all[j]) <= indent) break;
+    end = j;
+  }
+  return end + 1;
+}
 
 const MAX_LINE = 1000;
 const lines = (text) => text.split(/\r?\n/).map((line) => (line.length > MAX_LINE ? "" : line));
