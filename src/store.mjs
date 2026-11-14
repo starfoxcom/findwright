@@ -96,7 +96,8 @@ export function globFilter(globs = []) {
   return (path) => (!plain.length || plain.some((g) => g.test(path))) && !left.some((g) => g.test(path));
 }
 
-const matchesAny = (path, globs) => globs.some((g) => globToRegExp(g).test(path));
+/** True when `path` matches any of `globs`. */
+export const matchesAny = (path, globs) => globs.some((g) => globToRegExp(g).test(path));
 
 
 // The config as the code reads it: a value of the wrong type is dropped, so a hand-edited or hostile
@@ -213,7 +214,8 @@ export function openIndex(root) {
   return db;
 }
 
-function readText(root, path, size) {
+/** A file's text, or null when it is too large to index or binary. */
+export function readText(root, path, size) {
   if (size > MAX_FILE_BYTES) return null;
   const bytes = readFileSync(join(root, path));
   if (bytes.subarray(0, 8000).includes(0)) return null;

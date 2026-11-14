@@ -1,0 +1,14 @@
+{
+ "description": "Shell: function definitions with their brace block.",
+ "rules": [
+  {
+   "globs": [
+    "**/*.sh",
+    "**/*.bash"
+   ],
+   "kind": "function",
+   "pattern": "^\\s*(?:function\\s+)?(?<name>[A-Za-z_][\\w-]*)\\s*\\(\\)\\s*\\{?",
+   "end": "brace"
+  }
+ ]
+}

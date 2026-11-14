@@ -1,0 +1,42 @@
+{
+ "description": "HLSL shaders: structs and constant buffers, functions, and macros.",
+ "rules": [
+  {
+   "globs": [
+    "**/*.hlsl",
+    "**/*.hlsli",
+    "**/*.fx"
+   ],
+   "kind": "macro",
+   "pattern": "^\\s*#\\s*define\\s+(?<name>[A-Za-z_]\\w*)"
+  },
+  {
+   "globs": [
+    "**/*.hlsl",
+    "**/*.hlsli",
+    "**/*.fx"
+   ],
+   "kind": "struct",
+   "end": "brace",
+   "nest": "::",
+   "pattern": "^\\s*(?:struct|cbuffer|tbuffer)\\s+(?<name>[A-Za-z_]\\w*)"
+  },
+  {
+   "globs": [
+    "**/*.hlsl",
+    "**/*.hlsli",
+    "**/*.fx"
+   ],
+   "kind": "function",
+   "end": "brace",
+   "except": [
+    "if",
+    "for",
+    "while",
+    "switch",
+    "return"
+   ],
+   "pattern": "^(?:[A-Za-z_]\\w*\\s+)+(?<name>[A-Za-z_]\\w*)\\s*\\([^;]*$"
+  }
+ ]
+}

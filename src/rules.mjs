@@ -398,6 +398,12 @@ function nestNames(symbols, cutAt) {
   return kept;
 }
 
+/** True when the rule can be read and the linear engine can run all of its patterns. */
+export function canRun(rule) {
+  const normal = normalRule(rule);
+  return Boolean(normal && compile(normal, 0));
+}
+
 /** The symbols `rules` name in `text`, each { name, kind, line, endLine } with 1-based, inclusive lines. */
 export function fromRules(text, rules) {
   const all = text.split(/\r?\n/);
