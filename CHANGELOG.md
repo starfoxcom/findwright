@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-11-15
+
 ### Fixed
 - A function whose signature wraps over several lines gets its whole body as its range. An `indent` rule ended a Python function at its signature's closing line (`) -> Result:` sits at the `def`'s own indent), and a `brace` rule gave a C or C++ function wrapped over more than three lines no block at all. The lines inside brackets a symbol's line leaves open now continue that line, as Python reads them, and a brace symbol waits for its `{` while its parameters are open. A rule fitted with a `comment` pattern to work around this can drop it ([#58](https://github.com/starfoxcom/findwright/issues/58)).
 
