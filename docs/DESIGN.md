@@ -13,20 +13,19 @@ The code-research tool Bindwright installed before FindWright parses a fixed lis
   - `body`: an FTS5 table with the trigram tokenizer holding each file's text. It shortlists the files a regex can match: the longest literal of each top-level branch, skipping lookarounds, optional groups and groups with several branches. The regex then runs only on the shortlist.
   - `symbols`: name, kind, path, first and last line.
 - **Fresh on every call.** Each call stats the file list (`git ls-files -co --exclude-standard` plus the config's `include`) and re-reads files whose size or modified time changed. A full build of this repo takes about 1.3 s; a call with nothing changed takes about 40 ms.
-- **Extractors per file kind.** Built in: Markdown (headings with their section range, front matter), YAML (key paths, list items' names, block scalars skipped), JSON (key paths, one-line and unparseable files included), JavaScript and TypeScript, Python, CSS, HTML, shell. A `.template` file is read as the file it renders to.
+- **No built-in languages.** Every symbol comes from the project's rules. The plugin's fit skill writes them: it reads what the repo holds, starts from reference rule sets (Markdown, YAML, JSON, JavaScript and TypeScript, Python, CSS, HTML, shell, C and C++, HLSL, Dart, GDScript) and writes rules for the rest, so a new language needs no FindWright release.
 - **The per-project part: `.findwright/config.json`**, committed, written by the session after it scans the repo:
   - `include`: git-ignored files the work reads (generated typings).
   - `exclude`: files to leave out.
-  - `kinds`: globs mapped to an extractor (`*.additions` as Markdown).
-  - `rules`: regexes whose `name` group names a symbol of a project kind (i18n text keys, template placeholders, toggles, SQL tables, environment variables).
-- **The adapting loop.** At project setup the session runs `coverage`, reads which kinds and files yield no symbol, and adds kinds or rules until every file it cares about has structure. The searches that still go to plain grep get logged, so a later session extends the config.
+  - `rules`: regexes whose `name` group names a symbol of a project kind (i18n text keys, template placeholders, toggles, SQL tables, environment variables). A rule can also say where its block ends (a brace, a JSON value, indentation, the next heading, or a closing pattern), nest its symbols into paths, share lines with other rules in a group, and match only inside or outside regions such as front matter and code fences, with their range and path.
+- **The adapting loop.** At project setup the session runs `coverage`, reads which file types and files yield no symbol, and adds rules until every file it cares about has structure. The searches that still go to plain grep get logged, so a later session extends the config.
 
 ## Tools (MCP, stdio)
 
 - `search`: regexes (several at once, OR or `all`), globs, context lines, case flag, limit. Output reads like `grep -n`, grouped by file, and each hit names its enclosing symbol.
 - `symbols`: by name (regex or substring), kind and glob; exact names first.
 - `outline`: one file's symbols with line ranges.
-- `coverage`: files per kind and the files with no symbol.
+- `coverage`: files per type and the files with no symbol.
 
 Still to build: `context` (a ranked map for a task, after aider's repo map: references between files ranked with PageRank) and `references` (word-boundary text references, plus parsed ones where a grammar exists).
 

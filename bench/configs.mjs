@@ -1,5 +1,5 @@
-// Pattern rules for languages the built-in extractors do not cover; a project's
-// .findwright/config.json lists the ones it needs.
+// Pattern rules the benchmark runs per language; a project's .findwright/config.json
+// lists the ones it needs.
 
 const NOT_A_CALL = "(?!(?:return|else|if|while|for|switch|case|delete|new|throw|sizeof|co_return|co_await)\\b)";
 

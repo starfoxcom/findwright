@@ -1,6 +1,6 @@
 # FindWright
 
-FindWright gives Claude a code index that adapts to each project. It indexes every file the project tracks (code, docs, config and templates alike) and answers plain-English questions, names and regular-expression searches from it, with short answers that point at the right lines. A file format no built-in extractor knows gets a pattern rule in the project's `.findwright/config.json`, so it is still searchable by name.
+FindWright gives Claude a code index that adapts to each project. It indexes every file the project tracks (code, docs, config and templates alike) and answers plain-English questions, names and regular-expression searches from it, with short answers that point at the right lines. FindWright knows no language by itself: Claude writes each project's rules in `.findwright/config.json`, starting from the reference rule sets the plugin ships, so any language or file format is searchable by name.
 
 ## Install
 
@@ -11,11 +11,12 @@ From the plugin directory: in Claude Code, run `/plugin`, open Discover and inst
 /plugin install findwright@wrights
 ```
 
-Then run `/findwright:setup`. Running it is your yes to everything FindWright needs, so it installs each part and says what it installs: Node when yours is missing or behind on security fixes (on Windows; elsewhere it gives you the installer), the helper (the part that runs on your computer, the file attached to the plugin's GitHub release, checked against the SHA-256 the plugin pins, into `~/.findwright/helper` for your user only), the 32 MB meaning model, and the registration with Claude Code for every project. It asks only about the hook that sends searches to FindWright in indexed repos and, inside a project, about fitting the index to that project. When a part cannot be installed, setup stops and FindWright stays off.
+Then run `/findwright:setup`. Running it is your yes to everything FindWright needs, so it installs each part and says what it installs: Node when yours is missing or behind on security fixes (on Windows; elsewhere it gives you the installer), the helper (the part that runs on your computer, the file attached to the plugin's GitHub release, checked against the SHA-256 the plugin pins, into `~/.findwright/helper` for your user only), the 32 MB meaning model, and the registration with Claude Code for every project. Inside a project, it also fits the index to it: it writes the rules that name the project's code, so searches find it by name. It asks only about the hook that sends searches to FindWright in indexed repos. When a part cannot be installed, setup stops and FindWright stays off.
 
 ## Use
 
 - `/findwright:setup` installs and registers FindWright, and fits the index to the project you are in.
+- `/findwright:fit` fits the index to a project: it reads what the repo holds, writes the rules that name its functions, types, keys, headings and tests in `.findwright/config.json`, starting from the reference rule sets it ships, and tries them before saving.
 - `/findwright:find` is the lookup sequence Claude follows: `find` first, then `search`, `symbols` and `outline`.
 - `/findwright:update` brings the helper to the plugin's version.
 - `/findwright:doctor` checks Node, the helper, the registration and the hook, and says how to fix what is wrong.

@@ -1,0 +1,135 @@
+{
+ "description": "JavaScript and TypeScript: functions, classes, types, interfaces and enums, constants, methods, event hooks and test cases, each with its brace block.",
+ "rules": [
+  {
+   "globs": [
+    "**/*.js",
+    "**/*.mjs",
+    "**/*.cjs",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.jsx",
+    "**/*.mts"
+   ],
+   "group": "js",
+   "kind": "function",
+   "end": "brace",
+   "pattern": "^\\s*(?:export\\s+)?(?:default\\s+)?(?:async\\s+)?function\\s*\\*?\\s*(?<name>[A-Za-z_$][\\w$]*)"
+  },
+  {
+   "globs": [
+    "**/*.js",
+    "**/*.mjs",
+    "**/*.cjs",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.jsx",
+    "**/*.mts"
+   ],
+   "group": "js",
+   "kind": "class",
+   "end": "brace",
+   "pattern": "^\\s*(?:export\\s+)?(?:default\\s+)?(?:abstract\\s+)?class\\s+(?<name>[A-Za-z_$][\\w$]*)"
+  },
+  {
+   "globs": [
+    "**/*.js",
+    "**/*.mjs",
+    "**/*.cjs",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.jsx",
+    "**/*.mts"
+   ],
+   "group": "js",
+   "kind": "type",
+   "end": "brace",
+   "pattern": "^\\s*(?:export\\s+)?(?:declare\\s+)?(?:interface|type|enum)\\s+(?<name>[A-Za-z_$][\\w$]*)"
+  },
+  {
+   "globs": [
+    "**/*.js",
+    "**/*.mjs",
+    "**/*.cjs",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.jsx",
+    "**/*.mts"
+   ],
+   "group": "js",
+   "kind": "function",
+   "end": "brace",
+   "pattern": "^(?:export\\s+)?(?:const|let|var)\\s+(?<name>[A-Za-z_$][\\w$]*)\\s*(?::[^=]+)?=\\s*(?:async\\s*)?(?:\\([^)]*\\)|[A-Za-z_$][\\w$]*)\\s*(?::[^=]+)?=>"
+  },
+  {
+   "globs": [
+    "**/*.js",
+    "**/*.mjs",
+    "**/*.cjs",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.jsx",
+    "**/*.mts"
+   ],
+   "group": "js",
+   "kind": "const",
+   "end": "brace",
+   "pattern": "^(?:export\\s+)?(?:const|let|var)\\s+(?<name>[A-Za-z_$][\\w$]*)"
+  },
+  {
+   "globs": [
+    "**/*.js",
+    "**/*.mjs",
+    "**/*.cjs",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.jsx",
+    "**/*.mts"
+   ],
+   "group": "js",
+   "kind": "method",
+   "end": "brace",
+   "except": [
+    "if",
+    "for",
+    "while",
+    "switch",
+    "catch",
+    "return",
+    "function",
+    "else"
+   ],
+   "pattern": "^\\s+(?:static\\s+|async\\s+|get\\s+|set\\s+|private\\s+|public\\s+|protected\\s+|readonly\\s+)*(?<name>[A-Za-z_$][\\w$]*)\\s*\\([^)]*\\)\\s*(?::[^{]+)?\\{\\s*$"
+  },
+  {
+   "globs": [
+    "**/*.js",
+    "**/*.mjs",
+    "**/*.cjs",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.jsx",
+    "**/*.mts"
+   ],
+   "group": "js",
+   "kind": "hook",
+   "end": "brace",
+   "pattern": "^\\s*on\\(\\s*['\"](?<name>[\\w.]+)['\"]"
+  },
+  {
+   "globs": [
+    "**/*.js",
+    "**/*.mjs",
+    "**/*.cjs",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.jsx",
+    "**/*.mts"
+   ],
+   "group": "js",
+   "kind": "test",
+   "end": "brace",
+   "pattern": "^\\s*test\\(\\s*(?:'(?<name>[^']+)'|\"(?<name2>[^\"]+)\"|`(?<name3>[^`]+)`)"
+  }
+ ]
+}
