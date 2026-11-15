@@ -1,0 +1,65 @@
+{
+ "description": "GDScript (Godot): class names, inner classes, functions, signals, enums, constants and exported or member variables.",
+ "rules": [
+  {
+   "globs": [
+    "**/*.gd"
+   ],
+   "kind": "class",
+   "pattern": "^class_name\\s+(?<name>\\w+)"
+  },
+  {
+   "globs": [
+    "**/*.gd"
+   ],
+   "kind": "class",
+   "end": "indent",
+   "comment": "^\\s*#",
+   "nest": true,
+   "pattern": "^\\s*class\\s+(?<name>\\w+)"
+  },
+  {
+   "globs": [
+    "**/*.gd"
+   ],
+   "kind": "function",
+   "end": "indent",
+   "comment": "^\\s*#",
+   "nest": true,
+   "pattern": "^\\s*(?:static\\s+)?func\\s+(?<name>\\w+)"
+  },
+  {
+   "globs": [
+    "**/*.gd"
+   ],
+   "kind": "signal",
+   "nest": true,
+   "pattern": "^\\s*signal\\s+(?<name>\\w+)"
+  },
+  {
+   "globs": [
+    "**/*.gd"
+   ],
+   "kind": "enum",
+   "end": "brace",
+   "nest": true,
+   "pattern": "^\\s*enum\\s+(?<name>\\w+)"
+  },
+  {
+   "globs": [
+    "**/*.gd"
+   ],
+   "kind": "const",
+   "nest": true,
+   "pattern": "^\\s*const\\s+(?<name>\\w+)"
+  },
+  {
+   "globs": [
+    "**/*.gd"
+   ],
+   "kind": "variable",
+   "nest": true,
+   "pattern": "^(?:@\\w+(?:\\([^)]*\\))?\\s+)*(?:static\\s+)?var\\s+(?<name>\\w+)"
+  }
+ ]
+}
