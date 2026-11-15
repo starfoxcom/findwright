@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-11-14
+
 ### Breaking
 - FindWright has no built-in languages any more: every symbol comes from the rules in the project's `.findwright/config.json`, and the `kinds` setting is gone. A project with no rules still gets full-text and meaning search, but no symbols until `/findwright:fit` writes its rules, which setup and update do for you. A `.template` file is no longer read as the file it renders to: give its rules a glob for it, as the fit does. JSON keys now come from the JSON rule set, which reads each line within a budget set by its length, so a very long line packed with keys, such as minified JSON, names its first keys and leaves out every key after that point in the file, where the old reader named them all. `coverage` now counts files per type (their extension) under `types` ([#49](https://github.com/starfoxcom/findwright/issues/49)).
 - FindWright installs from the shared `wrights` marketplace: `/plugin marketplace add starfoxcom/wrights`, then `/plugin install findwright@wrights`. The `findwright` marketplace in this repo is gone, so a computer that installed `findwright@findwright` removes it (`/plugin uninstall findwright@findwright`, then `/plugin marketplace remove findwright`) and installs from `wrights` ([#45](https://github.com/starfoxcom/findwright/issues/45)).
