@@ -30,6 +30,10 @@ const MAX_NAME = 400;
 // each can read to the end of the line, so this keeps matching linear in the file's size.
 const REPEAT_READS = 32;
 const OPEN_WITHIN = 3;
+// A bracket a symbol's header leaves open longer than this many lines is read as stray, so one
+// typo cannot hold a header open over the rest of the file.
+const HEADER_LINES = 50;
+const BRACKET_STEP = { "(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1 };
 const MAX_SEPARATOR = 4;
 // Most `outside` regions one rule may list; a rule past it is dropped, so a config cannot make
 // one file's scan cost more than a few passes per rule.
@@ -178,12 +182,16 @@ function stringEnd(text, start) {
   return i;
 }
 
-// Each code character of `text` from `from` as [index, character], up to a `//` comment. A string
+const slashComment = (text, j) => text[j] === "/" && text[j + 1] === "/";
+// A `#` starts a comment at the line's start or after a space, as in YAML, so `#{x}` stays code.
+const hashComment = (text, j) => text[j] === "#" && (j === 0 || !text[j - 1].trim());
+
+// Each code character of `text` from `from` as [index, character], up to a comment. A string
 // comes out once, as its opening quote, so nothing inside it counts as a bracket.
-function* codeChars(text, from) {
+function* codeChars(text, from, startsComment = slashComment) {
   for (let j = from; j < text.length; j++) {
     const ch = text[j];
-    if (ch === "/" && text[j + 1] === "/") return;
+    if (startsComment(text, j)) return;
     yield [j, ch];
     if (ch === '"' || ch === "'" || ch === "`") j = stringEnd(text, j);
   }
@@ -247,22 +255,29 @@ class OpenBlocks {
 
 // "brace": a symbol counts `{` and `}` from its match and closes at the end of the first line
 // that leaves them balanced, so a `{}` inside a parameter list ends nothing; a `;` before its
-// first `{` (`int f();`), or no `{` within three lines, means no block. `depth` counts every
-// brace, so a symbol's own count is `depth` less the depth where it matched.
+// first `{` (`int f();`), or no `{` within three lines of its match or of the line that closes
+// its parameters, means no block. `depth` counts every brace and `parens` every parenthesis, so a
+// symbol's own count is the running count less the one where it matched.
 function braceEnds(all, symbols) {
   const open = new OpenBlocks();
   let waiting = [];
   let next = 0;
   let depth = 0;
+  let parens = 0;
   const arrive = (i, col) => {
     while (next < symbols.length && symbols[next].line === i && symbols[next].col <= col) {
-      waiting.push({ symbol: symbols[next++], from: depth });
+      waiting.push({ symbol: symbols[next++], from: depth, parens, until: i + OPEN_WITHIN - 1 });
     }
+  };
+  const stillWaiting = (entry, i) => {
+    if (parens > entry.parens) entry.until = Math.min(i + OPEN_WITHIN, entry.symbol.line + HEADER_LINES);
+    return i < entry.until;
   };
   for (let i = symbols[0]?.line ?? all.length; i < all.length; i++) {
     for (const [j, ch] of codeChars(all[i], 0)) {
       arrive(i, j);
       if (ch === ";") waiting = [];
+      else if (ch === "(" || ch === ")") parens += BRACKET_STEP[ch];
       else if (ch === "}") depth--;
       else if (ch === "{") {
         for (const { symbol, from } of waiting) open.add(from, symbol);
@@ -272,7 +287,7 @@ function braceEnds(all, symbols) {
     }
     arrive(i, Infinity);
     for (const symbol of open.closeAt(depth)) symbol.end = [i, Infinity];
-    waiting = waiting.filter(({ symbol }) => i < symbol.line + OPEN_WITHIN - 1);
+    waiting = waiting.filter((entry) => stillWaiting(entry, i));
     if (!open.size && !waiting.length) {
       if (next === symbols.length) return;
       i = symbols[next].line - 1;
@@ -347,25 +362,48 @@ class Remarks {
   }
 }
 
+function bracketsLeftOpen(text) {
+  let depth = 0;
+  for (const [, ch] of codeChars(text, 0, hashComment)) depth += BRACKET_STEP[ch] ?? 0;
+  return depth;
+}
+
+// The last line of the logical line that starts at `start`: the lines inside brackets it leaves
+// open continue it, as Python joins them, so a wrapped signature's closing line closes no block.
+// `counts` keeps each line's count, so a line is read once however many headers reach it.
+function logicalEnd(all, start, counts) {
+  let depth = 0;
+  const last = Math.min(all.length - 1, start + HEADER_LINES);
+  for (let i = start; i <= last; i++) {
+    depth += counts[i] ??= bracketsLeftOpen(all[i]);
+    if (depth <= 0) return i;
+  }
+  return start;
+}
+
 // "indent": a block runs through the last line indented deeper than the symbol, past blank lines.
 // A line the rule's `comment` pattern matches closes no block, and belongs to each open block it
-// is indented deeper than.
+// is indented deeper than. The lines that continue a symbol's own line close nothing.
 function indentEnds(all, symbols, comment) {
   const open = new OpenBlocks();
   const remarks = new Remarks();
   let next = 0;
   let lastFilled = -1;
+  let joined = -1;
+  const counts = [];
   const close = (symbol) => {
     symbol.end = [Math.max(symbol.line, lastFilled, remarks.lastInside(symbol.indent)), Infinity];
   };
   for (let i = symbols[0]?.line ?? all.length; i < all.length; i++) {
-    if (comment?.test(all[i])) remarks.add(i, indentOf(all[i]));
+    if (i > joined && comment?.test(all[i])) remarks.add(i, indentOf(all[i]));
     else if (!isBlank(all[i])) {
-      open.closeAt(indentOf(all[i])).forEach(close);
+      if (i > joined) open.closeAt(indentOf(all[i])).forEach(close);
       lastFilled = i;
       remarks.clear();
     }
+    const opens = next < symbols.length && symbols[next].line === i;
     while (next < symbols.length && symbols[next].line === i) open.add(symbols[next].indent, symbols[next++]);
+    if (opens && i > joined) joined = logicalEnd(all, i, counts);
     if (!open.size) {
       if (next === symbols.length) return;
       i = symbols[next].line - 1;
