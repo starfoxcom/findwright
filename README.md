@@ -2,7 +2,7 @@
 
 # FindWright
 
-A code index and search tool that adapts to each project. It indexes every file the project tracks, answers plain-English questions, names and regular-expression searches over all of them, and pulls symbols out of each file with built-in extractors plus pattern rules the project defines, so a language or file format no extractor knows is still searchable by name. It serves the index to Claude Code, or any coding assistant, over MCP.
+A code index and search tool that adapts to each project. It indexes every file the project tracks, answers plain-English questions, names and regular-expression searches over all of them, and pulls symbols out of each file with pattern rules the project keeps in `.findwright/config.json`. FindWright knows no language by itself: the agent writes the rules for each project, starting from reference rule sets, so any language or file format is searchable by name without waiting for FindWright to support it. It serves the index to Claude Code, or any coding assistant, over MCP.
 
 On 169 searches replayed from real coding sessions on four projects, the file the session went on to open was in FindWright's answer 69% of the time, against 53% for the code-search tool it replaced, with answers about a sixth the size. `bench/` holds the replay.
 
@@ -11,9 +11,11 @@ On 169 searches replayed from real coding sessions on four projects, the file th
 FindWright is a Claude Code plugin of its own; it needs nothing else. In a Claude Code session:
 
 ```
-/plugin marketplace add starfoxcom/findwright
-/plugin install findwright@findwright
+/plugin marketplace add starfoxcom/wrights
+/plugin install findwright@wrights
 ```
+
+The `wrights` marketplace ([starfoxcom/wrights](https://github.com/starfoxcom/wrights)) lists FindWright and Bindwright, each pinned to its own release.
 
 Then run `/findwright:setup`. It installs the helper, the part that runs on your computer, from the plugin's GitHub release after checking it against the SHA-256 the plugin pins, into `~/.findwright/helper` for your user only. It then registers FindWright for every project, offers a hook that sends searches to it in indexed repos, and fits the index to the project you are in. `/findwright:update` keeps the helper at the plugin's version, `/findwright:doctor` checks the setup and `/findwright:remove` takes it back out.
 
@@ -29,8 +31,9 @@ findwright find <question or name>         # the files that answer it, best firs
 findwright search <regex> [--glob G] [-i] [-C N]
 findwright symbols <name> [--kind K]
 findwright outline <path>
-findwright coverage                        # files per kind, and files with no symbols
+findwright coverage                        # files per type, and files with no symbols
 findwright refresh                         # bring the index level with the working tree
+findwright try <rules.json>                # what draft rules would name, without saving them
 findwright counts status|share on|share off|project <kind>|send   # the opt-in usage counts
 ```
 
@@ -44,8 +47,9 @@ A glob starting with `!` leaves out the files it matches, as in ripgrep: `--glob
 
 - `include`: globs for files git ignores that the work still reads, such as generated typings.
 - `exclude`: globs to leave out.
-- `kinds`: which extractor reads which files, e.g. `{ "*.mdc": "markdown" }`.
-- `rules`: pattern rules for anything else, each `{ "globs": [...], "kind": "function", "pattern": "^\s*func\s+(?<name>\w+)" }`; the `name` group is the symbol's name.
+- `rules`: the pattern rules that name the project's symbols, each `{ "globs": [...], "kind": "function", "pattern": "^\s*func\s+(?<name>\w+)" }`; the `name` group is the symbol's name. Optional fields give a symbol its structure (where its block ends, the symbol it sits under, comment lines, regions it skips); the fit skill's [rule fields](plugin/skills/fit/SKILL.md#3-write-rules-for-the-rest) list each one and its limits.
+
+`findwright try <rules.json>` runs draft rules over the repo without writing the config or touching the index, and prints what each kind of symbol finds, with samples, and which matched files still get none. The plugin's `/findwright:fit` skill writes a project's rules this way, starting from the reference rule sets in `plugin/skills/fit/reference/`.
 
 The index lives in `.findwright/index.db`, in a folder that keeps itself out of git.
 

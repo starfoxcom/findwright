@@ -1,0 +1,21 @@
+{
+ "description": "HTML: element ids and translation keys (data-i18n).",
+ "rules": [
+  {
+   "globs": [
+    "**/*.html",
+    "**/*.htm"
+   ],
+   "kind": "id",
+   "pattern": "\\bid=\"(?<name>[^\"]+)\""
+  },
+  {
+   "globs": [
+    "**/*.html",
+    "**/*.htm"
+   ],
+   "kind": "text-key",
+   "pattern": "\\bdata-i18n(?:-[\\w-]+)?=\"(?<name>[^\"]+)\""
+  }
+ ]
+}

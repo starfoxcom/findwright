@@ -1,0 +1,44 @@
+{
+ "description": "Markdown: headings with the section each one runs to, outside code fences, and front-matter keys.",
+ "rules": [
+  {
+   "globs": [
+    "**/*.md",
+    "**/*.mdx"
+   ],
+   "kind": "front-matter",
+   "pattern": "^(?<name>[A-Za-z][\\w-]*):",
+   "inside": {
+    "start": "^---\\s*$",
+    "end": {
+     "until": "^---\\s*$"
+    },
+    "first": true
+   }
+  },
+  {
+   "globs": [
+    "**/*.md",
+    "**/*.mdx"
+   ],
+   "kind": "heading",
+   "pattern": "^(?<level>#{1,6})\\s+(?<name>.+?)\\s*#*\\s*$",
+   "end": "next",
+   "outside": [
+    {
+     "start": "^\\s*(```|~~~)",
+     "end": {
+      "until": "^\\s*(```|~~~)"
+     }
+    },
+    {
+     "start": "^---\\s*$",
+     "end": {
+      "until": "^---\\s*$"
+     },
+     "first": true
+    }
+   ]
+  }
+ ]
+}

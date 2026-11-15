@@ -4,7 +4,7 @@ The project's own part of the review prompt. Both review tiers read this file fr
 
 ## About this project
 
-**findwright**: A code index and search tool that adapts to each project: regex search over every file, symbols from built-in extractors and per-project rules, served over MCP.
+**findwright**: A code index and search tool that adapts to each project: regex search over every file, symbols from rules the agent writes for each project, served over MCP.
 
 ## Project invariants to verify (in priority order)
 

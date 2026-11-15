@@ -4,7 +4,18 @@
 //   node replay.mjs events.jsonl results.jsonl
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, openSync, writeSync } from "node:fs";
-import { openIndex, refresh } from "../src/store.mjs";
+import { openIndex, refresh, typeOf, UNREADABLE } from "../src/store.mjs";
+
+// The reference sets for the file types every project has, as a fitted project would carry them.
+const REFERENCE = new URL("../plugin/skills/fit/reference/", import.meta.url);
+const BASE_RULES = ["markdown", "yaml", "json", "javascript-typescript", "python", "css", "html", "shell"]
+  .flatMap((set) => JSON.parse(readFileSync(new URL(`${set}.json`, REFERENCE), "utf8")).rules)
+  // A `.template` file is read as the file it renders to, as the fit globs it.
+  .map((rule) => ({ ...rule, globs: rule.globs.flatMap((glob) => [glob, `${glob}.template`]) }));
+const withBase = (config) => ({ ...config, rules: [...BASE_RULES, ...(config.rules ?? [])] });
+// The extensions scored as code; every other file scores as a doc, a `.template` as its target.
+const CODE = /^(js|mjs|cjs|ts|tsx|jsx|mts|py|css|html|htm|sh|bash)$/;
+const isCode = (path) => CODE.test(typeOf(path.replace(/\.template$/, "")));
 import { search } from "../src/query.mjs";
 import { find } from "../src/find.mjs";
 import { ensureModel, loadModel } from "../src/embed.mjs";
@@ -143,7 +154,6 @@ function ours(db, ev, k) {
 }
 
 const snake = (w) => w.replace(/([a-z0-9])([A-Z])/g, "$1_$2").replace(/([A-Z])([A-Z][a-z])/g, "$1_$2").toLowerCase();
-const DOC_KINDS = new Set(["markdown", "json", "yaml", "text"]);
 
 // Version 2: rare terms weigh more (IDF), file names count, `Foo::bar` answers
 // to `bar`, CamelCase answers to its snake_case file, and literal hits are ranked.
@@ -151,8 +161,7 @@ function ours2(db, ev, k) {
   const keep = pathFilter(ev.input);
   const t = performance.now();
   const N = db.prepare("SELECT COUNT(*) AS n FROM files").get().n;
-  const kinds = new Map(db.prepare("SELECT path, kind FROM files").all().map((r) => [r.path, r.kind]));
-  const paths = [...kinds.keys()].filter(keep);
+  const paths = db.prepare("SELECT path FROM files").all().map((r) => r.path).filter(keep);
   const base = (p) => p.slice(p.lastIndexOf("/") + 1).toLowerCase();
   let ranked;
   let lines = [];
@@ -160,7 +169,7 @@ function ours2(db, ev, k) {
     const res = search(db, { patterns: [escapeRe(ev.input.query)], limit: 100000 });
     const q = ev.input.query.toLowerCase();
     const scoreOf = (f) => (base(f.path).includes(q) ? 5 : 0) + (f.hits.some((h) => h.symbol?.toLowerCase().includes(q)) ? 3 : 0)
-      + (DOC_KINDS.has(kinds.get(f.path)) ? 0 : 2) + Math.min(f.hits.length, 5) / 5;
+      + (isCode(f.path) ? 2 : 0) + Math.min(f.hits.length, 5) / 5;
     const files = res.files.filter((f) => keep(f.path)).map((f) => ({ ...f, s: scoreOf(f) })).sort((a, b) => b.s - a.s);
     ranked = files.map((f) => f.path);
     let budget = ev.input.limit ?? 10;
@@ -223,9 +232,9 @@ function ours3(db, ev, k) {
 function project(name, events, out) {
   const root = ROOTS[name];
   const p = PROJECTS[name];
-  const config = p.config
+  const config = withBase(p.config
     ? JSON.parse(readFileSync(new URL(p.config, import.meta.url), "utf8"))
-    : { exclude: p.exclude ?? [], rules: (p.rules ?? []).flatMap((set) => RULE_SETS[set]) };
+    : { exclude: p.exclude ?? [], rules: (p.rules ?? []).flatMap((set) => RULE_SETS[set]) });
   mkdirSync("db", { recursive: true });
   process.env.FINDWRIGHT_DB = `db/${name}${MODEL_TAG}.db`;
   const db = openIndex(root);
@@ -240,7 +249,7 @@ function project(name, events, out) {
   const fileset = new Set(db.prepare("SELECT path FROM files").all().map((r) => r.path));
   const tracked = new Set(execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean));
   const known = (p) => fileset.has(p) || tracked.has(p);
-  const bare = db.prepare("SELECT COUNT(*) AS n FROM files WHERE symbols = 0 AND kind != 'binary'").get().n;
+  const bare = db.prepare("SELECT COUNT(*) AS n FROM files WHERE symbols = 0 AND kind != ?").get(UNREADABLE).n;
   console.log(`${name}: ${built.files} files, ${bare} without symbols, built in ${buildMs} ms`);
   let scored = 0;
   for (const ev of events) {

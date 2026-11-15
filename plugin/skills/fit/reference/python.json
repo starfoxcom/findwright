@@ -1,0 +1,39 @@
+{
+ "description": "Python: classes, functions and methods with their indented block, and module-level constants.",
+ "rules": [
+  {
+   "globs": [
+    "**/*.py"
+   ],
+   "kind": "class",
+   "pattern": "^\\s*class\\s+(?<name>[A-Za-z_]\\w*)",
+   "end": "indent",
+   "comment": "^\\s*#"
+  },
+  {
+   "globs": [
+    "**/*.py"
+   ],
+   "kind": "function",
+   "pattern": "^(?:async\\s+)?def\\s+(?<name>[A-Za-z_]\\w*)",
+   "end": "indent",
+   "comment": "^\\s*#"
+  },
+  {
+   "globs": [
+    "**/*.py"
+   ],
+   "kind": "method",
+   "pattern": "^\\s+(?:async\\s+)?def\\s+(?<name>[A-Za-z_]\\w*)",
+   "end": "indent",
+   "comment": "^\\s*#"
+  },
+  {
+   "globs": [
+    "**/*.py"
+   ],
+   "kind": "const",
+   "pattern": "^(?<name>[A-Z_][A-Z0-9_]*)\\s*="
+  }
+ ]
+}

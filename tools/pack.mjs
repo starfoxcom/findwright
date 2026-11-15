@@ -1,6 +1,9 @@
 // Builds the release files from what git stores at a ref, never the working tree.
 //
-//   node tools/pack.mjs --zip FILE | --tgz DIR | --out DIR | --marketplace [--ref REF]
+//   node tools/pack.mjs --zip FILE | --tgz DIR | --out DIR | --marketplace FILE [--ref REF]
+//
+// --marketplace rewrites the findwright entry of a marketplace file, a checkout of
+// starfoxcom/wrights, to pin the ref's zip.
 
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -16,7 +19,6 @@ import { zipArchive } from "./pack/zip.mjs";
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PLUGIN_PREFIX = "plugin/";
 const MANIFEST_PATH = "plugin/.claude-plugin/plugin.json";
-const MARKETPLACE_PATH = ".claude-plugin/marketplace.json";
 const OUT_MARKER = ".findwright-pack.txt";
 const RELEASE_URL = "https://github.com/starfoxcom/findwright/releases/download";
 const HELPER_TOP_FILES = new Set(["package.json", "README.md", "LICENSE", "CHANGELOG.md"]);
@@ -96,11 +98,10 @@ function zipName(version) {
   return `findwright-${version}.zip`;
 }
 
-function pinMarketplace(opts) {
+function pinMarketplace(opts, path) {
   const { repo, ref } = at(opts);
   const version = readVersion({ repo, ref });
   const zip = pluginZip({ repo, ref });
-  const path = join(repo, MARKETPLACE_PATH);
   const marketplace = JSON.parse(readFileSync(path, "utf8"));
   const index = marketplace.plugins.findIndex((plugin) => plugin.name === "findwright");
   if (index === -1) throw new Error(`${path} has no findwright entry`);
@@ -142,7 +143,7 @@ function runCli(argv) {
       zip: { type: "string" },
       tgz: { type: "string" },
       out: { type: "string" },
-      marketplace: { type: "boolean" },
+      marketplace: { type: "string" },
       ref: { type: "string" },
     },
     strict: true,
@@ -154,7 +155,7 @@ function runCli(argv) {
     writeFile(join(resolve(values.tgz), tarball.name), tarball.bytes);
   }
   if (values.out) writeUnpacked(resolve(values.out), pluginFiles(opts));
-  if (values.marketplace) console.log(`updated ${pinMarketplace(opts)}`);
+  if (values.marketplace) console.log(`updated ${pinMarketplace(opts, resolve(values.marketplace))}`);
   if (!values.zip && !values.tgz && !values.out && !values.marketplace) {
     throw new Error("nothing to do: pass --zip, --tgz, --out or --marketplace");
   }
