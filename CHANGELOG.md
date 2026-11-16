@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - The index keeps secrets out. Files that hold them by nature (`.env` files other than templates such as `.env.example`, private keys, key stores, `.netrc` and other credential files) are no longer indexed, and tokens with a known shape (AWS, GitHub, GitLab, Slack, Stripe, Google, Anthropic, OpenAI, npm, PyPI and Hugging Face keys, the body of a private key between its BEGIN and END lines, and JSON web tokens) are stored as `[masked]`, so search and find never hand them back. A search for such a token finds nothing; the line around it keeps its place. A password or a token with no known shape in an ordinary file is still indexed. The index also wipes the text of a file it drops or re-reads, from the index file and its write-ahead log, and an index built by an earlier release has the text it had already freed wiped at its first refresh ([#62](https://github.com/starfoxcom/findwright/issues/62)).
 
+### Fixed
+- A tool called with an argument it does not take, without one it needs, or with one of the wrong type now says which argument and what it expects (`outline has no argument \`file\`; it takes \`path\` (a string)`), and the call never reaches the index. It used to fail with a raw database error such as "Provided value cannot be bound to SQLite parameter 1" ([#64](https://github.com/starfoxcom/findwright/issues/64)).
+
 ## [2.0.1] - 2026-11-15
 
 ### Fixed
