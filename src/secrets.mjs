@@ -47,7 +47,8 @@ const TOKENS = [
   [["hooks.slack.com/services/"], String.raw`https://hooks\.slack\.com/services/[A-Za-z0-9/_-]+`],
   [["k_live_", "k_test_"], String.raw`\b[sr]k_(?:live|test)_${run(ALNUM, 16)}`], // Stripe
   [["AIza"], String.raw`\bAIza${run(URL_SAFE, 35, { exact: true })}`], // Google
-  [["sk-ant-", "sk-proj-"], String.raw`\bsk-(?:ant-|proj-)${run(URL_SAFE, 20)}`], // Anthropic, OpenAI
+  [["sk-ant-", "sk-proj-", "sk-svcacct-", "sk-admin-"],
+    String.raw`\bsk-(?:ant-|proj-|svcacct-|admin-)${run(URL_SAFE, 20)}`], // Anthropic, OpenAI
   [["npm_"], String.raw`\bnpm_${run(ALNUM, 36)}`],
   [["pypi-"], String.raw`\bpypi-AgEIcHlwaS5vcmc${run(URL_SAFE, 50)}`],
   [["hf_"], String.raw`\bhf_${run(ALNUM, 30)}`], // Hugging Face
@@ -59,8 +60,12 @@ const BEGIN = "-----BEGIN ";
 const MARKER_MAX = 64;
 const KEY_BEGIN = compile("^-----BEGIN [A-Z0-9 ]{0,16}[A-Z0-9 ]{0,8}PRIVATE KEY(?: BLOCK)?-----");
 const BASE64 = /^[A-Za-z0-9+/=]$/;
-const BODY_LINE = compile("^[A-Za-z0-9+/=]+$");
-const ARMOR_HEADER = compile("^[A-Za-z-]+: .*$");
+// A body line: a base64 run, with the indent, quotes, concatenation and `\n` escapes code wraps it in.
+const QUOTES = "\"'`";
+const WRAP_AFTER = String.raw`(?:\\+[nr]|[\s${QUOTES}+,;])*`;
+const BODY_LINE = compile(String.raw`^([\s${QUOTES}+,]*)([A-Za-z0-9+/=]+)(${WRAP_AFTER})$`);
+const WRAPPING = compile(`^${WRAP_AFTER}$`);
+const ARMOR_HEADER = compile(String.raw`^(\s*)[A-Za-z-]+: .*$`);
 // A real key's first body line is a full line of base64 (64 characters in PEM and PGP armor).
 const FIRST_BODY_LINE = 40;
 
@@ -82,11 +87,13 @@ function maskKeyBlocks(text) {
     const content = line.endsWith("\r") ? line.slice(0, -1) : line;
     if (block) {
       const cr = line.slice(content.length);
-      if (content === "") return line;
-      if (!block.started && ARMOR_HEADER.test(content)) return MASK + cr;
-      if (BODY_LINE.test(content) && (block.started || content.length >= FIRST_BODY_LINE)) {
+      if (content.trim() === "") return line;
+      const header = !block.started && ARMOR_HEADER.exec(content);
+      if (header) return header[1] + MASK + cr;
+      const body = BODY_LINE.exec(content);
+      if (body && (block.started || body[2].length >= FIRST_BODY_LINE)) {
         block.started = true;
-        return MASK + cr;
+        return body[1] + MASK + body[3] + cr;
       }
       block = null;
     }
@@ -101,29 +108,39 @@ function maskKeyBlocks(text) {
 function maskBodiesAfterMarkers(line, contentEnd) {
   const pieces = [];
   let from = 0;
-  let opens = false;
+  let lastBodyless = -1;
   let at = line.indexOf(BEGIN);
   while (at >= 0) {
     const marker = KEY_BEGIN.exec(line.slice(at, at + MARKER_MAX));
     if (marker) {
       const end = at + marker[0].length;
-      const bodyEnd = keyBodyEnd(line, end);
-      pieces.push(line.slice(from, end), bodyEnd > end ? MASK : "");
-      from = bodyEnd;
-      opens = end === contentEnd;
+      const body = keyBody(line, end);
+      pieces.push(line.slice(from, end), body.base64 ? MASK : "");
+      from = body.base64 ? body.end : end;
+      lastBodyless = body.base64 ? -1 : end;
     }
     at = line.indexOf(BEGIN, marker ? from : at + 1);
   }
   pieces.push(line.slice(from));
+  // The block goes on to the next lines when only quotes, escapes or concatenation follow the last marker.
+  const opens = lastBodyless >= 0 && WRAPPING.test(line.slice(lastBodyless, contentEnd));
   return { masked: pieces.join(""), opens };
 }
 
-// Where the run of base64 characters and `\n` or `\r` escapes starting at `start` ends.
-function keyBodyEnd(line, start) {
+// The run of base64 characters and `\n` or `\r` escapes (`\\n` when escaped twice) starting at `start`:
+// where it ends, and whether it holds any base64, since escapes alone are no key.
+function keyBody(line, start) {
   let i = start;
+  let base64 = false;
   for (;;) {
-    if (BASE64.test(line[i] ?? "")) i += 1;
-    else if (line[i] === "\\" && (line[i + 1] === "n" || line[i + 1] === "r")) i += 2;
-    else return i;
+    if (BASE64.test(line[i] ?? "")) {
+      i += 1;
+      base64 = true;
+      continue;
+    }
+    let slashes = i;
+    while (line[slashes] === "\\") slashes += 1;
+    if (slashes === i || (line[slashes] !== "n" && line[slashes] !== "r")) return { end: i, base64 };
+    i = slashes + 1;
   }
 }

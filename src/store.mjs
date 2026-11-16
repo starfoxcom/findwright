@@ -51,7 +51,30 @@ function createSchema(db) {
   // With secure-delete, dropping a file removes its words from the full-text index at once,
   // and the secure_delete pragma zeroes the pages that held its text.
   const secure = db.prepare("SELECT v FROM body_config WHERE k = 'secure-delete'").get();
-  if (secure?.v !== 1) db.exec("INSERT INTO body(body, rank) VALUES ('secure-delete', 1)");
+  if (secure?.v === 1) return;
+  db.exec("INSERT INTO body(body, rank) VALUES ('secure-delete', 1)");
+  // An index built without it may still hold text it freed, so the next refresh rewrites the file once.
+  if (db.prepare("SELECT 1 FROM files LIMIT 1").get()) {
+    db.exec("INSERT OR REPLACE INTO settings VALUES ('needs-wipe', '1')");
+  }
+}
+
+// Leaves no copy of dropped text in the index's files: an index marked by createSchema has its
+// full-text segments merged and the file rewritten, and after any write the log of page images
+// is emptied. Another process holding the index leaves the wipe to the next refresh.
+function wipeFreedText(db, { wrote }) {
+  const pending = db.prepare("SELECT 1 FROM settings WHERE key = 'needs-wipe'").get();
+  if (!pending && !wrote) return;
+  try {
+    if (pending) {
+      db.exec("INSERT INTO body(body) VALUES ('optimize')");
+      db.exec("VACUUM");
+      db.exec("DELETE FROM settings WHERE key = 'needs-wipe'");
+    }
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  } catch (error) {
+    if (!/locked|busy/i.test(String(error.message))) throw error;
+  }
 }
 
 const compiledGlobs = new Map();
@@ -284,7 +307,10 @@ export function refresh(db, root, config = readConfig(root)) {
   const removed = [...known.keys()].filter((path) => !seen.has(path));
   const result = { changed: changed.length, reindexed: 0, removed: removed.length, files: seen.size };
   // A refresh that finds nothing new writes nothing, so it takes no write lock.
-  if (sameExtraction && !changed.length && !removed.length) return result;
+  if (sameExtraction && !changed.length && !removed.length) {
+    wipeFreedText(db, { wrote: false });
+    return result;
+  }
   db.exec("BEGIN IMMEDIATE");
   // Another process stored other settings since they were read above: start over from them.
   if (storedExtraction(db) !== indexedWith) {
@@ -303,6 +329,7 @@ export function refresh(db, root, config = readConfig(root)) {
     db.exec("ROLLBACK");
     throw error;
   }
+  wipeFreedText(db, { wrote: true });
   return result;
 }
 

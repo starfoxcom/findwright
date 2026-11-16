@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isSecretFile, MASK, maskSecrets } from "../src/secrets.mjs";
@@ -20,6 +20,7 @@ const fake = {
   google: "AI" + "za" + "c".repeat(35),
   anthropic: "sk-" + "ant-" + "d".repeat(40),
   openai: "sk-" + "proj-" + "j".repeat(40),
+  openaiServiceAccount: "sk-" + "svcacct-" + "j".repeat(40),
   npm: "np" + "m_" + "k".repeat(36),
   pypi: "pypi-" + "AgEIcHlwaS5vcmc" + "l".repeat(60),
   huggingFace: "h" + "f_" + "m".repeat(34),
@@ -62,6 +63,15 @@ test("a private key body is masked, and the code around a quoted marker is not",
     ["a key on one line, written with escapes",
       [`{"key": "${keyHeader("BEGIN")}\\nMIIE\\n${keyHeader("END")}\\n", "id": 1}`],
       [`{"key": "${keyHeader("BEGIN")}${MASK}${keyHeader("END")}\\n", "id": 1}`]],
+    ["an indented block in YAML",
+      ["tls.key: |", `  ${keyHeader("BEGIN")}`, `  ${keyLine}`, "  x9Yb2==", `  ${keyHeader("END")}`, "name: web"],
+      ["tls.key: |", `  ${keyHeader("BEGIN")}`, `  ${MASK}`, `  ${MASK}`, `  ${keyHeader("END")}`, "name: web"]],
+    ["a block built by string concatenation",
+      [`const pem = "${keyHeader("BEGIN")}\\n" +`, `  "${keyLine}\\n" +`, `  "${keyHeader("END")}";`],
+      [`const pem = "${keyHeader("BEGIN")}\\n" +`, `  "${MASK}\\n" +`, `  "${keyHeader("END")}";`]],
+    ["a key escaped twice, as JSON inside JSON",
+      [`"{\\"key\\": \\"${keyHeader("BEGIN")}\\\\nMIIE\\\\n${keyHeader("END")}\\"}"`],
+      [`"{\\"key\\": \\"${keyHeader("BEGIN")}${MASK}${keyHeader("END")}\\"}"`]],
     ["a marker quoted in code",
       [`if (!pem.includes("${keyHeader("BEGIN")}")) throw new Error("bad key");`, "return pem;"],
       [`if (!pem.includes("${keyHeader("BEGIN")}")) throw new Error("bad key");`, "return pem;"]],
@@ -72,11 +82,18 @@ test("a private key body is masked, and the code around a quoted marker is not",
   for (const [name, lines, expected] of cases) assert.equal(maskSecrets(lines.join("\n")), expected.join("\n"), name);
 });
 
-test("masking a hostile file stays linear in its size", () => {
-  const hostile = ("eyJ" + "a".repeat(10) + "-").repeat(150_000) + keyHeader("BEGIN").repeat(20_000);
-  const start = performance.now();
-  maskSecrets(hostile);
-  assert.ok(performance.now() - start < 2000, `took ${Math.round(performance.now() - start)} ms`);
+test("masking a hostile file costs time in proportion to its size", () => {
+  const hostile = (copies) => ("eyJ" + "a".repeat(10) + "-").repeat(copies) + keyHeader("BEGIN").repeat(copies / 8);
+  const timed = (text) => {
+    const start = performance.now();
+    maskSecrets(text);
+    return performance.now() - start;
+  };
+  const [small, large] = [hostile(20_000), hostile(80_000)];
+  timed(small);
+  const ratio = timed(large) / Math.max(timed(small), 1);
+  // Four times the input: about 4 when linear, about 16 when quadratic.
+  assert.ok(ratio < 9, `four times the input took ${ratio.toFixed(1)} times as long`);
 });
 
 test("the index skips secret files and stores masked text, so search hands back no secret", () => {
@@ -97,19 +114,43 @@ test("the index skips secret files and stores masked text, so search hands back 
   rmSync(root, { recursive: true, force: true });
 });
 
-test("a file that leaves the index leaves no copy of its text in the index file", () => {
+const secret = "hunter2-" + "sentinel".repeat(8);
+
+// A repo holding the secret in one file among many, indexed once.
+function indexedRepo() {
   const root = mkdtempSync(join(tmpdir(), "findwright-"));
   execFileSync("git", ["init", "-q"], { cwd: root });
-  const secret = "hunter2-" + "sentinel".repeat(8);
   writeFileSync(join(root, "notes.txt"), `password ${secret}\n` + "filler line\n".repeat(200));
   for (let i = 0; i < 60; i++) writeFileSync(join(root, `f${i}.txt`), `line ${i} of other text\n`.repeat(150));
-  let db = openIndex(root);
+  const db = openIndex(root);
   refresh(db, root);
-  db.close();
+  return { root, db };
+}
+
+function indexHolds(root, text) {
+  const file = join(root, ".findwright", "index.db");
+  return [file, `${file}-wal`].some((path) => existsSync(path) && readFileSync(path).includes(text));
+}
+
+test("a file re-read with new text leaves no copy of the old text in the index or its log", () => {
+  const { root, db } = indexedRepo();
   writeFileSync(join(root, "notes.txt"), "now clean\n");
-  db = openIndex(root);
+  refresh(db, root);
+  assert.equal(indexHolds(root, secret), false);
+  db.close();
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("an index built without the wipe loses the text it freed at its next refresh", () => {
+  const { root, db } = indexedRepo();
+  db.exec("PRAGMA secure_delete = OFF; INSERT INTO body(body, rank) VALUES ('secure-delete', 0);");
+  writeFileSync(join(root, "notes.txt"), "now clean\n");
   refresh(db, root);
   db.close();
-  assert.ok(!readFileSync(join(root, ".findwright", "index.db")).includes(secret));
+  assert.equal(indexHolds(root, secret), true, "the old index keeps the freed text");
+  const reopened = openIndex(root);
+  refresh(reopened, root);
+  assert.equal(indexHolds(root, secret), false);
+  reopened.close();
   rmSync(root, { recursive: true, force: true });
 });
