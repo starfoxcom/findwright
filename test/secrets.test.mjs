@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { generateKeyPairSync } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -172,16 +173,49 @@ test("a file re-read with new text leaves no copy of the old text in the index o
   rmSync(root, { recursive: true, force: true });
 });
 
-test("an index built without the wipe loses the text it freed at its next refresh", () => {
+// The index as an older copy leaves it: its text deleted without being wiped.
+function oldIndex() {
   const { root, db } = indexedRepo();
   db.exec("PRAGMA secure_delete = OFF; INSERT INTO body(body, rank) VALUES ('secure-delete', 0);");
+  db.exec("DELETE FROM body WHERE path = 'notes.txt'");
+  db.close();
+  writeFileSync(join(root, "notes.txt"), "now clean\n");
+  return root;
+}
+
+test("an index built without the wipe loses the text it freed at its next refresh", () => {
+  const root = oldIndex();
+  assert.equal(indexHolds(root, secret), true, "the old index keeps the freed text");
+  const db = openIndex(root);
+  refresh(db, root);
+  assert.equal(indexHolds(root, secret), false);
+  db.close();
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("an old index opens while another process holds its write lock", () => {
+  const root = oldIndex();
+  const other = new DatabaseSync(join(root, ".findwright", "index.db"));
+  other.exec("BEGIN IMMEDIATE");
+  const db = openIndex(root);
+  db.close();
+  other.exec("ROLLBACK");
+  other.close();
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("a log another reader kept from emptying is emptied at the next refresh", () => {
+  const { root, db } = indexedRepo();
+  const reader = new DatabaseSync(join(root, ".findwright", "index.db"));
+  reader.exec("BEGIN");
+  reader.prepare("SELECT count(*) FROM files").get();
   writeFileSync(join(root, "notes.txt"), "now clean\n");
   refresh(db, root);
-  db.close();
-  assert.equal(indexHolds(root, secret), true, "the old index keeps the freed text");
-  const reopened = openIndex(root);
-  refresh(reopened, root);
+  assert.equal(indexHolds(root, secret), true, "the blocked log keeps the old text");
+  reader.exec("COMMIT");
+  reader.close();
+  refresh(db, root);
   assert.equal(indexHolds(root, secret), false);
-  reopened.close();
+  db.close();
   rmSync(root, { recursive: true, force: true });
 });

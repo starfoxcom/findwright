@@ -48,33 +48,48 @@ function createSchema(db) {
     throw new Error("FindWright needs Node 22.16 or later (or Node 24 and up): "
       + `the SQLite in Node ${process.version} has no full-text search.`);
   }
-  // With secure-delete, dropping a file removes its words from the full-text index at once,
-  // and the secure_delete pragma zeroes the pages that held its text.
-  const secure = db.prepare("SELECT v FROM body_config WHERE k = 'secure-delete'").get();
-  if (secure?.v === 1) return;
-  db.exec("INSERT INTO body(body, rank) VALUES ('secure-delete', 1)");
-  // An index built without it may still hold text it freed, so the next refresh rewrites the file once.
-  if (db.prepare("SELECT 1 FROM files LIMIT 1").get()) {
-    db.exec("INSERT OR REPLACE INTO settings VALUES ('needs-wipe', '1')");
-  }
 }
 
-// Leaves no copy of dropped text in the index's files: an index marked by createSchema has its
-// full-text segments merged and the file rewritten, and after any write the log of page images
-// is emptied. Another process holding the index leaves the wipe to the next refresh.
+// With secure-delete, dropping a file removes its words from the full-text index at once, and the
+// secure_delete pragma zeroes the pages that held its text. Runs inside a refresh's write transaction.
+// An index built without it may still hold text it freed, so it is marked for one full wipe.
+function ensureSecureDelete(db) {
+  if (db.prepare("SELECT v FROM body_config WHERE k = 'secure-delete'").get()?.v === 1) return;
+  const holdsText = db.prepare("SELECT 1 FROM files LIMIT 1").get();
+  db.exec("INSERT INTO body(body, rank) VALUES ('secure-delete', 1)");
+  if (holdsText) db.exec("INSERT OR REPLACE INTO settings VALUES ('needs-wipe', '1')");
+}
+
+// Connections whose last checkpoint another reader blocked, so the log may still hold old text.
+const checkpointBlocked = new WeakSet();
+
+// Leaves no copy of dropped text in the index's files: an index marked for a full wipe has its
+// full-text segments merged and the file rewritten, and after any write the log of page images is
+// emptied into the file. Whatever another process blocks is tried again at the next refresh, and the
+// full wipe counts as done only once the log is empty.
 function wipeFreedText(db, { wrote }) {
   const pending = db.prepare("SELECT 1 FROM settings WHERE key = 'needs-wipe'").get();
-  if (!pending && !wrote) return;
+  if (!pending && !wrote && !checkpointBlocked.has(db)) return;
   try {
     if (pending) {
       db.exec("INSERT INTO body(body) VALUES ('optimize')");
       db.exec("VACUUM");
-      db.exec("DELETE FROM settings WHERE key = 'needs-wipe'");
     }
-    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    if (checkpoint(db) && pending) {
+      db.exec("DELETE FROM settings WHERE key = 'needs-wipe'");
+      checkpoint(db);
+    }
   } catch (error) {
     if (!/locked|busy/i.test(String(error.message))) throw error;
   }
+}
+
+// Empties the log into the index file; false when a reader in another process blocked it.
+function checkpoint(db) {
+  const blocked = db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get().busy !== 0;
+  if (blocked) checkpointBlocked.add(db);
+  else checkpointBlocked.delete(db);
+  return !blocked;
 }
 
 const compiledGlobs = new Map();
@@ -318,6 +333,7 @@ export function refresh(db, root, config = readConfig(root)) {
     return refresh(db, root, config);
   }
   try {
+    ensureSecureDelete(db);
     for (const path of removed) dropFile(db, path);
     for (const { path, stat } of changed) indexFile(db, root, path, stat, config);
     if (!sameExtraction) {
