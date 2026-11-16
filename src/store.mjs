@@ -60,16 +60,14 @@ function ensureSecureDelete(db) {
   if (holdsText) db.exec("INSERT OR REPLACE INTO settings VALUES ('needs-wipe', '1')");
 }
 
-// Connections whose last checkpoint another reader blocked, so the log may still hold old text.
-const checkpointBlocked = new WeakSet();
-
 // Leaves no copy of dropped text in the index's files: an index marked for a full wipe has its
-// full-text segments merged and the file rewritten, and after any write the log of page images is
-// emptied into the file. Whatever another process blocks is tried again at the next refresh, and the
-// full wipe counts as done only once the log is empty.
-function wipeFreedText(db, { wrote }) {
+// full-text segments merged and the file rewritten, and a log that holds page images is emptied into
+// the file. Both marks live in the index's files, so whatever one process leaves undone (blocked by
+// a reader, or cut short by an exit) the next refresh in any process finishes, and the full wipe
+// counts as done only once the log is empty.
+function wipeFreedText(db) {
   const pending = db.prepare("SELECT 1 FROM settings WHERE key = 'needs-wipe'").get();
-  if (!pending && !wrote && !checkpointBlocked.has(db)) return;
+  if (!pending && !logHoldsPages(db)) return;
   try {
     if (pending) {
       db.exec("INSERT INTO body(body) VALUES ('optimize')");
@@ -84,12 +82,19 @@ function wipeFreedText(db, { wrote }) {
   }
 }
 
-// Empties the log into the index file; false when a reader in another process blocked it.
-function checkpoint(db) {
-  const blocked = db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get().busy !== 0;
-  if (blocked) checkpointBlocked.add(db);
-  else checkpointBlocked.delete(db);
-  return !blocked;
+// Empties the log into the index file, leaving it 0 bytes long; false when a reader in another process blocked it.
+const checkpoint = (db) => db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get().busy === 0;
+
+// True when the index's log holds pages a checkpoint has not emptied into the file.
+function logHoldsPages(db) {
+  const file = db.prepare("PRAGMA database_list").get()?.file;
+  if (!file) return false;
+  try {
+    return statSync(`${file}-wal`).size > 0;
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
+  }
 }
 
 const compiledGlobs = new Map();
@@ -323,7 +328,7 @@ export function refresh(db, root, config = readConfig(root)) {
   const result = { changed: changed.length, reindexed: 0, removed: removed.length, files: seen.size };
   // A refresh that finds nothing new writes nothing, so it takes no write lock.
   if (sameExtraction && !changed.length && !removed.length) {
-    wipeFreedText(db, { wrote: false });
+    wipeFreedText(db);
     return result;
   }
   db.exec("BEGIN IMMEDIATE");
@@ -345,7 +350,7 @@ export function refresh(db, root, config = readConfig(root)) {
     db.exec("ROLLBACK");
     throw error;
   }
-  wipeFreedText(db, { wrote: true });
+  wipeFreedText(db);
   return result;
 }
 

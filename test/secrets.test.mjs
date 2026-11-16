@@ -204,18 +204,20 @@ test("an old index opens while another process holds its write lock", () => {
   rmSync(root, { recursive: true, force: true });
 });
 
-test("a log another reader kept from emptying is emptied at the next refresh", () => {
+test("a log another reader kept from emptying is emptied at the next refresh of any process", () => {
   const { root, db } = indexedRepo();
   const reader = new DatabaseSync(join(root, ".findwright", "index.db"));
   reader.exec("BEGIN");
   reader.prepare("SELECT count(*) FROM files").get();
   writeFileSync(join(root, "notes.txt"), "now clean\n");
   refresh(db, root);
+  db.close();
   assert.equal(indexHolds(root, secret), true, "the blocked log keeps the old text");
   reader.exec("COMMIT");
-  reader.close();
-  refresh(db, root);
+  const next = openIndex(root);
+  refresh(next, root);
   assert.equal(indexHolds(root, secret), false);
-  db.close();
+  next.close();
+  reader.close();
   rmSync(root, { recursive: true, force: true });
 });
