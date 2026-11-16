@@ -55,19 +55,25 @@ const TOKENS = [
   [["eyJ"], String.raw`\beyJ${run(URL_SAFE, 10)}\.eyJ${run(URL_SAFE, 10)}\.${run(URL_SAFE, 10)}`], // JSON web token
 ].map(([prefixes, source]) => ({ prefixes, pattern: compile(source, "g") }));
 
-const BEGIN = "-----BEGIN ";
-// The longest BEGIN marker read: its key type (`RSA `, `ENCRYPTED `, `OPENSSH `) is at most 24 characters.
+// A private key is a BEGIN marker, its body and an END marker, the way secret scanners read it.
+// The key type in a marker (`RSA `, `ENCRYPTED `, `OPENSSH `) is at most 24 characters.
+const MARKER = (edge) => compile(`^-----${edge} [A-Z0-9 ]{0,16}[A-Z0-9 ]{0,8}PRIVATE KEY(?: BLOCK)?-----`);
+const KEY_BEGIN = { text: "-----BEGIN ", pattern: MARKER("BEGIN") };
+const KEY_END = { text: "-----END ", pattern: MARKER("END") };
 const MARKER_MAX = 64;
-const KEY_BEGIN = compile("^-----BEGIN [A-Z0-9 ]{0,16}[A-Z0-9 ]{0,8}PRIVATE KEY(?: BLOCK)?-----");
-const BASE64 = /^[A-Za-z0-9+/=]$/;
-// A body line: a base64 run, with the indent, quotes, concatenation and `\n` escapes code wraps it in.
-const QUOTES = "\"'`";
-const WRAP_AFTER = String.raw`(?:\\+[nr]|[\s${QUOTES}+,;])*`;
-const BODY_LINE = compile(String.raw`^([\s${QUOTES}+,]*)([A-Za-z0-9+/=]+)(${WRAP_AFTER})$`);
-const WRAPPING = compile(`^${WRAP_AFTER}$`);
-const ARMOR_HEADER = compile(String.raw`^(\s*)[A-Za-z-]+: .*$`);
-// A real key's first body line is a full line of base64 (64 characters in PEM and PGP armor).
-const FIRST_BODY_LINE = 40;
+// The largest key body read (a 16384-bit RSA key in PEM is about 12 KB).
+const BODY_MAX = 64 * 1024;
+// The smallest real key body (Ed25519 in PKCS#8) holds 64 base64 characters.
+const BODY_MIN = 64;
+// What code wraps a key body in: armor headers, escaped line breaks, quotes, concatenation, indentation.
+const QUOTES = "[\"'`]";
+const ARMOR_HEADERS = compile(String.raw`(?:^|\n)[ \t]*[A-Za-z-]+: [^\n]*`, "g");
+const LINE_ESCAPES = compile(String.raw`\\+[nr]`, "g");
+const SLASH_ESCAPES = compile(String.raw`\\+/`, "g");
+// A `+` joins strings only next to a quote; inside a key body it is base64.
+const CONCATENATION = compile(String.raw`${QUOTES}[ \t]*\+|\+[ \t]*${QUOTES}`, "g");
+const WRAPPING = compile(String.raw`[\s,;]|${QUOTES}`, "g");
+const BASE64_RUN = compile("^[A-Za-z0-9+/=]+$");
 
 /** `text` with every known token shape and private key body replaced by MASK, on the same lines. */
 export function maskSecrets(text) {
@@ -78,69 +84,52 @@ export function maskSecrets(text) {
   return masked;
 }
 
-// A block opens at a BEGIN marker whose line ends there, and stays open over armor headers, blank
-// lines and base64 lines; it closes at the first other line, so a BEGIN marker quoted in code
-// masks nothing after it. Masking keeps the line breaks, so line numbers stay true.
+// Masks the text between each BEGIN marker and the END marker after it when that text is a key body.
+// A marker with no END before the next BEGIN masks nothing, so code that quotes a marker keeps its text.
+// Spans never overlap and each END search starts past the last one, so a file is read in linear time.
 function maskKeyBlocks(text) {
-  let block = null;
-  return text.split("\n").map((line) => {
-    const content = line.endsWith("\r") ? line.slice(0, -1) : line;
-    if (block) {
-      const cr = line.slice(content.length);
-      if (content.trim() === "") return line;
-      const header = !block.started && ARMOR_HEADER.exec(content);
-      if (header) return header[1] + MASK + cr;
-      const body = BODY_LINE.exec(content);
-      if (body && (block.started || body[2].length >= FIRST_BODY_LINE)) {
-        block.started = true;
-        return body[1] + MASK + body[3] + cr;
-      }
-      block = null;
-    }
-    const { masked, opens } = maskBodiesAfterMarkers(line, content.length);
-    if (opens) block = { started: false };
-    return masked;
-  }).join("\n");
-}
-
-// Masks the base64 run after each BEGIN marker on one line; `opens` when the line's content ends at a marker.
-// Markers are found with indexOf and checked on a short slice, so a line packed with them stays linear.
-function maskBodiesAfterMarkers(line, contentEnd) {
   const pieces = [];
   let from = 0;
-  let lastBodyless = -1;
-  let at = line.indexOf(BEGIN);
-  while (at >= 0) {
-    const marker = KEY_BEGIN.exec(line.slice(at, at + MARKER_MAX));
-    if (marker) {
-      const end = at + marker[0].length;
-      const body = keyBody(line, end);
-      pieces.push(line.slice(from, end), body.base64 ? MASK : "");
-      from = body.base64 ? body.end : end;
-      lastBodyless = body.base64 ? -1 : end;
+  let end = null;
+  let begin = nextMarker(text, KEY_BEGIN, 0);
+  while (begin) {
+    const next = nextMarker(text, KEY_BEGIN, begin.end);
+    if (!end || end.at < begin.end) end = nextMarker(text, KEY_END, begin.end);
+    if (!end) break;
+    const closes = (!next || end.at < next.at) && end.at - begin.end <= BODY_MAX;
+    const body = closes ? text.slice(begin.end, end.at) : "";
+    if (closes && isKeyBody(body)) {
+      pieces.push(text.slice(from, begin.end), maskLines(body));
+      from = end.at;
     }
-    at = line.indexOf(BEGIN, marker ? from : at + 1);
+    begin = next;
   }
-  pieces.push(line.slice(from));
-  // The block goes on to the next lines when only quotes, escapes or concatenation follow the last marker.
-  const opens = lastBodyless >= 0 && WRAPPING.test(line.slice(lastBodyless, contentEnd));
-  return { masked: pieces.join(""), opens };
+  pieces.push(text.slice(from));
+  return pieces.join("");
 }
 
-// The run of base64 characters and `\n` or `\r` escapes (`\\n` when escaped twice) starting at `start`:
-// where it ends, and whether it holds any base64, since escapes alone are no key.
-function keyBody(line, start) {
-  let i = start;
-  let base64 = false;
-  for (;;) {
-    if (BASE64.test(line[i] ?? "")) {
-      i += 1;
-      base64 = true;
-      continue;
-    }
-    let slashes = i;
-    while (line[slashes] === "\\") slashes += 1;
-    if (slashes === i || (line[slashes] !== "n" && line[slashes] !== "r")) return { end: i, base64 };
-    i = slashes + 1;
+// The next marker at or after `from`, found with indexOf and checked on a short slice.
+function nextMarker(text, marker, from) {
+  for (let at = text.indexOf(marker.text, from); at >= 0; at = text.indexOf(marker.text, at + 1)) {
+    const found = marker.pattern.exec(text.slice(at, at + MARKER_MAX));
+    if (found) return { at, end: at + found[0].length };
   }
+  return null;
+}
+
+// True when `body`, once its armor headers and the wrapping code puts around a key are taken out,
+// is one run of base64 long enough to be a key.
+function isKeyBody(body) {
+  const bare = body.replace(LINE_ESCAPES, "\n").replace(ARMOR_HEADERS, "").replace(SLASH_ESCAPES, "/")
+    .replace(CONCATENATION, "").replace(WRAPPING, "");
+  return bare.length >= BODY_MIN && BASE64_RUN.test(bare);
+}
+
+// Each line of the span becomes MASK after its indent, so line numbers stay true.
+function maskLines(body) {
+  return body.split("\n").map((line) => {
+    const indent = line.length - line.trimStart().length;
+    const cr = line.endsWith("\r") ? "\r" : "";
+    return line.trim() === "" ? line : line.slice(0, indent) + MASK + cr;
+  }).join("\n");
 }

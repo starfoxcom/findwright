@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -61,25 +62,55 @@ test("a private key body is masked, and the code around a quoted marker is not",
       [keyHeader("BEGIN") + "\r", keyLine + "\r", keyHeader("END") + "\r"],
       [keyHeader("BEGIN") + "\r", MASK + "\r", keyHeader("END") + "\r"]],
     ["a key on one line, written with escapes",
-      [`{"key": "${keyHeader("BEGIN")}\\nMIIE\\n${keyHeader("END")}\\n", "id": 1}`],
+      [`{"key": "${keyHeader("BEGIN")}\\n${keyLine}\\n${keyHeader("END")}\\n", "id": 1}`],
       [`{"key": "${keyHeader("BEGIN")}${MASK}${keyHeader("END")}\\n", "id": 1}`]],
     ["an indented block in YAML",
       ["tls.key: |", `  ${keyHeader("BEGIN")}`, `  ${keyLine}`, "  x9Yb2==", `  ${keyHeader("END")}`, "name: web"],
       ["tls.key: |", `  ${keyHeader("BEGIN")}`, `  ${MASK}`, `  ${MASK}`, `  ${keyHeader("END")}`, "name: web"]],
     ["a block built by string concatenation",
       [`const pem = "${keyHeader("BEGIN")}\\n" +`, `  "${keyLine}\\n" +`, `  "${keyHeader("END")}";`],
-      [`const pem = "${keyHeader("BEGIN")}\\n" +`, `  "${MASK}\\n" +`, `  "${keyHeader("END")}";`]],
+      [`const pem = "${keyHeader("BEGIN")}${MASK}`, `  ${MASK}`, `  ${MASK}${keyHeader("END")}";`]],
     ["a key escaped twice, as JSON inside JSON",
-      [`"{\\"key\\": \\"${keyHeader("BEGIN")}\\\\nMIIE\\\\n${keyHeader("END")}\\"}"`],
+      [`"{\\"key\\": \\"${keyHeader("BEGIN")}\\\\n${keyLine}\\\\n${keyHeader("END")}\\"}"`],
       [`"{\\"key\\": \\"${keyHeader("BEGIN")}${MASK}${keyHeader("END")}\\"}"`]],
+    ["a key whose slashes are escaped, as PHP writes JSON",
+      [`{"key":"${keyHeader("BEGIN")}\\n${keyLine.slice(0, 30)}\\/${keyLine.slice(30)}\\n${keyHeader("END")}"}`],
+      [`{"key":"${keyHeader("BEGIN")}${MASK}${keyHeader("END")}"}`]],
+    ["a key flattened onto one line with spaces",
+      [`KEY="${keyHeader("BEGIN")} ${keyLine.slice(0, 32)} ${keyLine.slice(32)} ${keyHeader("END")}"`],
+      [`KEY="${keyHeader("BEGIN")} ${MASK}${keyHeader("END")}"`]],
     ["a marker quoted in code",
       [`if (!pem.includes("${keyHeader("BEGIN")}")) throw new Error("bad key");`, "return pem;"],
       [`if (!pem.includes("${keyHeader("BEGIN")}")) throw new Error("bad key");`, "return pem;"]],
-    ["a marker ending a comment line, then short code lines",
-      [`// ${keyHeader("BEGIN")}`, "return", "}"],
-      [`// ${keyHeader("BEGIN")}`, "return", "}"]],
+    ["both markers quoted as constants, with code between them",
+      [`  begin: "${keyHeader("BEGIN")}",`, `  end: "${keyHeader("END")}",`, `  label: "pem",`],
+      [`  begin: "${keyHeader("BEGIN")}",`, `  end: "${keyHeader("END")}",`, `  label: "pem",`]],
+    ["a marker in a scanner rule, then the rule's fields",
+      [`- pattern: "${keyHeader("BEGIN")}"`, "  message: Private key found", "  severity: high"],
+      [`- pattern: "${keyHeader("BEGIN")}"`, "  message: Private key found", "  severity: high"]],
   ];
   for (const [name, lines, expected] of cases) assert.equal(maskSecrets(lines.join("\n")), expected.join("\n"), name);
+});
+
+test("real keys are masked whole, as a file, indented in YAML and inside JSON", () => {
+  const keys = {
+    "Ed25519 in PKCS#8": generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" }),
+    "encrypted RSA": generateKeyPairSync("rsa", { modulusLength: 1024 }).privateKey
+      .export({ type: "pkcs1", format: "pem", cipher: "aes-128-cbc", passphrase: "test" }),
+  };
+  for (const [name, pem] of Object.entries(keys)) {
+    const body = pem.split("\n").filter((line) => line && !line.startsWith("-----") && !line.includes(":"));
+    const forms = {
+      file: pem,
+      yaml: "tls.key: |\n" + pem.split("\n").map((line) => `  ${line}`).join("\n"),
+      json: JSON.stringify({ key: pem }),
+    };
+    for (const [form, text] of Object.entries(forms)) {
+      const masked = maskSecrets(text);
+      assert.deepEqual(body.filter((line) => masked.includes(line)), [], `${name} as ${form}`);
+      assert.equal(masked.split("\n").length, text.split("\n").length, `${name} as ${form} keeps its lines`);
+    }
+  }
 });
 
 test("masking a hostile file costs time in proportion to its size", () => {
