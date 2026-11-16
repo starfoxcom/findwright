@@ -11,6 +11,7 @@ import { fromRules, isObject, normalRule, strings } from "./rules.mjs";
 
 export { isObject };
 import { linearRegExp } from "./linear.mjs";
+import { isSecretFile, maskSecrets } from "./secrets.mjs";
 
 /** The root of the git repository the process runs in, or null outside one. */
 export function gitRoot() {
@@ -46,6 +47,53 @@ function createSchema(db) {
     if (!String(error.message).includes("no such module: fts5")) throw error;
     throw new Error("FindWright needs Node 22.16 or later (or Node 24 and up): "
       + `the SQLite in Node ${process.version} has no full-text search.`);
+  }
+}
+
+// With secure-delete, dropping a file removes its words from the full-text index at once, and the
+// secure_delete pragma zeroes the pages that held its text. Runs inside a refresh's write transaction.
+// An index built without it may still hold text it freed, so it is marked for one full wipe.
+function ensureSecureDelete(db) {
+  if (db.prepare("SELECT v FROM body_config WHERE k = 'secure-delete'").get()?.v === 1) return;
+  const holdsText = db.prepare("SELECT 1 FROM files LIMIT 1").get();
+  db.exec("INSERT INTO body(body, rank) VALUES ('secure-delete', 1)");
+  if (holdsText) db.exec("INSERT OR REPLACE INTO settings VALUES ('needs-wipe', '1')");
+}
+
+// Leaves no copy of dropped text in the index's files: an index marked for a full wipe has its
+// full-text segments merged and the file rewritten, and a log that holds page images is emptied into
+// the file. Both marks live in the index's files, so whatever one process leaves undone (blocked by
+// a reader, or cut short by an exit) the next refresh in any process finishes, and the full wipe
+// counts as done only once the log is empty.
+function wipeFreedText(db) {
+  const pending = db.prepare("SELECT 1 FROM settings WHERE key = 'needs-wipe'").get();
+  if (!pending && !logHoldsPages(db)) return;
+  try {
+    if (pending) {
+      db.exec("INSERT INTO body(body) VALUES ('optimize')");
+      db.exec("VACUUM");
+    }
+    if (checkpoint(db) && pending) {
+      db.exec("DELETE FROM settings WHERE key = 'needs-wipe'");
+      checkpoint(db);
+    }
+  } catch (error) {
+    if (!/locked|busy/i.test(String(error.message))) throw error;
+  }
+}
+
+// Empties the log into the index file, leaving it 0 bytes long; false when a reader in another process blocked it.
+const checkpoint = (db) => db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get().busy === 0;
+
+// True when the index's log holds pages a checkpoint has not emptied into the file.
+function logHoldsPages(db) {
+  const file = db.prepare("PRAGMA database_list").get()?.file;
+  if (!file) return false;
+  try {
+    return statSync(`${file}-wal`).size > 0;
+  } catch (error) {
+    if (error.code === "ENOENT") return false;
+    throw error;
   }
 }
 
@@ -182,7 +230,7 @@ export function listFiles(root, config) {
     } catch { continue; }
     for (const path of found) if (globToRegExp(glob).test(path)) files.add(path);
   }
-  return [...files].filter((path) => !matchesAny(path, config.exclude ?? [])).sort();
+  return [...files].filter((path) => !isSecretFile(path) && !matchesAny(path, config.exclude ?? [])).sort();
 }
 
 // .findwright/ is where FindWright writes, so a repo must not be able to point it elsewhere: it has to be
@@ -213,17 +261,19 @@ export function openIndex(root) {
   const ignore = join(root, ".findwright", ".gitignore");
   if (!process.env.FINDWRIGHT_DB && !existsSync(ignore)) writeFileSync(ignore, "*\n!config.json\n");
   const db = new DatabaseSync(file);
-  db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA trusted_schema = OFF;");
+  // secure_delete zeroes a dropped file's text, so the index never keeps text the files no longer hold.
+  db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA trusted_schema = OFF;"
+    + " PRAGMA secure_delete = ON;");
   createSchema(db);
   return db;
 }
 
-/** A file's text, or null when it is too large to index or binary. */
+/** A file's text with its secrets masked, or null when it is too large to index or binary. */
 export function readText(root, path, size) {
   if (size > MAX_FILE_BYTES) return null;
   const bytes = readFileSync(join(root, path));
   if (bytes.subarray(0, 8000).includes(0)) return null;
-  return bytes.toString("utf8");
+  return maskSecrets(bytes.toString("utf8"));
 }
 
 function symbolsOf(text, path, config) {
@@ -277,7 +327,10 @@ export function refresh(db, root, config = readConfig(root)) {
   const removed = [...known.keys()].filter((path) => !seen.has(path));
   const result = { changed: changed.length, reindexed: 0, removed: removed.length, files: seen.size };
   // A refresh that finds nothing new writes nothing, so it takes no write lock.
-  if (sameExtraction && !changed.length && !removed.length) return result;
+  if (sameExtraction && !changed.length && !removed.length) {
+    wipeFreedText(db);
+    return result;
+  }
   db.exec("BEGIN IMMEDIATE");
   // Another process stored other settings since they were read above: start over from them.
   if (storedExtraction(db) !== indexedWith) {
@@ -285,6 +338,7 @@ export function refresh(db, root, config = readConfig(root)) {
     return refresh(db, root, config);
   }
   try {
+    ensureSecureDelete(db);
     for (const path of removed) dropFile(db, path);
     for (const { path, stat } of changed) indexFile(db, root, path, stat, config);
     if (!sameExtraction) {
@@ -296,6 +350,7 @@ export function refresh(db, root, config = readConfig(root)) {
     db.exec("ROLLBACK");
     throw error;
   }
+  wipeFreedText(db);
   return result;
 }
 
@@ -317,27 +372,30 @@ function storedExtraction(db) {
   return db.prepare("SELECT value FROM settings WHERE key = 'extraction'").get()?.value;
 }
 
-function dropFile(db, path, { keepVectors = false } = {}) {
+// `keepText` keeps the stored text and the meaning vectors that come from it.
+function dropFile(db, path, { keepText = false } = {}) {
   db.prepare("DELETE FROM files WHERE path = ?").run(path);
-  db.prepare("DELETE FROM body WHERE path = ?").run(path);
   db.prepare("DELETE FROM symbols WHERE path = ?").run(path);
-  if (keepVectors) return;
+  if (keepText) return;
+  db.prepare("DELETE FROM body WHERE path = ?").run(path);
   db.prepare("DELETE FROM chunks WHERE path = ?").run(path);
   db.prepare("DELETE FROM embedded WHERE path = ?").run(path);
 }
 
-// A file whose size and mtime match its row keeps its meaning vectors, which come from its text alone.
+// A file whose text matches the stored text keeps it, so a rules change rewrites only the symbols:
+// deleting text from the full-text index is the slow part of a rebuild.
 function indexFile(db, root, path, stat, config) {
-  const old = db.prepare("SELECT size, mtime FROM files WHERE path = ?").get(path);
   let text;
   try { text = readText(root, path, stat.size); } catch { text = null; }
-  const sameText = text !== null && old?.size === stat.size && old?.mtime === stat.mtimeMs;
-  dropFile(db, path, { keepVectors: sameText });
+  const known = db.prepare("SELECT 1 FROM files WHERE path = ?").get(path);
+  const stored = known && db.prepare("SELECT text FROM body WHERE path = ?").get(path)?.text;
+  const keepText = text !== null && stored === text;
+  dropFile(db, path, { keepText });
   const symbols = text === null ? [] : symbolsOf(text, path, config);
   const type = text === null ? UNREADABLE : typeOf(path);
   db.prepare("INSERT INTO files VALUES (?, ?, ?, ?, ?)").run(path, stat.size, stat.mtimeMs, type, symbols.length);
   if (text === null) return;
-  db.prepare("INSERT INTO body (path, text) VALUES (?, ?)").run(path, text);
+  if (!keepText) db.prepare("INSERT INTO body (path, text) VALUES (?, ?)").run(path, text);
   writeSymbols(db, path, symbols);
 }
 
