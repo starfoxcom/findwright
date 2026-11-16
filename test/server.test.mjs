@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -93,6 +93,38 @@ test("a session is sent to /findwright:fit when the repo has no rules, or its la
   const refused = fittedRepo();
   mkdirSync(join(refused, ".findwright", "linked"), { recursive: true });
   assert.equal(instructionsAt(refused), undefined, "a .findwright folder holding more than plain files");
+});
+
+// Each call's answer, sent in order to a server running in `repo`.
+function callTools(repo, calls) {
+  const input = calls.map(([name, args], i) => JSON.stringify({ jsonrpc: "2.0", id: i + 1, method: "tools/call",
+    params: { name, arguments: args } })).join("\n") + "\n";
+  const run = spawnSync(process.execPath, [server],
+    { input, encoding: "utf8", timeout: 30_000, env: { ...env, FINDWRIGHT_ROOT: repo } });
+  return run.stdout.trim().split("\n").map((line) => JSON.parse(line).result);
+}
+
+test("a call with a bad argument names it and never opens the index", () => {
+  const cases = [
+    ["an argument the tool does not take", "outline", { file: "a.js" },
+      /outline has no argument `file`; it takes `path` \(a string\)/],
+    ["a missing required argument", "outline", {}, /outline needs `path`, a string/],
+    ["a null required argument", "find", { query: null }, /find needs `query`, a string/],
+    ["a string where a list belongs", "search", { patterns: "x" }, /`patterns` in search must be a list of strings/],
+    ["a list holding a number", "search", { patterns: ["x", 1] }, /`patterns` in search must be a list of strings/],
+    ["a number given as text", "symbols", { query: "x", limit: "3" }, /`limit` in symbols must be a number/],
+    ["arguments that are not an object", "coverage", [], /coverage takes its arguments as an object/],
+    ["a tool name the object inherits", "constructor", {}, /No tool named constructor/],
+  ];
+  const repo = fittedRepo({ rules: [] });
+  const answers = callTools(repo, cases.map(([, name, args]) => [name, args]));
+  cases.forEach(([label, , , message], i) => {
+    assert.equal(answers[i].isError, true, label);
+    assert.match(answers[i].content[0].text, message, label);
+  });
+  assert.deepEqual(readdirSync(join(repo, ".findwright")), ["config.json"], "no index was built");
+  const [nullOptional] = callTools(repo, [["symbols", { query: "x", kind: null, globs: null }]]);
+  assert.equal(nullOptional.isError, undefined, "a null optional argument counts as left out");
 });
 
 test("a session started after a failed counts send is told once a day", () => {
