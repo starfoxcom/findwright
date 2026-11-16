@@ -33,7 +33,7 @@ FindWright sends nothing about you or your code. It makes these network calls:
 - **The meaning model**: setup downloads its two files (32 MB) from Hugging Face, checked against pinned SHA-256 sums, into `~/.cache/findwright/models`. Find refuses to answer without it rather than rank worse.
 - **The usage counts**, only when you turn them on in setup: once a day, each project whose kind you pick posts four sums about its searches older than an hour (sessions that searched, searches the session followed by opening a file, how many of those answers named that file, and the answers' total bytes), the time span they cover, a random id and the kind to `findwright-counter.starfoxcom.workers.dev`. The counter keeps the country Cloudflare reads from the connection and publishes only projects per country. `/findwright:remove` turns them off.
 
-The index stays in each project's `.findwright/` folder, which keeps itself out of git.
+The index stays in each project's `.findwright/` folder, which keeps itself out of git. It holds no secrets: files that hold them by nature (`.env` files other than templates such as `.env.example`, private keys, key stores, `.netrc` and other credential files) are never indexed, and tokens with a known shape (cloud, code-host and AI-provider keys, private key blocks, JSON web tokens) are stored as `[masked]`, so no search or find hands them back. Claude can still open such a file when you ask it to.
 
 ## Needs
 

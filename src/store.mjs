@@ -11,6 +11,7 @@ import { fromRules, isObject, normalRule, strings } from "./rules.mjs";
 
 export { isObject };
 import { linearRegExp } from "./linear.mjs";
+import { isSecretFile, maskSecrets } from "./secrets.mjs";
 
 /** The root of the git repository the process runs in, or null outside one. */
 export function gitRoot() {
@@ -47,6 +48,10 @@ function createSchema(db) {
     throw new Error("FindWright needs Node 22.16 or later (or Node 24 and up): "
       + `the SQLite in Node ${process.version} has no full-text search.`);
   }
+  // With secure-delete, dropping a file removes its words from the full-text index at once,
+  // and the secure_delete pragma zeroes the pages that held its text.
+  const secure = db.prepare("SELECT v FROM body_config WHERE k = 'secure-delete'").get();
+  if (secure?.v !== 1) db.exec("INSERT INTO body(body, rank) VALUES ('secure-delete', 1)");
 }
 
 const compiledGlobs = new Map();
@@ -182,7 +187,7 @@ export function listFiles(root, config) {
     } catch { continue; }
     for (const path of found) if (globToRegExp(glob).test(path)) files.add(path);
   }
-  return [...files].filter((path) => !matchesAny(path, config.exclude ?? [])).sort();
+  return [...files].filter((path) => !isSecretFile(path) && !matchesAny(path, config.exclude ?? [])).sort();
 }
 
 // .findwright/ is where FindWright writes, so a repo must not be able to point it elsewhere: it has to be
@@ -213,17 +218,19 @@ export function openIndex(root) {
   const ignore = join(root, ".findwright", ".gitignore");
   if (!process.env.FINDWRIGHT_DB && !existsSync(ignore)) writeFileSync(ignore, "*\n!config.json\n");
   const db = new DatabaseSync(file);
-  db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA trusted_schema = OFF;");
+  // secure_delete zeroes a dropped file's text, so the index never keeps text the files no longer hold.
+  db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA trusted_schema = OFF;"
+    + " PRAGMA secure_delete = ON;");
   createSchema(db);
   return db;
 }
 
-/** A file's text, or null when it is too large to index or binary. */
+/** A file's text with its secrets masked, or null when it is too large to index or binary. */
 export function readText(root, path, size) {
   if (size > MAX_FILE_BYTES) return null;
   const bytes = readFileSync(join(root, path));
   if (bytes.subarray(0, 8000).includes(0)) return null;
-  return bytes.toString("utf8");
+  return maskSecrets(bytes.toString("utf8"));
 }
 
 function symbolsOf(text, path, config) {
@@ -317,27 +324,30 @@ function storedExtraction(db) {
   return db.prepare("SELECT value FROM settings WHERE key = 'extraction'").get()?.value;
 }
 
-function dropFile(db, path, { keepVectors = false } = {}) {
+// `keepText` keeps the stored text and the meaning vectors that come from it.
+function dropFile(db, path, { keepText = false } = {}) {
   db.prepare("DELETE FROM files WHERE path = ?").run(path);
-  db.prepare("DELETE FROM body WHERE path = ?").run(path);
   db.prepare("DELETE FROM symbols WHERE path = ?").run(path);
-  if (keepVectors) return;
+  if (keepText) return;
+  db.prepare("DELETE FROM body WHERE path = ?").run(path);
   db.prepare("DELETE FROM chunks WHERE path = ?").run(path);
   db.prepare("DELETE FROM embedded WHERE path = ?").run(path);
 }
 
-// A file whose size and mtime match its row keeps its meaning vectors, which come from its text alone.
+// A file whose text matches the stored text keeps it, so a rules change rewrites only the symbols:
+// deleting text from the full-text index is the slow part of a rebuild.
 function indexFile(db, root, path, stat, config) {
-  const old = db.prepare("SELECT size, mtime FROM files WHERE path = ?").get(path);
   let text;
   try { text = readText(root, path, stat.size); } catch { text = null; }
-  const sameText = text !== null && old?.size === stat.size && old?.mtime === stat.mtimeMs;
-  dropFile(db, path, { keepVectors: sameText });
+  const known = db.prepare("SELECT 1 FROM files WHERE path = ?").get(path);
+  const stored = known && db.prepare("SELECT text FROM body WHERE path = ?").get(path)?.text;
+  const keepText = text !== null && stored === text;
+  dropFile(db, path, { keepText });
   const symbols = text === null ? [] : symbolsOf(text, path, config);
   const type = text === null ? UNREADABLE : typeOf(path);
   db.prepare("INSERT INTO files VALUES (?, ?, ?, ?, ?)").run(path, stat.size, stat.mtimeMs, type, symbols.length);
   if (text === null) return;
-  db.prepare("INSERT INTO body (path, text) VALUES (?, ?)").run(path, text);
+  if (!keepText) db.prepare("INSERT INTO body (path, text) VALUES (?, ?)").run(path, text);
   writeSymbols(db, path, symbols);
 }
 

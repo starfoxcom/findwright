@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+- The index keeps secrets out. Files that hold them by nature (`.env` files other than templates such as `.env.example`, private keys, key stores, `.netrc` and other credential files) are no longer indexed, and tokens with a known shape (AWS, GitHub, GitLab, Slack, Stripe, Google, Anthropic, OpenAI, npm, PyPI and Hugging Face keys, private key blocks and JSON web tokens) are stored as `[masked]`, so search and find never hand them back. A search for such a token finds nothing; the line around it keeps its place. The index also wipes the text of a file it drops or re-reads, so an index built before this release loses the secrets it held once it rebuilds for the new version ([#62](https://github.com/starfoxcom/findwright/issues/62)).
+
 ## [2.0.1] - 2026-11-15
 
 ### Fixed
