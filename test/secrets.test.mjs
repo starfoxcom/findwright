@@ -12,11 +12,20 @@ import { search } from "../src/query.mjs";
 const fake = {
   aws: "AKIA" + "Q".repeat(16),
   github: "gh" + "p_" + "a1".repeat(18),
+  githubFineGrained: "github" + "_pat_" + "h2".repeat(30),
+  gitlab: "gl" + "pat-" + "i".repeat(20),
+  slack: "xo" + "xb-" + "1234567890-abcdef",
+  slackWebhook: "https://hooks.slack.com" + "/services/T000/B000/XXXX",
   stripe: "sk" + "_live_" + "b2".repeat(12),
   google: "AI" + "za" + "c".repeat(35),
   anthropic: "sk-" + "ant-" + "d".repeat(40),
+  openai: "sk-" + "proj-" + "j".repeat(40),
+  npm: "np" + "m_" + "k".repeat(36),
+  pypi: "pypi-" + "AgEIcHlwaS5vcmc" + "l".repeat(60),
+  huggingFace: "h" + "f_" + "m".repeat(34),
   jwt: ["eyJ" + "e".repeat(20), "eyJ" + "f".repeat(20), "g".repeat(20)].join("."),
 };
+const keyLine = "MIIEowIBAAKCAQEA" + "x9Yb".repeat(12);
 const keyHeader = (edge) => `-----${edge} RSA ` + "PRIVATE KEY-----";
 
 test("files that hold secrets by nature are told apart from their templates and from code", () => {
@@ -24,6 +33,7 @@ test("files that hold secrets by nature are told apart from their templates and 
     [".env", true], ["config/.env.local", true], ["deploy/production.env", true],
     ["certs/server.pem", true], ["keys/signing.key", true], ["android/release.jks", true],
     ["home/.ssh/id_ed25519", true], [".netrc", true], [".aws/credentials", true],
+    [".env.dist.local", true], ["certs/prod.defaults.pem", true],
     [".env.example", false], ["config/.env.sample", false], ["example.env", false],
     ["src/env.ts", false], ["src/environment.mjs", false], ["home/.ssh/id_ed25519.pub", false],
     ["docs/keys.md", false], ["key", false],
@@ -38,11 +48,28 @@ test("each known token shape is masked where it sits, and the rest of the line s
   assert.equal(maskSecrets("token = ghp_short"), "token = ghp_short");
 });
 
-test("a private key body is masked line by line, and on one line when written with escapes", () => {
-  const block = [keyHeader("BEGIN"), "MIIEowIBAAKCAQEA", "x9Yb2", keyHeader("END"), "after"].join("\n");
-  assert.equal(maskSecrets(block), [keyHeader("BEGIN"), MASK, MASK, keyHeader("END"), "after"].join("\n"));
-  const escaped = `{"key": "${keyHeader("BEGIN")}\\nMIIE\\n${keyHeader("END")}\\n", "id": 1}`;
-  assert.equal(maskSecrets(escaped), `{"key": "${keyHeader("BEGIN")}${MASK}${keyHeader("END")}\\n", "id": 1}`);
+test("a private key body is masked, and the code around a quoted marker is not", () => {
+  const cases = [
+    ["a block, line by line",
+      [keyHeader("BEGIN"), keyLine, "x9Yb2==", keyHeader("END"), "after"],
+      [keyHeader("BEGIN"), MASK, MASK, keyHeader("END"), "after"]],
+    ["an encrypted block with armor headers",
+      [keyHeader("BEGIN"), "Proc-Type: 4,ENCRYPTED", "", keyLine, keyHeader("END")],
+      [keyHeader("BEGIN"), MASK, "", MASK, keyHeader("END")]],
+    ["a block with Windows line ends",
+      [keyHeader("BEGIN") + "\r", keyLine + "\r", keyHeader("END") + "\r"],
+      [keyHeader("BEGIN") + "\r", MASK + "\r", keyHeader("END") + "\r"]],
+    ["a key on one line, written with escapes",
+      [`{"key": "${keyHeader("BEGIN")}\\nMIIE\\n${keyHeader("END")}\\n", "id": 1}`],
+      [`{"key": "${keyHeader("BEGIN")}${MASK}${keyHeader("END")}\\n", "id": 1}`]],
+    ["a marker quoted in code",
+      [`if (!pem.includes("${keyHeader("BEGIN")}")) throw new Error("bad key");`, "return pem;"],
+      [`if (!pem.includes("${keyHeader("BEGIN")}")) throw new Error("bad key");`, "return pem;"]],
+    ["a marker ending a comment line, then short code lines",
+      [`// ${keyHeader("BEGIN")}`, "return", "}"],
+      [`// ${keyHeader("BEGIN")}`, "return", "}"]],
+  ];
+  for (const [name, lines, expected] of cases) assert.equal(maskSecrets(lines.join("\n")), expected.join("\n"), name);
 });
 
 test("masking a hostile file stays linear in its size", () => {
