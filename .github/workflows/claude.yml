@@ -424,9 +424,9 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
-          NODE_VERSION: "22.23.4"
-          NODE_SHA256_X64: b8492284c76a54baf58d61668dd0e41ee0fc98adabf9503d30f05d08f55b4406
-          NODE_SHA256_ARM64: f7a1e486dbc8b286847815b477d4fb5e9fb963ed4489c3e1588853d685f589f9
+          NODE_VERSION: "22.23.5"
+          NODE_SHA256_X64: c54118104acc524633b5abe106bbf44a53126ec8b4e5fa105cb92b5d7de8a1a1
+          NODE_SHA256_ARM64: 8bd3dc69eee8f3f226315a80d7d1d4faccf217a4c8fae500168ac2e38f3bdba3
         run: |
           set -euo pipefail
           if [ "$(uname -s)" != Linux ]; then
@@ -468,6 +468,58 @@ jobs:
           echo "::notice::The CLI install runs on Node $NODE_VERSION, brought by this job"
           echo "bin=$RUNNER_TEMP/linux-node/bin" >> "$GITHUB_OUTPUT"
 
+      # The attribution guard in the project's hooks reads every command it
+      # guards with Bindwright's helper, which no runner has. This step installs
+      # the helper release the project pinned in `.bindwright/helper.json`,
+      # read from the PR's base commit so a PR cannot pick what its own review
+      # installs, and checked against the pinned SHA-256. npm runs in the job's
+      # temp folder with no install scripts, offline with a cache of its own that
+      # starts empty, so it installs only the checked file and fails on anything
+      # it would fetch from the registry. Without a pin, or when any step fails,
+      # the guard runs without its parser and refuses every command its text
+      # names, as on any computer without the helper.
+      - name: Install the attribution guard's parser
+        working-directory: ${{ runner.temp }}
+        timeout-minutes: 10
+        if: steps.pr-head.outputs.head_sha != ''
+        continue-on-error: true
+        shell: bash
+        env:
+          BASE_SHA: ${{ steps.pr-head.outputs.base_sha }}
+          NODE_BIN: ${{ steps.linux-node.outputs.bin }}
+        run: |
+          set -euo pipefail
+          pin="$(git -C "$GITHUB_WORKSPACE" show "$BASE_SHA:.bindwright/helper.json" 2>/dev/null || true)"
+          if [ -z "$pin" ]; then
+            echo "No .bindwright/helper.json on the base: the guard runs without its parser"
+            exit 0
+          fi
+          if [ -n "$NODE_BIN" ]; then
+            export PATH="$NODE_BIN:$PATH"
+          fi
+          read -r url sum < <(printf '%s' "$pin" | timeout 30 node -e 'let s = ""; process.stdin.on("data", (d) => (s += d)).on("end", () => { try { const n = JSON.parse(s).node || {}; process.stdout.write(String(n.url) + " " + String(n.sha256) + "\n"); } catch { process.stdout.write("- -\n"); } });') || true
+          release='^https://github\.com/starfoxcom/bindwright/releases/download/v[0-9]+\.[0-9]+\.[0-9]+/bindwright-[0-9]+\.[0-9]+\.[0-9]+\.tgz$'
+          if [[ ! "${url:-}" =~ $release ]] || [[ ! "${sum:-}" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::warning::.bindwright/helper.json names no Bindwright helper release: the guard runs without its parser"
+            exit 1
+          fi
+          if ! curl --fail --silent --show-error --location --proto '=https' --retry 2 --max-time 120 -o "$RUNNER_TEMP/bindwright-helper.tgz" "$url"; then
+            echo "::warning::The helper download failed: the guard runs without its parser"
+            exit 1
+          fi
+          if ! printf '%s  %s\n' "$sum" "$RUNNER_TEMP/bindwright-helper.tgz" | sha256sum --check --status; then
+            echo "::warning::The helper download does not match its pinned checksum: the guard runs without its parser"
+            rm -f "$RUNNER_TEMP/bindwright-helper.tgz"
+            exit 1
+          fi
+          timeout 300 npm install --prefix "$RUNNER_TEMP/bindwright-helper" --cache "$RUNNER_TEMP/bindwright-helper-cache" \
+            --offline --no-save --ignore-scripts --no-audit --no-fund "$RUNNER_TEMP/bindwright-helper.tgz"
+          rm -f "$RUNNER_TEMP/bindwright-helper.tgz"
+          helper="$RUNNER_TEMP/bindwright-helper/node_modules/bindwright"
+          test -f "$helper/hooks/shell-words.mjs"
+          echo "BINDWRIGHT_HELPER=$helper" >> "$GITHUB_ENV"
+          echo "::notice::The attribution guard reads commands with the pinned helper"
+
       # One job-private copy of the newest CLI release, so the credits run, the
       # first attempt and the retry run the same version. The version is read
       # when the job runs, from the npm registry's release channel, and
@@ -475,7 +527,8 @@ jobs:
       # the install fails, the credits run is skipped and the action's attempts
       # fall back to the CLI it bundles. The fallback model runs on the stable
       # release (see below).
-      # npm runs on the Node the step above brought, or else on the runner's
+      # npm runs on the Node "Bring a Linux Node for the CLI install" brought, or
+      # else on the runner's
       # own. With no usable Node and npm there is no job copy: the review
       # runs on the action's own CLI, with no credits run and no backup review. npm starts in the job's
       # temp folder, never the PR's checkout, keeps its cache there, and runs
@@ -777,7 +830,7 @@ jobs:
         timeout-minutes: 30
         if: steps.pr-checkout.outcome == 'success'
         continue-on-error: true
-        # Pinned to the v1.0.271 release commit. The bare `@v1` floats.
+        # Pinned to the v1.0.276 release commit. The bare `@v1` floats.
         # Update via
         #   gh api repos/anthropics/claude-code-action/git/ref/tags/v1 --jq '.object.type + " " + .object.sha'
         # and, when the type is `tag` (an annotated tag), peel it to its commit:
@@ -785,7 +838,7 @@ jobs:
         # Confirm the diff, then bump the SHA here. Both tiers carry the same pin,
         # but `.github/workflows/claude-code-review.yml` always ships in a PR of
         # its own, so its pin moves in a separate PR.
-        uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed  # v1 (v1.0.271)
+        uses: anthropics/claude-code-action@f3b070c88125d33dbae5653df5f143101d4ea9dc  # v1 (v1.0.276)
         # The token goes in both as a `with:` input and as an env var, the
         # upstream workaround for credential loss.
         # Model, effort and turn cap from the gate settings (deep.*; the
@@ -899,7 +952,7 @@ jobs:
         timeout-minutes: 30
         if: steps.posted-1.outputs.posted == 'no' && steps.failure_class.outputs.usage_limit != 'true'
         continue-on-error: true
-        uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed  # v1 (v1.0.271)
+        uses: anthropics/claude-code-action@f3b070c88125d33dbae5653df5f143101d4ea9dc  # v1 (v1.0.276)
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # The action puts the base branch's config in the checkout before the
@@ -1037,7 +1090,7 @@ jobs:
         timeout-minutes: 45
         if: steps.claude-cli-stable.outcome == 'success'
         continue-on-error: true
-        uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed  # v1 (v1.0.271)
+        uses: anthropics/claude-code-action@f3b070c88125d33dbae5653df5f143101d4ea9dc  # v1 (v1.0.276)
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # The action puts the base branch's config in the checkout before the

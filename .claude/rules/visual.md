@@ -19,7 +19,7 @@ When a step fails, the problem is in that step, and the previous one is the roll
 
 ## Iterate locally, push once
 
-1. Commit on the feature branch and run tests plus a headless start. Report and stop.
+1. Run the tests plus `/verify` when the project has `.claude/skills/verify/SKILL.md`, otherwise a headless start, then commit on the feature branch. Report and stop.
 2. The maintainer checks the visuals.
 3. On a regression, keep iterating locally without pushing.
 4. Once the maintainer confirms, push and open the PR, and add "Visual check confirmed <date>" to its Notes.

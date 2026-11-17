@@ -35,7 +35,7 @@ Merge near copies into one table only when they make the same assertion on diffe
 
 ## List C: keep sweeps that reach input no table can list
 
-A seeded sweep stays when it covers input a boundary table cannot list (codecs, determinism, range invariants over a large space). It goes when a table already covers the same boundaries. Benchmarks move to their own command, outside the pass or fail suite.
+A seeded sweep stays when it covers input a boundary table cannot list (codecs, determinism, range invariants over a large space, parsers or guards that read free-form text such as a shell command). It goes when a table already covers the same boundaries. Benchmarks move to their own command, outside the pass or fail suite.
 
 ## Landing the changes
 

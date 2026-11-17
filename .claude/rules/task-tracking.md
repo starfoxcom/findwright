@@ -8,4 +8,4 @@ Any turn that will take three or more steps starts with `TaskCreate`, before the
 - For work split across several PRs, create one task per PR up front and chain them with `TaskUpdate({ taskId, addBlockedBy: [...] })` so the list follows the merge order.
 - Autonomous runs still stop at visual checkpoints (`visual.md`) when a batch changes what people see.
 
-If `TaskCreate` is not available (older builds, or `CLAUDE_CODE_ENABLE_TASKS=0`), use `TodoWrite` and express order by position. If neither tool exists, keep a numbered checklist in chat, update it every turn, and say once that the task tools are missing.
+If `TaskCreate` is not available (older builds, current models without `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`, or `CLAUDE_CODE_ENABLE_TASKS=0`), use the tasks mod's `mcp__tasks__taskmod_create`, `mcp__tasks__taskmod_update`, `mcp__tasks__taskmod_list` and `mcp__tasks__taskmod_get` when the session has them, which work the same way; otherwise use `TodoWrite` and express order by position. If neither tool exists, keep a numbered checklist in chat, update it every turn, and say once that the task tools are missing.

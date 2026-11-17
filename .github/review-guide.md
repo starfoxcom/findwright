@@ -15,6 +15,14 @@ Replace these starting points with the rules a change here must never break, hig
 3. **Tests earn their place**: a new test that misses rules 1 to 3 of `.claude/rules/testing.md` § When a test earns its place is a blocking finding.
 4. **Clean code**: a breach of `.claude/rules/clean-code.md` (history or planning codes in comments, cryptic names, copied helpers) in lines the PR adds or changes is a blocking finding.
 
+## Checklist
+
+Mistakes this project has made more than once. Each item names a trigger the diff shows: check only the items whose trigger this diff matches, and skip the rest. A failed check is a blocking finding. A finding that comes up in a second PR becomes an item here, with the PRs it came from. Replace the example with the project's own.
+
+| Trigger in the diff | Check | Source |
+|---|---|---|
+| A file that the project keeps a generated copy of changes | The copy is regenerated in the same commit | (the PRs where it broke) |
+
 ## Also escalate when the diff includes
 
 These escalate on their own: the gate's own files (`.github/scripts/**`, `.github/review-gate.yml`, this guide, the review workflows and the project's check folder) and the trigger paths and patterns in `.github/review-gate.yml` (`escalate.*`). List here the changes that need a reviewer's judgment to spot, for example:
