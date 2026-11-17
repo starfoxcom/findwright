@@ -140,9 +140,12 @@ export function sinceFit(root, sessions) {
   return sessions.filter((h) => Date.parse(h.at ?? h.date) > changed);
 }
 
-/** Whether the last few recorded sessions all fell short of `goal`. */
+/**
+ * Whether the last few recorded sessions all fell short of `goal`. A session whose only
+ * searches ran in its helpers has no rate of its own, so it does not count.
+ */
 export function fellShort(sessions, goal) {
-  const recent = sessions.slice(-SESSIONS_BEFORE_ASSESS);
+  const recent = sessions.filter((h) => h.scored > 0).slice(-SESSIONS_BEFORE_ASSESS);
   return recent.length === SESSIONS_BEFORE_ASSESS && recent.every((h) => rateOf(h) < goal);
 }
 
@@ -175,8 +178,10 @@ export function recordSession(root, { goal = DEFAULT_GOAL, transcript = newestTr
   const entry = {
     session, date: now.slice(0, 10), at: now, ...score, groups, saved: { main: saved.main, helpers: saved.helpers },
   };
-  // A second close of the same session replaces its line instead of adding one.
-  if (score.scored) {
+  // A second close of the same session replaces its line instead of adding one. A session whose
+  // helpers searched is recorded even when it searched nothing itself, so their misses count later.
+  const isWorthRecording = score.scored > 0 || Object.keys(groups).length > 0;
+  if (isWorthRecording) {
     mkdirSync(dirname(logFile(root)), { recursive: true });
     writeFileSync(logFile(root), [...past, entry].map((h) => JSON.stringify(h) + "\n").join(""));
   }
@@ -184,7 +189,7 @@ export function recordSession(root, { goal = DEFAULT_GOAL, transcript = newestTr
     rate: score.scored ? Math.round(rateOf(entry)) : null,
     scored: score.scored,
     goal,
-    assess: fellShort(sinceFit(root, [...past, ...(score.scored ? [entry] : [])]), goal),
+    assess: fellShort(sinceFit(root, [...past, entry]), goal),
     saved,
   };
 }

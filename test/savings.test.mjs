@@ -61,6 +61,43 @@ test("the saving prices a miss's extra turns per model and effort, for the sessi
   rmSync(root, { recursive: true, force: true });
 });
 
+// A session transcript at `<root>/<name>.jsonl` with one helper whose transcript holds `helperSteps`.
+function sessionWithHelper(root, name, steps, helperSteps) {
+  const file = join(root, `${name}.jsonl`);
+  transcript(file, steps);
+  mkdirSync(join(root, name, "subagents"), { recursive: true });
+  transcript(join(root, name, "subagents", "agent-1.jsonl"), helperSteps, { sidechain: true });
+  return file;
+}
+
+test("a miss whose file opens on the next turn costs nothing, also for a group that borrows it", () => {
+  const root = repo();
+  const opus = "claude-opus-5-5";
+  const haiku = "claude-haiku-5-5";
+  const file = sessionWithHelper(root, "next", [find("r1", opus, "src/b.mjs"), read("r2", opus, "src/c.mjs")],
+    [find("h1", haiku, "src/a.mjs"), read("h2", haiku, "src/a.mjs")]);
+  const { saved } = recordSession(root, { transcript: file });
+  assert.deepEqual([saved.main, saved.helpers, saved.unpriced], [0, 0, []]);
+  assert.deepEqual(saved.groups.map((g) => [g.model, g.perMiss, g.measured]), [[haiku, 0, false]]);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("a session whose only searches ran in its helpers is recorded, so their misses count later", () => {
+  const root = repo();
+  const haiku = "claude-haiku-5-5";
+  const first = sessionWithHelper(root, "first", [read("r1", "claude-opus-5-5", "src/a.mjs")], [
+    find("h1", haiku, "src/b.mjs"),
+    ["h2", haiku, "Grep", { pattern: "c" }, "", MILLION],
+    read("h3", haiku, "src/c.mjs"),
+  ]);
+  assert.equal(recordSession(root, { transcript: first }).rate, null);
+  const later = sessionWithHelper(root, "later", [read("s1", "claude-opus-5-5", "src/a.mjs")],
+    [find("k1", haiku, "src/a.mjs"), read("k2", haiku, "src/a.mjs")]);
+  // The recorded miss cost one turn of 1M input tokens, past Haiku 5.5's long-prompt threshold.
+  assert.equal(recordSession(root, { transcript: later }).saved.helpers, 0.5);
+  rmSync(root, { recursive: true, force: true });
+});
+
 test("with no miss recorded anywhere the saving says why instead of guessing", () => {
   const root = repo();
   const only = join(root, "only.jsonl");

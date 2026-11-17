@@ -83,11 +83,19 @@ export function searchGroups(transcript, searches, { helper = false } = {}) {
   return groups;
 }
 
-/** Several sets of groups added together, key by key. */
+// Stored groups come back from a file a person can edit, so a malformed one is skipped.
+const isNumber = (value) => Number.isFinite(value);
+const isSide = (side) => Boolean(side) && isNumber(side.count) && isNumber(side.turns) && isNumber(side.cost)
+  && Boolean(side.tokens) && TOKEN_CLASSES.every((c) => isNumber(side.tokens[c]));
+const isGroup = (group) => Boolean(group) && isSide(group.hits) && isSide(group.misses);
+
+/** Several sets of groups added together, key by key; a malformed group is left out. */
 export function mergeGroups(...sets) {
   const merged = {};
   for (const groups of sets) {
-    for (const [key, group] of Object.entries(groups ?? {})) {
+    if (!groups || typeof groups !== "object") continue;
+    for (const [key, group] of Object.entries(groups)) {
+      if (!isGroup(group)) continue;
       const into = (merged[key] ??= emptyGroup());
       for (const side of ["hits", "misses"]) {
         into[side].count += group[side].count;
@@ -115,10 +123,10 @@ function measured(group) {
 // with their average tokens per turn, priced at this group's model.
 function borrowed(model, effort, pooled) {
   const sameEffort = Object.keys(pooled).filter((key) => key.endsWith(`|${effort}`)).map((key) => pooled[key]);
-  const source = [sameEffort, Object.values(pooled)].map(combined).find((g) => g?.misses.turns);
-  if (!source) return null;
+  const source = [sameEffort, Object.values(pooled)].map(combined).find((g) => g?.misses.count);
   const extraTurns = Math.max(0, perSearch(source.misses, "turns") - perSearch(source.hits, "turns"));
-  const perTurn = Object.fromEntries(TOKEN_CLASSES.map((c) => [c, source.misses.tokens[c] / source.misses.turns]));
+  const turns = source.misses.turns;
+  const perTurn = Object.fromEntries(TOKEN_CLASSES.map((c) => [c, turns ? source.misses.tokens[c] / turns : 0]));
   const turnCost = costOf(model, perTurn);
   return turnCost === null ? null : extraTurns * turnCost;
 }
