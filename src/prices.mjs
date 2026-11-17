@@ -28,25 +28,34 @@ const PRICES = {
 // Fast mode runs the same model at twice its standard price.
 const FAST = 2;
 
-/** The price entry for a model id, matching the longest known id it starts with ("claude-opus-5-5[1m]"). */
+/**
+ * The price entry for a model id, or null for a model the table does not list. The id may carry
+ * a dated snapshot ("-20261001") or a context note ("[1m]"); anything else must match exactly, so
+ * a newer release is never priced at an older model's rate.
+ */
 export function priceOf(model) {
-  const id = String(model ?? "");
-  const known = Object.keys(PRICES).filter((key) => id === key || id.startsWith(`${key}-`) || id.startsWith(`${key}[`));
-  const key = known.sort((a, b) => b.length - a.length)[0];
-  return key ? PRICES[key] : null;
+  const id = String(model ?? "").replace(/\[[^\]]*\]$/, "").replace(/-\d{8}$/, "");
+  return Object.hasOwn(PRICES, id) ? PRICES[id] : null;
 }
 
-/** A turn's tokens by price class: `{ input, write5m, write1h, read, output }`. */
-export function tokensOf(usage = {}) {
-  const writes = usage.cache_creation ?? {};
-  const write1h = writes.ephemeral_1h_input_tokens ?? 0;
-  const write5m = writes.ephemeral_5m_input_tokens ?? Math.max(0, (usage.cache_creation_input_tokens ?? 0) - write1h);
+// No model call holds more than a 1M-token context and its output, so a count past this is not a
+// real turn; capping it keeps every sum and price finite.
+const MOST_TOKENS_IN_A_TURN = 10_000_000;
+const amount = (value) => (Number.isFinite(value) && value > 0 ? Math.min(value, MOST_TOKENS_IN_A_TURN) : 0);
+
+/** A turn's tokens by price class: `{ input, write5m, write1h, read, output }`, each capped. */
+export function tokensOf(usage) {
+  const writes = usage?.cache_creation ?? {};
+  const write1h = amount(writes.ephemeral_1h_input_tokens);
+  const write5m = writes.ephemeral_5m_input_tokens === undefined
+    ? amount(amount(usage?.cache_creation_input_tokens) - write1h)
+    : amount(writes.ephemeral_5m_input_tokens);
   return {
-    input: usage.input_tokens ?? 0,
+    input: amount(usage?.input_tokens),
     write5m,
     write1h,
-    read: usage.cache_read_input_tokens ?? 0,
-    output: usage.output_tokens ?? 0,
+    read: amount(usage?.cache_read_input_tokens),
+    output: amount(usage?.output_tokens),
   };
 }
 

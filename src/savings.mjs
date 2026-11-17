@@ -22,9 +22,9 @@ export function helperTranscripts(transcript) {
 }
 
 // A response's tokens. Some rows carry their usage only in `iterations`, one entry per model call.
-function responseTokens(usage = {}) {
+function responseTokens(usage) {
   const tokens = tokensOf(usage);
-  if (!isEmpty(tokens) || !Array.isArray(usage.iterations)) return tokens;
+  if (!isEmpty(tokens) || !Array.isArray(usage?.iterations)) return tokens;
   const sum = zeroTokens();
   for (const step of usage.iterations) addTokens(sum, tokensOf(step));
   return sum;
@@ -46,7 +46,7 @@ export function responses(transcript, { helper = false } = {}) {
     const tokens = responseTokens(row.message.usage);
     const fast = row.message.usage?.speed === "fast";
     byId.set(id, {
-      id, model: row.message.model ?? "unknown", effort: row.perTurnEffort ?? row.effort ?? "unknown",
+      id, model: String(row.message.model ?? "unknown"), effort: String(row.perTurnEffort ?? row.effort ?? "unknown"),
       fast, tokens, cost: isEmpty(tokens) ? 0 : costOf(row.message.model, tokens, { fast }),
     });
   }
@@ -64,9 +64,10 @@ export const groupKey = (model, effort) => `${model}|${effort}`;
  * with no known price adds its tokens but no cost.
  */
 export function searchGroups(transcript, searches, { helper = false } = {}) {
+  if (!searches.length) return {};
   const list = responses(transcript, { helper });
   const index = new Map(list.map((r, i) => [r.id, i]));
-  const groups = Object.create(null);
+  const groups = {};
   for (const search of searches) {
     const from = index.get(search.from);
     const to = index.get(search.to);
@@ -83,20 +84,11 @@ export function searchGroups(transcript, searches, { helper = false } = {}) {
   return groups;
 }
 
-// Stored groups come back from a file a person can edit, so a malformed one is skipped.
-const isAmount = (value) => Number.isFinite(value) && value >= 0;
-const isSide = (side) => Boolean(side) && isAmount(side.count) && isAmount(side.turns) && isAmount(side.cost)
-  && Boolean(side.tokens) && TOKEN_CLASSES.every((c) => isAmount(side.tokens[c]));
-const isGroup = (group) => Boolean(group) && isSide(group.hits) && isSide(group.misses);
-
-/** Several sets of groups added together, key by key; a malformed group is left out. */
+/** Several sets of groups added together, key by key. */
 export function mergeGroups(...sets) {
-  // No prototype, so a stored key such as "constructor" is an ordinary key.
-  const merged = Object.create(null);
+  const merged = {};
   for (const groups of sets) {
-    if (!groups || typeof groups !== "object") continue;
     for (const [key, group] of Object.entries(groups)) {
-      if (!isGroup(group)) continue;
       const into = (merged[key] ??= emptyGroup());
       for (const side of ["hits", "misses"]) {
         into[side].count += group[side].count;
@@ -137,8 +129,8 @@ const round = (dollars) => Math.round(dollars * 100) / 100;
 /**
  * The estimated saving of a session's main and helper searches: `{ main, helpers, groups,
  * unpriced }` in dollars, or `{ main: null, helpers: null, why }` when no recorded miss exists yet
- * to measure what a miss costs. `pooled` holds the groups of every recorded session, this one
- * included; `groups` lists each model and effort with its hits and the cost of a miss.
+ * to measure what a miss costs. `pooled` holds the groups of every session the project's
+ * transcripts still hold, this one included; `groups` lists each model and effort with its hits and the cost of a miss.
  */
 export function estimateSaving({ main, helpers }, pooled) {
   if (!Object.values(pooled).some((g) => g.misses.count)) {
