@@ -6,7 +6,8 @@
 //   findwright outline <path>
 //   findwright coverage
 //   findwright find <question or name>
-//   findwright hits [transcript]   (score the newest session, record it, say when to assess)
+//   findwright hits [transcript]   (score the newest session, record it, say when to assess,
+//                                   and estimate what its searches saved)
 //   findwright assess              (why recorded searches missed, and what would fix it)
 //   findwright home status|install-hook|remove-hook   (the search hook in Claude Code's settings)
 //   findwright counts status|share on|share off|project <kind>|send   (opt-in usage counts)
