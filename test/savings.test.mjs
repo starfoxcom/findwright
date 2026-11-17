@@ -1,0 +1,92 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { recordSession } from "../src/hits.mjs";
+import { costOf } from "../src/prices.mjs";
+
+const MILLION = 1_000_000;
+
+// A transcript from steps: [response id, model, tool name, input, result text, input tokens].
+function transcript(file, steps, { sidechain = false, effort = "high" } = {}) {
+  const rows = steps.flatMap(([id, model, name, input, result, tokens], i) => {
+    const call = { type: "tool_use", id: `call-${id}`, name, input };
+    const assistant = {
+      type: "assistant", isSidechain: sidechain, perTurnEffort: effort, timestamp: new Date(i * 1000).toISOString(),
+      message: { id, model, content: [call], usage: { input_tokens: tokens, output_tokens: 0 } },
+    };
+    const user = { type: "user", isSidechain: sidechain, message: { content: [{ type: "tool_result", tool_use_id: call.id, content: result }] } };
+    // The CLI writes a response once per content block, so the same response can appear twice.
+    return [assistant, assistant, user];
+  });
+  writeFileSync(file, rows.map((r) => JSON.stringify(r)).join("\n") + "\n");
+}
+
+const find = (id, model, answer) => [id, model, "mcp__findwright__find", { query: id }, `${answer}\n`, 0];
+const read = (id, model, path) => [id, model, "Read", { file_path: path }, "", 0];
+
+function repo() {
+  const root = mkdtempSync(join(tmpdir(), "findwright-"));
+  execFileSync("git", ["init", "-q"], { cwd: root });
+  return root;
+}
+
+test("the saving prices a miss's extra turns per model and effort, for the session and its helpers", () => {
+  const root = repo();
+  const opus = "claude-opus-5-5";
+  const main = join(root, "main.jsonl");
+  transcript(main, [
+    find("r1", opus, "src/a.mjs"), read("r2", opus, "src/a.mjs"),
+    find("r3", opus, "src/b.mjs"), ["r4", opus, "Grep", { pattern: "c" }, "", MILLION], read("r5", opus, "src/c.mjs"),
+  ]);
+  mkdirSync(join(root, "main", "subagents"), { recursive: true });
+  transcript(join(root, "main", "subagents", "agent-1.jsonl"),
+    [find("h1", "claude-haiku-5-5", "src/a.mjs"), read("h2", "claude-haiku-5-5", "src/a.mjs")], { sidechain: true });
+
+  const first = recordSession(root, { transcript: main }).saved;
+  // The miss cost one extra turn of 1M input tokens on Opus 5.5 ($4 per million). The helper's
+  // Haiku 5.5 group has no miss of its own, so it borrows that turn at Haiku's long-prompt price.
+  assert.deepEqual([first.main, first.helpers], [4, 0.5]);
+  assert.deepEqual(first.groups.map((g) => [g.role, g.model, g.measured]),
+    [["main", opus, true], ["helpers", "claude-haiku-5-5", false]]);
+
+  const later = join(root, "later.jsonl");
+  transcript(later, [find("s1", opus, "src/a.mjs"), read("s2", opus, "src/a.mjs")]);
+  assert.equal(recordSession(root, { transcript: later }).saved.main, 4, "a session with no miss uses the recorded ones");
+  assert.equal(readFileSync(join(root, ".findwright", "hits.jsonl"), "utf8").trim().split("\n").length, 2);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("with no miss recorded anywhere the saving says why instead of guessing", () => {
+  const root = repo();
+  const only = join(root, "only.jsonl");
+  transcript(only, [find("r1", "claude-opus-5-5", "src/a.mjs"), read("r2", "claude-opus-5-5", "src/a.mjs")]);
+  const { saved } = recordSession(root, { transcript: only });
+  assert.equal(saved.main, null);
+  assert.match(saved.why, /no missed search/);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("a turn's price follows its model, cache use, prompt size and speed", () => {
+  const tokens = (fields) => ({ input: 0, write5m: 0, write1h: 0, read: 0, output: 0, ...fields });
+  const cases = [
+    ["input", "claude-opus-5-5", tokens({ input: MILLION }), {}, 4],
+    ["output", "claude-opus-5-5", tokens({ output: MILLION }), {}, 20],
+    ["5-minute cache write", "claude-opus-5-5", tokens({ write5m: MILLION }), {}, 5],
+    ["1-hour cache write", "claude-opus-5-5", tokens({ write1h: MILLION }), {}, 8],
+    ["cache read", "claude-opus-5-5", tokens({ read: MILLION }), {}, 0.2],
+    ["long-context id", "claude-opus-5-5[1m]", tokens({ input: MILLION }), {}, 4],
+    ["older model sharing a prefix", "claude-opus-5", tokens({ input: MILLION }), {}, 5],
+    ["fast mode", "claude-opus-5-5", tokens({ input: MILLION }), { fast: true }, 8],
+    ["short Haiku prompt", "claude-haiku-5-5", tokens({ input: 100_000 }), {}, 0.01],
+    ["long Haiku prompt", "claude-haiku-5-5", tokens({ input: 100_001 }), {}, 0.0500005],
+    ["unknown model", "some-other-model", tokens({ input: MILLION }), {}, null],
+  ];
+  for (const [name, model, used, options, dollars] of cases) {
+    const cost = costOf(model, used, options);
+    if (dollars === null) assert.equal(cost, null, name);
+    else assert.ok(Math.abs(cost - dollars) < 1e-9, `${name}: ${cost}`);
+  }
+});
