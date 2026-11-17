@@ -145,11 +145,23 @@ export function fellShort(sessions, goal) {
   return recent.length === SESSIONS_BEFORE_ASSESS && recent.every((h) => rateOf(h) < goal);
 }
 
+// A transcript that cannot be read or parsed, or vanishes while being read, gives `fallback`, so
+// it drops out of the estimate and never stops the rest.
+function orElse(read, fallback) {
+  try {
+    return read();
+  } catch {
+    return fallback;
+  }
+}
+
 // The search groups of the helper sessions a session started, all added together.
 function helperGroups(transcript, root) {
-  return mergeGroups(...helperTranscripts(transcript).map((file) =>
-    searchGroups(file, scoredSearches(file, root, { helper: true }), { helper: true })));
+  return mergeGroups(...orElse(() => helperTranscripts(transcript), []).map((file) => orElse(() =>
+    searchGroups(file, scoredSearches(file, root, { helper: true }), { helper: true }), {})));
 }
+
+const modifiedAt = (file) => orElse(() => statSync(file).mtimeMs, 0);
 
 // The newest sessions that searched are enough to measure what a miss costs; reading every
 // transcript would slow each close as the history grows.
@@ -159,14 +171,27 @@ const POOLED_SESSIONS = 10;
 // each time, so what a miss costs never comes from a stored total.
 function otherSessionGroups(root, transcript) {
   const others = transcriptsOf(root).filter((file) => resolve(file) !== resolve(transcript))
-    .sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs);
+    .map((file) => ({ file, at: modifiedAt(file) })).sort((a, b) => b.at - a.at);
   const pooled = [];
-  for (const file of others) {
-    const groups = mergeGroups(searchGroups(file, scoredSearches(file, root)), helperGroups(file, root));
+  for (const { file } of others) {
+    const own = orElse(() => searchGroups(file, scoredSearches(file, root)), {});
+    const groups = mergeGroups(own, helperGroups(file, root));
     if (Object.keys(groups).length) pooled.push(groups);
     if (pooled.length === POOLED_SESSIONS) break;
   }
   return pooled;
+}
+
+// The saving is an extra: whatever goes wrong while estimating it, the hit rate is already
+// recorded, and the answer says why there is no figure.
+function savingOf(root, transcript, searches) {
+  try {
+    const main = searchGroups(transcript, searches);
+    const helpers = helperGroups(transcript, root);
+    return estimateSaving({ main, helpers }, mergeGroups(main, helpers, ...otherSessionGroups(root, transcript)));
+  } catch (error) {
+    return { main: null, helpers: null, why: `the saving could not be estimated: ${error.message}` };
+  }
 }
 
 /**
@@ -184,9 +209,6 @@ export function recordSession(root, { goal = DEFAULT_GOAL, transcript = newestTr
   const searches = scoredSearches(transcript, root);
   const score = tally(searches);
   const past = history(root).filter((h) => h.session !== session);
-  const main = searchGroups(transcript, searches);
-  const helpers = helperGroups(transcript, root);
-  const saved = estimateSaving({ main, helpers }, mergeGroups(main, helpers, ...otherSessionGroups(root, transcript)));
   const now = new Date().toISOString();
   const entry = { session, date: now.slice(0, 10), at: now, ...score };
   // A second close of the same session replaces its line instead of adding one.
@@ -199,7 +221,7 @@ export function recordSession(root, { goal = DEFAULT_GOAL, transcript = newestTr
     scored: score.scored,
     goal,
     assess: fellShort(sinceFit(root, [...past, ...(score.scored ? [entry] : [])]), goal),
-    saved,
+    saved: savingOf(root, transcript, searches),
   };
 }
 

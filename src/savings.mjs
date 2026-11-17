@@ -54,12 +54,22 @@ export function responses(transcript, { helper = false } = {}) {
 }
 
 const emptySide = () => ({ count: 0, turns: 0, cost: 0, tokens: zeroTokens() });
-const emptyGroup = () => ({ hits: emptySide(), misses: emptySide() });
-export const groupKey = (model, effort) => `${model}|${effort}`;
+const emptyGroup = (model, effort) => ({ model, effort, hits: emptySide(), misses: emptySide() });
+
+// Model and effort are both free text from a transcript, so the key encodes them as a JSON pair
+// rather than joining them with a separator either could contain.
+const groupKey = (model, effort) => JSON.stringify([model, effort]);
+
+function addSide(into, side) {
+  into.count += side.count;
+  into.turns += side.turns;
+  into.cost += side.cost;
+  addTokens(into.tokens, side.tokens);
+}
 
 /**
  * The searches of one transcript sorted into groups by the model and effort of the response that
- * searched: `{ "<model>|<effort>": { hits, misses } }`, each side holding how many searches it
+ * searched: `{ <key>: { model, effort, hits, misses } }`, each side holding how many searches it
  * saw and the turns, tokens and cost between each search and the file open. A turn on a model
  * with no known price adds its tokens but no cost.
  */
@@ -72,37 +82,39 @@ export function searchGroups(transcript, searches, { helper = false } = {}) {
     const from = index.get(search.from);
     const to = index.get(search.to);
     if (from === undefined || to === undefined) continue;
-    const group = (groups[groupKey(list[from].model, list[from].effort)] ??= emptyGroup());
+    const { model, effort } = list[from];
+    const group = (groups[groupKey(model, effort)] ??= emptyGroup(model, effort));
     const side = search.hit ? group.hits : group.misses;
     side.count += 1;
     for (const turn of list.slice(from + 1, to)) {
-      side.turns += 1;
-      addTokens(side.tokens, turn.tokens);
-      side.cost += turn.cost ?? 0;
+      addSide(side, { count: 0, turns: 1, cost: turn.cost ?? 0, tokens: turn.tokens });
     }
   }
   return groups;
 }
 
-/** Several sets of groups added together, key by key. */
+/** Several sets of groups added together, one group per model and effort. */
 export function mergeGroups(...sets) {
   const merged = {};
   for (const groups of sets) {
-    for (const [key, group] of Object.entries(groups)) {
-      const into = (merged[key] ??= emptyGroup());
-      for (const side of ["hits", "misses"]) {
-        into[side].count += group[side].count;
-        into[side].turns += group[side].turns;
-        into[side].cost += group[side].cost;
-        addTokens(into[side].tokens, group[side].tokens);
-      }
+    for (const group of Object.values(groups)) {
+      const into = (merged[groupKey(group.model, group.effort)] ??= emptyGroup(group.model, group.effort));
+      addSide(into.hits, group.hits);
+      addSide(into.misses, group.misses);
     }
   }
   return merged;
 }
 
-// Every group in a list added into one; undefined for an empty list.
-const combined = (groups) => mergeGroups(...groups.map((group) => ({ all: group }))).all;
+// The hits and misses of several groups summed, whatever their model and effort.
+function summed(groups) {
+  const total = { hits: emptySide(), misses: emptySide() };
+  for (const group of groups) {
+    addSide(total.hits, group.hits);
+    addSide(total.misses, group.misses);
+  }
+  return total;
+}
 
 const perSearch = (side, field) => (side.count ? side[field] / side.count : 0);
 
@@ -114,8 +126,8 @@ function measured(group) {
 // A miss's extra cost for a group with no miss of its own: the extra turns other groups measured,
 // with their average tokens per turn, priced at this group's model.
 function borrowed(model, effort, pooled) {
-  const sameEffort = Object.keys(pooled).filter((key) => key.endsWith(`|${effort}`)).map((key) => pooled[key]);
-  const source = [sameEffort, Object.values(pooled)].map(combined).find((g) => g?.misses.count);
+  const all = Object.values(pooled);
+  const source = [all.filter((g) => g.effort === effort), all].map(summed).find((g) => g.misses.count);
   if (!source) return 0;
   const extraTurns = Math.max(0, perSearch(source.misses, "turns") - perSearch(source.hits, "turns"));
   const turns = source.misses.turns;
@@ -141,10 +153,10 @@ export function estimateSaving({ main, helpers }, pooled) {
   const detail = [];
   const total = (groups, role) => {
     let dollars = 0;
-    for (const [key, group] of Object.entries(groups)) {
+    for (const group of Object.values(groups)) {
       if (!group.hits.count) continue;
-      const [model, effort] = key.split("|");
-      const own = pooled[key];
+      const { model, effort } = group;
+      const own = pooled[groupKey(model, effort)];
       const cost = own?.misses.count ? measured(own) : borrowed(model, effort, pooled);
       if (cost === null || !priceOf(model)) { unpriced.add(model); continue; }
       dollars += group.hits.count * cost;

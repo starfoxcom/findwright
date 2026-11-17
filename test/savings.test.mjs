@@ -111,6 +111,32 @@ test("odd token counts in a transcript never make the saving infinite or not a n
   rmSync(root, { recursive: true, force: true });
 });
 
+test("another session's damaged transcript drops out of the estimate and the hit rate is still recorded", () => {
+  const root = repo();
+  session(root, "healthy", [find("p1", opus, "src/b.mjs"), grep("p2", opus, MILLION), read("p3", opus, "src/c.mjs")]);
+  // A row the parser cannot walk, and a helper folder that is a file.
+  const content = { type: "tool_use", name: "mcp__findwright__find" };
+  const row = { type: "assistant", message: { id: "x", content } };
+  writeFileSync(join(root, "damaged.jsonl"), JSON.stringify(row) + "\n");
+  mkdirSync(join(root, "damaged"));
+  writeFileSync(join(root, "damaged", "subagents"), "");
+  const file = session(root, "now", [find("r1", opus, "src/a.mjs"), read("r2", opus, "src/a.mjs")]);
+  const result = recordSession(root, { transcript: file });
+  assert.equal(result.saved.main, 4);
+  assert.equal(result.rate, 100);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("a model name holding the key's punctuation stays its own unpriced model", () => {
+  const root = repo();
+  session(root, "earlier", [find("p1", opus, "src/b.mjs"), grep("p2", opus, MILLION), read("p3", opus, "src/c.mjs")]);
+  const odd = `${opus}|x`;
+  const file = session(root, "now", [find("r1", odd, "src/a.mjs"), read("r2", odd, "src/a.mjs")]);
+  const { saved } = recordSession(root, { transcript: file });
+  assert.deepEqual([saved.main, saved.unpriced], [0, [odd]]);
+  rmSync(root, { recursive: true, force: true });
+});
+
 test("with no miss in any transcript the saving says why instead of guessing", () => {
   const root = repo();
   const only = session(root, "only", [find("r1", opus, "src/a.mjs"), read("r2", opus, "src/a.mjs")]);
