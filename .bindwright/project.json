@@ -36,6 +36,8 @@
     "publicRoadmap": null,
     "handoffFile": true,
     "prReviewers": null,
-    "localReview": false
+    "localReview": false,
+    "versioning": "semver",
+    "versionFormat": null
   }
 }

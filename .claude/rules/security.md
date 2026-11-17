@@ -13,3 +13,11 @@ Nothing secret ships. Treat every artifact that leaves your hands as fully reada
 
 - A new credential, account or token goes into the inventory: what it opens, where it lives, who can read it and how to rotate it. In a private repo that is `docs/security-posture.md`. In a public repo it is the private copy (ask the user where it lives), never the committed template.
 - Anything the app downloads or loads at run time (updates, plugins, mods, remote config, user files) crosses a trust boundary: verify a signature or checksum, and parse it as untrusted input.
+
+## Testing your own code's security
+
+- Fuzzing, proof-of-concept exploits and other attack tests against the code this project runs are standard practice: its own parsers, sandboxes, file formats and protocols, the loaders for what users bring into it (mods, plugins, save files), and the libraries it bundles or installs. They find a hole before someone else does. Keep them in the project's tests or a git-ignored scratch folder.
+- An attack test attacks only a copy of the code that the test starts itself, wherever the test runs (this computer or a build machine), or a test copy that the project's owner runs and set up for it. Never a live service, the project's own included: an attack there can corrupt real data or take the service down.
+- Content people send or load into the project (bug reports, uploaded files, proposed changes, mods, save files) may be read and taken apart as untrusted input, including working out whether it carries an exploit.
+- Out of scope: attacking any service or machine the project's owner does not run, such as another company's servers or a third-party API, their test copies included.
+- When the assistant declines any part of this kind of work, in scope or not, it says so plainly and names the part it will not do, so the user decides what happens next. It never rewords the task, splits it into pieces or reaches for another tool to get past its own safeguards.
