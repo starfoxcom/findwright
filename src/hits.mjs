@@ -8,6 +8,7 @@ import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { find } from "./find.mjs";
 import { checkOwnFolder, configChangedAt, UNREADABLE } from "./store.mjs";
+import { estimateSaving, helperTranscripts, mergeGroups, searchGroups } from "./savings.mjs";
 
 const SEARCH_TOOL = /^mcp__findwright__(find|search)$/;
 const OPEN_TOOLS = { Read: "file_path", Edit: "file_path", Write: "file_path", MultiEdit: "file_path" };
@@ -34,20 +35,27 @@ export function newestTranscript(root) {
   return files.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0] ?? null;
 }
 
-// The session's tool calls in order, each with its result text and the time it was made
-// (whole epoch milliseconds, or null when the row has no readable timestamp).
-function calls(transcript) {
+// The session's tool calls in order, each with its result text, the time it was made (whole
+// epoch milliseconds, or null when the row has no readable timestamp) and the id of the model
+// response that made it. A helper's transcript holds only side-chain rows, so `helper` keeps them.
+function calls(transcript, { helper = false } = {}) {
   const seq = [];
   const results = new Map();
-  for (const line of readFileSync(transcript, "utf8").split("\n")) {
+  const text = readFileSync(transcript, "utf8");
+  // Most transcripts never call FindWright; one text check skips parsing them.
+  if (!text.includes("mcp__findwright__")) return seq;
+  for (const line of text.split("\n")) {
     if (!line.includes('"tool_use"') && !line.includes('"tool_result"')) continue;
     let row;
     try { row = JSON.parse(line); } catch { continue; }
-    if (row.isSidechain) continue;
+    if (row.isSidechain && !helper) continue;
     for (const part of row.message?.content ?? []) {
       if (part?.type === "tool_use" && row.type === "assistant") {
         const at = Math.floor(Date.parse(row.timestamp));
-        seq.push({ id: part.id, name: part.name, input: part.input ?? {}, at: Number.isSafeInteger(at) ? at : null });
+        seq.push({
+          id: part.id, name: part.name, input: part.input ?? {},
+          at: Number.isSafeInteger(at) ? at : null, response: row.message.id ?? null,
+        });
       }
       if (part?.type === "tool_result") {
         const c = part.content;
@@ -67,11 +75,12 @@ const relativeTo = (root, path) => {
 const answered = (text) => new Set(text.split("\n").map((l) => l.trim().split(/\s|:/)[0]).filter((p) => p.includes(".")));
 
 /**
- * The session's scored searches in order: `[{ at, hit, bytes, query, wanted }]`. `at` is when the
- * search ran (null without a timestamp); `bytes` is its answer's UTF-8 size, capped at ANSWER_BYTES.
+ * The session's scored searches in order: `[{ at, hit, bytes, query, wanted, from, to }]`. `at` is
+ * when the search ran (null without a timestamp); `bytes` is its answer's UTF-8 size, capped at
+ * ANSWER_BYTES; `from` and `to` are the ids of the responses that searched and opened the file.
  */
-export function scoredSearches(transcript, root) {
-  const seq = calls(transcript);
+export function scoredSearches(transcript, root, { helper = false } = {}) {
+  const seq = calls(transcript, { helper });
   const out = [];
   seq.forEach((call, i) => {
     if (!SEARCH_TOOL.test(call.name)) return;
@@ -86,6 +95,8 @@ export function scoredSearches(transcript, root) {
         bytes: Math.min(ANSWER_BYTES, Buffer.byteLength(call.result)),
         query: call.input.query ?? (call.input.patterns ?? []).join(" | "),
         wanted,
+        from: call.response,
+        to: next.response,
       });
       return;
     }
@@ -93,9 +104,8 @@ export function scoredSearches(transcript, root) {
   return out;
 }
 
-/** Scores one session: `{ scored, hits, misses: [{ query, wanted }] }`. */
-export function scoreSession(transcript, root) {
-  const searches = scoredSearches(transcript, root);
+// A session's score: `{ scored, hits, misses: [{ query, wanted }] }`.
+function tally(searches) {
   return {
     scored: searches.length,
     hits: searches.filter((s) => s.hit).length,
@@ -135,9 +145,58 @@ export function fellShort(sessions, goal) {
   return recent.length === SESSIONS_BEFORE_ASSESS && recent.every((h) => rateOf(h) < goal);
 }
 
+// A transcript that cannot be read or parsed, or vanishes while being read, gives `fallback`, so
+// it drops out of the estimate and never stops the rest.
+function orElse(read, fallback) {
+  try {
+    return read();
+  } catch {
+    return fallback;
+  }
+}
+
+// The search groups of the helper sessions a session started, all added together.
+function helperGroups(transcript, root) {
+  return mergeGroups(...orElse(() => helperTranscripts(transcript), []).map((file) => orElse(() =>
+    searchGroups(file, scoredSearches(file, root, { helper: true }), { helper: true }), {})));
+}
+
+const modifiedAt = (file) => orElse(() => statSync(file).mtimeMs, 0);
+
+// The newest sessions that searched are enough to measure what a miss costs; reading every
+// transcript would slow each close as the history grows.
+const POOLED_SESSIONS = 10;
+
+// The search groups of the newest other sessions that searched, read afresh from their transcripts
+// each time, so what a miss costs never comes from a stored total.
+function otherSessionGroups(root, transcript) {
+  const others = transcriptsOf(root).filter((file) => resolve(file) !== resolve(transcript))
+    .map((file) => ({ file, at: modifiedAt(file) })).sort((a, b) => b.at - a.at);
+  const pooled = [];
+  for (const { file } of others) {
+    const own = orElse(() => searchGroups(file, scoredSearches(file, root)), {});
+    const groups = mergeGroups(own, helperGroups(file, root));
+    if (Object.keys(groups).length) pooled.push(groups);
+    if (pooled.length === POOLED_SESSIONS) break;
+  }
+  return pooled;
+}
+
+// The saving is an extra: whatever goes wrong while estimating it, the hit rate is already
+// recorded, and the answer says why there is no figure.
+function savingOf(root, transcript, searches) {
+  try {
+    const main = searchGroups(transcript, searches);
+    const helpers = helperGroups(transcript, root);
+    return estimateSaving({ main, helpers }, mergeGroups(main, helpers, ...otherSessionGroups(root, transcript)));
+  } catch (error) {
+    return { main: null, helpers: null, why: `the saving could not be estimated: ${error.message}` };
+  }
+}
+
 /**
- * Scores the newest session and records it once. Returns the session's figure,
- * the goal, and whether the last few sessions all fell short of it.
+ * Scores the newest session and records it once. Returns the session's figure, the goal,
+ * whether the last few sessions all fell short of it, and the estimated saving in dollars.
  */
 export function recordSession(root, { goal = DEFAULT_GOAL, transcript = newestTranscript(root) } = {}) {
   if (!transcript) return { error: "No session transcript found for this folder." };
@@ -147,7 +206,8 @@ export function recordSession(root, { goal = DEFAULT_GOAL, transcript = newestTr
     return { error: error.message };
   }
   const session = transcript.replace(/^.*[\\/]/, "").replace(/\.jsonl$/, "");
-  const score = scoreSession(transcript, root);
+  const searches = scoredSearches(transcript, root);
+  const score = tally(searches);
   const past = history(root).filter((h) => h.session !== session);
   const now = new Date().toISOString();
   const entry = { session, date: now.slice(0, 10), at: now, ...score };
@@ -161,6 +221,7 @@ export function recordSession(root, { goal = DEFAULT_GOAL, transcript = newestTr
     scored: score.scored,
     goal,
     assess: fellShort(sinceFit(root, [...past, ...(score.scored ? [entry] : [])]), goal),
+    saved: savingOf(root, transcript, searches),
   };
 }
 

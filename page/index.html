@@ -3,24 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FindWright: plain-words code search for Claude Code</title>
-<meta name="description" content="FindWright helps Claude find the right file in your project on the first search, with short answers that leave room for the work.">
+<title>FindWright: code search that fits your project, for Claude Code</title>
+<meta name="description" content="FindWright gives Claude an index of every file your project tracks, with rules Claude writes for your code, so a question in plain words comes back as the files that answer it.">
 <link rel="canonical" href="https://starfoxcom.github.io/findwright/">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="FindWright">
-<meta property="og:title" content="FindWright: plain-words code search for Claude Code">
-<meta property="og:description" content="FindWright helps Claude find the right file in your project on the first search, with short answers that leave room for the work.">
+<meta property="og:title" content="FindWright: code search that fits your project, for Claude Code">
+<meta property="og:description" content="FindWright gives Claude an index of every file your project tracks, with rules Claude writes for your code, so a question in plain words comes back as the files that answer it.">
 <meta property="og:url" content="https://starfoxcom.github.io/findwright/">
 <meta property="og:image" content="https://starfoxcom.github.io/findwright/share.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="FindWright: Claude finds the right file on the first search.">
+<meta property="og:image:alt" content="FindWright: code search that fits your project.">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="FindWright: plain-words code search for Claude Code">
-<meta name="twitter:description" content="FindWright helps Claude find the right file in your project on the first search, with short answers that leave room for the work.">
+<meta name="twitter:title" content="FindWright: code search that fits your project, for Claude Code">
+<meta name="twitter:description" content="FindWright gives Claude an index of every file your project tracks, with rules Claude writes for your code, so a question in plain words comes back as the files that answer it.">
 <meta name="twitter:image" content="https://starfoxcom.github.io/findwright/share.png">
-<meta name="twitter:image:alt" content="FindWright: Claude finds the right file on the first search.">
+<meta name="twitter:image:alt" content="FindWright: code search that fits your project.">
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -54,7 +54,7 @@
 <header>
   <a class="mark" href="./">FindWright</a>
   <nav aria-label="Site">
-    <a href="#how">How it works</a>
+    <a href="#changes">What changes</a>
     <a href="#install">Install</a>
     <a href="https://github.com/starfoxcom/findwright">GitHub</a>
   </nav>
@@ -63,8 +63,8 @@
 <main>
   <section class="hero">
     <div class="pitch">
-      <h1>Claude finds the right file on the first search.</h1>
-      <p class="lede">FindWright gives Claude an index of every file in your project, so a question in plain words comes back as the few files that answer it, in milliseconds. One install, and it works in every project.</p>
+      <h1>Code search that fits your project.</h1>
+      <p class="lede">FindWright gives Claude an index of every file your project tracks, and Claude writes the rules that name your code, so a question in plain words comes back as the few files that answer it. Any language, any file format, and one install covers every project.</p>
       <div class="actions">
         <a class="go" href="#install">Install FindWright</a>
         <a class="source" href="https://github.com/starfoxcom/findwright">View on GitHub</a>
@@ -118,21 +118,35 @@
     </div>
   </section>
 
-  <section class="changes" aria-labelledby="changes-title">
+  <section class="why" aria-labelledby="why-title">
+    <h2 id="why-title">Why it exists</h2>
+    <div class="why-text">
+      <p>FindWright started because the search we used before kept falling short of the bar we set: at least 9 searches in 10 should name the file Claude opens next. Every miss means Claude searches again, and each extra search spends tokens the session could have spent on the change you asked for.</p>
+      <p>Search tools also tend to understand only the languages they ship support for, so a project outside that list falls back to plain text. FindWright doesn't follow that approach, since Claude tends to copy built-in support as it is instead of looking at the project in front of it.</p>
+      <p>So FindWright ships no languages at all. Claude reads your project and writes the rules that name its code, which makes a shader, a mod script or a config format nobody has heard of searchable by name like everything else.</p>
+    </div>
+  </section>
+
+  <section class="changes" id="changes" aria-labelledby="changes-title">
     <h2 id="changes-title">What changes</h2>
+    <p class="section-note">Claude calls FindWright's tools on its own. You keep asking in your own words.</p>
     <ul>
       <li><span class="was">Claude searches again and again, one guess at a time</span>
         <b>It asks once and gets the files that answer</b>
-        <span>A question in plain words, a name, or both, comes back as the files that answer it, best first.</span></li>
+        <span>A question in plain words, a name, or both, comes back as the files that answer it, best first, ranked by what they're about as well as the words they share. Without its meaning model (32 MB), Find says so instead of quietly ranking worse.</span>
+        <span class="chip">Find</span></li>
       <li><span class="was">Long search results fill up the session</span>
         <b>Short answers leave room for the work</b>
-        <span>The typical answer is a few lines that point at the right place, so more of each session goes to the change you asked for.</span></li>
-      <li><span class="was">Docs and settings get left out of the search</span>
-        <b>Every file the project tracks is searched</b>
-        <span>Code, docs, config and templates sit in the same index, so the answer can be a guide as easily as a function.</span></li>
+        <span>Each hit names the function, heading or key it sits in, and a file's parts come with their line ranges, so Claude reads only the part it needs.</span>
+        <span class="chip">Search, symbols and outline</span></li>
+      <li><span class="was">Only the languages a tool supports get searched by name</span>
+        <b>Every file the project tracks is named</b>
+        <span>Claude reads what your project holds and writes the rules that name its functions, types, keys and headings, in code, docs, config and templates alike, and tries them before saving.</span>
+        <span class="chip">Fit</span></li>
       <li><span class="was">The index falls behind your edits</span>
         <b>Answers match your files as they are now</b>
-        <span>Each search first takes in the files that changed, so there is nothing to refresh by hand.</span></li>
+        <span>Each search first takes in the files that changed, so there is nothing to refresh by hand.</span>
+        <span class="chip">Every search</span></li>
     </ul>
   </section>
 
@@ -164,33 +178,6 @@
         <li class="legend-item"><i class="swatch seg-hit"></i>Named the file</li>
         <li class="legend-item"><i class="swatch seg-miss"></i>Did not</li>
       </ul>
-    </div>
-  </section>
-
-  <section class="how" id="how" aria-labelledby="how-title">
-    <h2 id="how-title">How Claude uses it</h2>
-    <p class="section-note">Four tools Claude calls on its own. You keep asking in your own words.</p>
-    <div class="boxes">
-      <div class="box">
-        <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.5-4.5"/></svg></span>Find</h3>
-        <p>A plain-English question, a name, or both: the files that answer it, best first.</p>
-        <span class="chip">Files, best first</span>
-      </div>
-      <div class="box">
-        <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/></svg></span>Search</h3>
-        <p>Patterns over every tracked file, with the lines around each hit and the function, heading or key it sits in.</p>
-        <span class="chip">Matching lines</span>
-      </div>
-      <div class="box">
-        <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12"/><path d="M4 6h.01M4 12h.01M4 18h.01"/></svg></span>Symbols and outline</h3>
-        <p>Names by kind, and one file's parts with their line ranges, so Claude reads only the part it needs.</p>
-        <span class="chip">Line ranges</span>
-      </div>
-      <div class="box">
-        <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="4"/></svg></span>Fits each project</h3>
-        <p>Claude reads what your project holds and writes the rules that name its functions, types, keys and headings, in any language, so nothing waits on built-in support.</p>
-        <span class="chip">Pattern rules</span>
-      </div>
     </div>
   </section>
 

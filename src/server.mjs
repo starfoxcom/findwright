@@ -96,6 +96,38 @@ function formatSearch(result) {
   return out.join("\n") || "No matches.";
 }
 
+const TYPE_NAMES = { string: "a string", number: "a number", boolean: "true or false", array: "a list of strings" };
+const typeName = (schema) => TYPE_NAMES[schema.type];
+
+function fitsType(value, schema) {
+  if (schema.type === "array") return Array.isArray(value) && value.every((item) => typeof item === schema.items.type);
+  if (schema.type === "number") return Number.isFinite(value);
+  return typeof value === schema.type;
+}
+
+// Throws naming the argument when a call passes one the tool does not take, leaves out a required
+// one or passes one of the wrong type, so a bad call never reaches the index. A null optional
+// argument counts as left out.
+function checkArguments(tool, schema, args) {
+  if (args === null || typeof args !== "object" || Array.isArray(args)) {
+    throw new Error(`${tool} takes its arguments as an object of named values.`);
+  }
+  const takes = Object.entries(schema.properties).map(([key, s]) => `\`${key}\` (${typeName(s)})`).join(", ");
+  for (const key of Object.keys(args)) {
+    if (!Object.hasOwn(schema.properties, key)) {
+      throw new Error(`${tool} has no argument \`${key}\`; it takes ${takes || "no arguments"}.`);
+    }
+  }
+  for (const key of schema.required ?? []) {
+    if (args[key] == null) throw new Error(`${tool} needs \`${key}\`, ${typeName(schema.properties[key])}.`);
+  }
+  for (const [key, value] of Object.entries(args)) {
+    if (value != null && !fitsType(value, schema.properties[key])) {
+      throw new Error(`\`${key}\` in ${tool} must be ${typeName(schema.properties[key])}.`);
+    }
+  }
+}
+
 async function answer(message) {
   const { id, method, params } = message;
   if (method === "initialize") {
@@ -104,16 +136,21 @@ async function answer(message) {
       serverInfo: { name: "findwright", version: VERSION }, ...(instructions && { instructions }) };
   }
   if (method === "tools/list") {
-    return { tools: Object.entries(TOOLS).map(([name, t]) => ({ name, description: t.description, inputSchema: t.inputSchema })) };
+    return { tools: Object.entries(TOOLS).map(([name, t]) => ({ name, description: t.description,
+      inputSchema: { ...t.inputSchema, additionalProperties: false } })) };
   }
   if (method === "tools/call") {
-    const tool = TOOLS[params.name];
-    if (!tool) throw new Error(`No tool named ${params.name}`);
+    const name = params?.name;
+    if (typeof name !== "string" || !Object.hasOwn(TOOLS, name)) {
+      throw new Error(`No tool named ${name}; the tools are ${Object.keys(TOOLS).join(", ")}.`);
+    }
+    checkArguments(name, TOOLS[name].inputSchema, params.arguments ?? {});
+    const args = Object.fromEntries(Object.entries(params.arguments ?? {}).filter(([, value]) => value != null));
     if (!root) throw new Error("FindWright works inside a git repository; this folder is not in one.");
     sendCountsIfDue();
     db ??= openIndex(root);
     refresh(db, root, readConfig(root));
-    return await tool.run(params.arguments ?? {});
+    return await TOOLS[name].run(args);
   }
   if (id === undefined) return undefined;
   throw new Error(`Unknown method ${method}`);
