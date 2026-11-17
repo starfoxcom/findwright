@@ -5,6 +5,10 @@
 # Claude GitHub App. With --check it changes nothing: it reports every
 # missing piece and exits 1 when any is missing.
 #
+# No ruleset is created or repaired until the default branch holds
+# .github/scripts/review_gate.py: before the first setup PR merges there, the gate
+# cannot pass, and a ruleset requiring it would leave that PR unmergeable.
+#
 # Needs the gh CLI, logged in with admin access to the repository. Run it
 # from the repository folder, or pass --repo OWNER/NAME.
 
@@ -30,6 +34,9 @@ MERGE_STYLE=merge
 APPROVALS=0
 DEFAULT_BRANCH=""
 GATE_CHECKS=one
+# Whether the default branch holds the gate's script. Until the first
+# setup PR merges, the gate cannot pass there, so no ruleset is touched.
+GATE_LANDED=false
 GAPS=0
 
 usage() {
@@ -127,6 +134,19 @@ read_gate_checks() {
     "repos/$REPO/contents/.github/review-gate.yml" 2> /dev/null) || text=""
   value=$(sed -nE 's/^checks:[[:space:]]*(one|two)([[:space:]#].*)?$/\1/p' <<< "$text")
   GATE_CHECKS=${value:-one}
+}
+
+# Whether the default branch holds the gate's script, the same file the review
+# workflow looks for on a PR's base. Only GitHub's "not found" means it has
+# not landed; any other failure stops here, so a read that failed never holds
+# or loosens a protected repo's rulesets.
+read_gate_landed() {
+  local err
+  if err=$(gh api "repos/$REPO/contents/.github/scripts/review_gate.py" --silent 2>&1); then
+    GATE_LANDED=true
+  elif [[ $err != *"HTTP 404"* ]]; then
+    die "cannot read whether $DEFAULT_BRANCH holds .github/scripts/review_gate.py: $err"
+  fi
 }
 
 step_label() {
@@ -340,10 +360,34 @@ apply_ruleset() {
   done
 }
 
+# Before the default branch holds the gate's files, no ruleset is created or
+# repaired: one that required the gate would leave the first setup PR, and the
+# cascade after it, unmergeable. A ruleset that already requires it is named.
+hold_ruleset() {
+  local requires_gate=false
+  if [ -z "$2" ]; then
+    requires_gate=true
+  elif [ "$2" != "no active ruleset" ] && ! grep -qF 'required check "Review gate"' <<< "$2"; then
+    requires_gate=true
+  fi
+  if [ "$requires_gate" = true ]; then
+    missing "ruleset on $1 requires \"Review gate\" before $DEFAULT_BRANCH holds the" \
+      "gate's files, so the first setup PR cannot merge; take that check off" \
+      "(Settings, then Rules), merge the PR, then run this again"
+  else
+    missing "ruleset on $1: waits until $DEFAULT_BRANCH holds the gate's files;" \
+      "merge the first setup PR into $DEFAULT_BRANCH, then run this again"
+  fi
+}
+
 step_rulesets() {
   local branch gaps gap
   for branch in "${BRANCHES[@]}"; do
     gaps=$(branch_gaps "$branch")
+    if [ "$GATE_LANDED" = false ]; then
+      hold_ruleset "$branch" "$gaps"
+      continue
+    fi
     if [ -n "$gaps" ] && [ "$MODE" = setup ]; then
       apply_ruleset "$branch"
       gaps=$(branch_gaps "$branch")
@@ -363,6 +407,7 @@ main() {
   parse_args "$@"
   preflight
   read_gate_checks
+  read_gate_landed
   echo "Review gate on $REPO ($MODE)"
   step_label
   step_merge

@@ -13,7 +13,7 @@ A test is code the project pays for on every PR, so it ships only when it earns 
 2. It fails for one reason, and no other test in its file fails for that reason. Near copies merge into one table of named rows.
 3. It checks the outcome, never the implementation: no pinning private constants, call counts or internal layout.
 4. A check that the old, wrong version fails (a mutant check) only for a formula that already broke once, or for codecs, fixed-point math and determinism. Never by default.
-5. A seeded sweep only where no boundary table can list the input: codecs, determinism and range invariants.
+5. A seeded sweep only where no boundary table can list the input: codecs, determinism, range invariants, and parsers or guards that read free-form text such as a shell command, where the spellings mix.
 6. Benchmarks stay out of the pass or fail suite.
 7. A test file stays lean: a PR that grows it says why.
 

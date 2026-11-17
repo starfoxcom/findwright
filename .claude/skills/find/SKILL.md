@@ -15,7 +15,7 @@ The lookup sequence for this project's code-research tool, **FindWright** (https
 4. `outline` with a path: its symbols and line ranges, to read only the part you need.
 5. `coverage` when a file seems missing: what the index reads and which files yield no symbol.
 
-The index updates itself on every call. A project format it does not know gets a pattern rule in `.findwright/config.json`.
+The index updates itself on every call. Its symbols come from the rules in `.findwright/config.json`: when `coverage` shows files the work searches with no symbol, run `/findwright:fit`, which writes the rules that name them.
 
 ## Falling back to Grep and Glob
 

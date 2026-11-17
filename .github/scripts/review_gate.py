@@ -321,6 +321,9 @@ FAILED = {
 }
 
 
+NO_DEEP_RUN = " If no deep run is alive, ask again with a comment starting with `@claude review this PR`."
+
+
 def _failed(result, tier):
     title, summary = FAILED[result]
     return _check("completed", "failure", title.format(tier), summary.format(tier))
@@ -339,17 +342,22 @@ def decide(triage_result, routine=None, escalated=False, deep=None):
                           "The diff has no reviewable files and the deep review passed.")
         if escalated:
             return _check("in_progress", None, "Deep review in progress",
-                          "A deep review was asked for on a diff with no reviewable files.")
+                          "A deep review was asked for on a diff with no reviewable files." + NO_DEEP_RUN)
         return _check("completed", "success", "No review needed", "The diff has no reviewable files.")
     if routine == "pending":
         return _check("in_progress", None, "Routine review in progress", "Waiting for the routine review's verdict.")
+    if routine == "block" and escalated and deep is None:
+        # Both verdicts land before the check settles, so every finding is fixed in one round.
+        return _check("in_progress", None, "Blocked by the routine review; deep review in progress",
+                      "The routine review found something to fix and asked for a deep review; its verdict follows."
+                      + NO_DEEP_RUN)
     if routine != "pass":
         return _failed(routine, "routine")
     if deep == "pass":
         return _check("completed", "success", "Routine and deep reviews 🟢", "Both review tiers passed.")
     if escalated:
         return _check("in_progress", None, "Deep review in progress",
-                      "The routine review passed and asked for a deep review.")
+                      "The routine review passed and asked for a deep review." + NO_DEEP_RUN)
     return _check("completed", "success", "Routine review 🟢",
                   "The routine review passed and asked for no deep review.")
 

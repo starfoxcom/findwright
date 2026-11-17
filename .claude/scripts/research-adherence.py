@@ -9,8 +9,10 @@ or Glob call, or a shell command that starts with a recursive search (grep
 -r, rg, git grep, or a recursive listing piped into Select-String). Each
 search is judged by what it reads: its file filters (globs, types,
 -Include) when it has any, otherwise the files and folders it names, and a
-folder by the files git tracks in it. A search that reads only docs, logs
-or data files, a filter on another command's output (`... | grep x`), and
+folder by the files git tracks in it. ripgrep and ack also read a file
+named beside a filter, so a code file named there counts. A search that
+reads only docs, logs or data files, a filter on another command's output
+(`... | grep x`), and
 a search of folders outside the repo (a scratchpad, a package cache),
 which the code-research tool has no index for, are not counted. When the
 words cannot be read for sure, the search counts unless it runs outside
@@ -47,6 +49,8 @@ WILDCARD = re.compile(r"[*?\[]")
 # `--glob=x`, `-Include:x`). Every other word only matters when it names a file or folder that exists.
 FILTER_OPTIONS = ("-g", "--glob", "--iglob", "--include", "-t", "--type", "-include", "-filter",
                   "--exclude", "--exclude-dir", "-exclude")
+# A git pathspec that leaves files out (`:!*.md`, `:^x`, `:(exclude)x`); it never says what is read.
+EXCLUDE_PATHSPEC = re.compile(r"^['\"]?:(?:!|\^|\(exclude\))")
 # Their values leave files out; they never say what the search reads.
 EXCLUDE_OPTIONS = ("--exclude", "--exclude-dir", "-exclude")
 TYPE_OPTIONS = ("-t", "--type")
@@ -78,9 +82,17 @@ def unquote(word):
     return word.strip("'\"")
 
 
-def resolve(path, base):
-    """The absolute, case-folded form of a path as a shell in `base` reads it."""
-    path = os.path.expanduser(unquote(path))
+def literal(word):
+    """`word` unquoted. A quoted `~` stays a folder name, as Bash and a native tool leave it."""
+    text = unquote(word)
+    return "./" + text if word[:1] in "'\"" and text.startswith("~") else text
+
+
+def resolve(path, base, expands_quoted_home=False):
+    """The absolute, case-folded form of a path as a shell in `base` reads it.
+
+    A PowerShell cmdlet (`Set-Location`, `Get-ChildItem`) reads `~` as the home folder even quoted."""
+    path = os.path.expanduser(unquote(path) if expands_quoted_home else literal(path))
     if os.name == "nt":
         path = GIT_BASH_DRIVE.sub(lambda m: m.group(1) + ":/", path)
     return os.path.normcase(os.path.abspath(os.path.join(base, path)))
@@ -140,9 +152,12 @@ class Repo:
         return self._code_files
 
     def holds_code(self, path):
-        """True when an in-repo file or folder is code, or cannot be told apart from code."""
+        """True when an in-repo file or folder is code, or cannot be told apart from code.
+
+        A wildcard is judged by its name, never expanded: the folder it would expand in is a guess. One
+        with no extension (`*`, `gui*`) can name anything in its folder, so the folder judges it."""
         if WILDCARD.search(os.path.basename(path)):
-            return is_code_name(path)
+            return self.holds_code(os.path.dirname(path)) if is_wide(path) else is_code_name(path)
         if os.path.isdir(path):
             # Case-blind: macOS and Windows folders match whatever case the search typed.
             prefix = path.rstrip("\\/").lower() + os.sep
@@ -153,8 +168,10 @@ class Repo:
 class Search:
     """What one search reads: the paths it names, and the globs and types that narrow its files."""
 
-    def __init__(self, paths=(), globs=(), types=(), is_sure=True):
+    def __init__(self, paths=(), globs=(), types=(), is_sure=True, filters_named_files=True):
         self.paths = list(paths)
+        # ripgrep and ack search a file named on the command line whatever their -g or -t says.
+        self.filters_named_files = filters_named_files
         # False when the words cannot be told apart: then only where the search runs and what
         # its words point at are judged.
         self.is_sure = is_sure
@@ -180,8 +197,16 @@ class Search:
             return False
         if self.globs or self.types:
             return (any(is_code_name(g) for g in self.globs)
-                    or any(t not in NON_CODE_TYPES for t in self.types))
+                    or any(t not in NON_CODE_TYPES for t in self.types)
+                    or (not self.filters_named_files and any(names_code_file(p, repo) for p in inside)))
         return any(repo.holds_code(p) for p in inside)
+
+
+def names_code_file(path, repo):
+    """True when a named path is a code file, or a wildcard that can name one, judged as `holds_code` does."""
+    if WILDCARD.search(os.path.basename(path)):
+        return repo.holds_code(path)
+    return os.path.isfile(path) and is_code_name(path)
 
 
 def split_words(head):
@@ -295,14 +320,18 @@ def words_search(words, is_text_search=True):
         # A PowerShell listing's comma list is several paths.
         named = [piece for word in plain for piece in word.split(",") if piece]
     paths = []
-    for piece in named:
-        # An unquoted `*.md` with no folder is a file filter; a quoted one is a pattern.
-        is_filter = WILDCARD.search(piece) and not re.search(r"['\"/\\]", piece)
-        (globs if is_filter else paths).append(unquote(piece))
-    return Search(paths, globs, types)
+    for piece in (p for p in named if not EXCLUDE_PATHSPEC.match(p)):
+        # A text search's positional wildcard (`*.md`) is one more path, judged beside the folders
+        # named with it; a listing's is its -Filter.
+        is_filter = (not is_text_search and WILDCARD.search(piece)
+                     and not re.search(r"['\"/\\]", piece))
+        # A text search's word keeps its quotes for `resolve`: a native tool takes a quoted `~` as a
+        # folder name. A listing is a cmdlet, which reads `~` as home either way.
+        (globs if is_filter else paths).append(piece if is_text_search else unquote(piece))
+    return Search(paths, globs, types, filters_named_files=tool not in ("rg", "ack"))
 
 
-def shell_search(command, repo):
+def shell_search(command, repo, is_powershell=False):
     """True when a command line runs a code search of its own inside the repo."""
     base = repo.root
     for part in re.split(r"&&|\|\||;|\n", unquote_separators(command)):
@@ -315,7 +344,7 @@ def shell_search(command, repo):
             words = split_words(moved.group(2) or "")
             target = words[0] if words else None
             back = moved.group(1).lower() == "popd" or target in RETURN_TARGETS
-            base = repo.root if back else resolve(" ".join(words), base)
+            base = repo.root if back else resolve(" ".join(words), base, is_powershell)
             continue
         if SHELL_SEARCH.search(head):
             search = words_search(split_words(head))
@@ -353,7 +382,7 @@ def classify(name, args, root=None):
         return "fallback" if tool_search(name, args).reads_code(repo.root, repo) else None
     if name in ("Bash", "PowerShell"):
         command = args.get("command", "")
-        if shell_search(command, repo):
+        if shell_search(command, repo, is_powershell=name == "PowerShell"):
             return "bypass" if BYPASS in command else "fallback"
     return None
 
