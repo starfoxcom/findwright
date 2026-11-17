@@ -1100,11 +1100,10 @@ jobs:
       # read from the PR's base commit so a PR cannot pick what its own review
       # installs, and checked against the pinned SHA-256. npm runs in the job's
       # temp folder with no install scripts, offline with a cache of its own that
-      # starts empty, so it
-      # installs only the checked file and fails on anything it would fetch from
-      # the registry. Without a pin, or when any step
-      # fails, the guard runs without its parser and refuses every command its
-      # text names, as on any computer without the helper.
+      # starts empty, so it installs only the checked file and fails on anything
+      # it would fetch from the registry. Without a pin, or when any step fails,
+      # the guard runs without its parser and refuses every command its text
+      # names, as on any computer without the helper.
       - name: Install the attribution guard's parser
         working-directory: ${{ runner.temp }}
         timeout-minutes: 10
