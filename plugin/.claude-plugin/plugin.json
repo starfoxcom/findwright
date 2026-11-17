@@ -13,6 +13,7 @@
   "supportUrl": "https://github.com/starfoxcom/findwright/issues",
   "privacyPolicyUrl": "https://github.com/starfoxcom/findwright#privacy",
   "termsOfServiceUrl": "https://github.com/starfoxcom/findwright/blob/main/LICENSE",
+  "icon": "./.claude-plugin/icon.png",
   "license": "MIT",
   "keywords": ["search", "code-search", "index", "mcp", "regex"]
 }
