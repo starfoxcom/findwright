@@ -18,7 +18,10 @@ const PRICES = {
   "claude-sonnet-5": { input: 2, output: 10, read: 0.2 },
   "claude-sonnet-4-6": { input: 3, output: 15, read: 0.3 },
   // Claude Haiku 5.5 costs more once a prompt passes 100K tokens.
-  "claude-haiku-5-5": { input: 0.1, output: 0.5, read: 0.01, long: { above: 100_000, input: 0.5, output: 2.5, read: 0.05 } },
+  "claude-haiku-5-5": {
+    input: 0.1, output: 0.5, read: 0.01,
+    long: { above: 100_000, input: 0.5, output: 2.5, read: 0.05 },
+  },
   "claude-haiku-4-5": { input: 1, output: 5, read: 0.1 },
 };
 

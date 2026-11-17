@@ -17,7 +17,8 @@ function transcript(file, steps, { sidechain = false, effort = "high" } = {}) {
       type: "assistant", isSidechain: sidechain, perTurnEffort: effort, timestamp: new Date(i * 1000).toISOString(),
       message: { id, model, content: [call], usage: { input_tokens: tokens, output_tokens: 0 } },
     };
-    const user = { type: "user", isSidechain: sidechain, message: { content: [{ type: "tool_result", tool_use_id: call.id, content: result }] } };
+    const answer = { type: "tool_result", tool_use_id: call.id, content: result };
+    const user = { type: "user", isSidechain: sidechain, message: { content: [answer] } };
     // The CLI writes a response once per content block, so the same response can appear twice.
     return [assistant, assistant, user];
   });
@@ -54,7 +55,8 @@ test("the saving prices a miss's extra turns per model and effort, for the sessi
 
   const later = join(root, "later.jsonl");
   transcript(later, [find("s1", opus, "src/a.mjs"), read("s2", opus, "src/a.mjs")]);
-  assert.equal(recordSession(root, { transcript: later }).saved.main, 4, "a session with no miss uses the recorded ones");
+  const laterSaving = recordSession(root, { transcript: later }).saved;
+  assert.equal(laterSaving.main, 4, "a session with no miss uses the recorded ones");
   assert.equal(readFileSync(join(root, ".findwright", "hits.jsonl"), "utf8").trim().split("\n").length, 2);
   rmSync(root, { recursive: true, force: true });
 });

@@ -146,7 +146,8 @@ export function estimateSaving({ main, helpers }, pooled) {
       const cost = own?.misses.count ? measured(own) : borrowed(model, effort, pooled);
       if (cost === null || own?.unpriced) { unpriced.add(model); continue; }
       dollars += group.hits.count * cost;
-      detail.push({ role, model, effort, hits: group.hits.count, perMiss: round(cost), measured: Boolean(own?.misses.count) });
+      const isMeasured = Boolean(own?.misses.count);
+      detail.push({ role, model, effort, hits: group.hits.count, perMiss: round(cost), measured: isMeasured });
     }
     return round(dollars);
   };
