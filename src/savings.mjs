@@ -7,7 +7,7 @@
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { costOf, tokensOf } from "./prices.mjs";
+import { costOf, priceOf, tokensOf } from "./prices.mjs";
 
 const TOKEN_CLASSES = ["input", "write5m", "write1h", "read", "output"];
 const zeroTokens = () => Object.fromEntries(TOKEN_CLASSES.map((c) => [c, 0]));
@@ -54,18 +54,19 @@ export function responses(transcript, { helper = false } = {}) {
 }
 
 const emptySide = () => ({ count: 0, turns: 0, cost: 0, tokens: zeroTokens() });
-const emptyGroup = () => ({ hits: emptySide(), misses: emptySide(), unpriced: false });
+const emptyGroup = () => ({ hits: emptySide(), misses: emptySide() });
 export const groupKey = (model, effort) => `${model}|${effort}`;
 
 /**
  * The searches of one transcript sorted into groups by the model and effort of the response that
- * searched: `{ "<model>|<effort>": { hits, misses, unpriced } }`, each side holding how many
- * searches it saw and the turns, tokens and cost between each search and the file open.
+ * searched: `{ "<model>|<effort>": { hits, misses } }`, each side holding how many searches it
+ * saw and the turns, tokens and cost between each search and the file open. A turn on a model
+ * with no known price adds its tokens but no cost.
  */
 export function searchGroups(transcript, searches, { helper = false } = {}) {
   const list = responses(transcript, { helper });
   const index = new Map(list.map((r, i) => [r.id, i]));
-  const groups = {};
+  const groups = Object.create(null);
   for (const search of searches) {
     const from = index.get(search.from);
     const to = index.get(search.to);
@@ -76,22 +77,22 @@ export function searchGroups(transcript, searches, { helper = false } = {}) {
     for (const turn of list.slice(from + 1, to)) {
       side.turns += 1;
       addTokens(side.tokens, turn.tokens);
-      if (turn.cost === null) group.unpriced = true;
-      else side.cost += turn.cost;
+      side.cost += turn.cost ?? 0;
     }
   }
   return groups;
 }
 
 // Stored groups come back from a file a person can edit, so a malformed one is skipped.
-const isNumber = (value) => Number.isFinite(value);
-const isSide = (side) => Boolean(side) && isNumber(side.count) && isNumber(side.turns) && isNumber(side.cost)
-  && Boolean(side.tokens) && TOKEN_CLASSES.every((c) => isNumber(side.tokens[c]));
+const isAmount = (value) => Number.isFinite(value) && value >= 0;
+const isSide = (side) => Boolean(side) && isAmount(side.count) && isAmount(side.turns) && isAmount(side.cost)
+  && Boolean(side.tokens) && TOKEN_CLASSES.every((c) => isAmount(side.tokens[c]));
 const isGroup = (group) => Boolean(group) && isSide(group.hits) && isSide(group.misses);
 
 /** Several sets of groups added together, key by key; a malformed group is left out. */
 export function mergeGroups(...sets) {
-  const merged = {};
+  // No prototype, so a stored key such as "constructor" is an ordinary key.
+  const merged = Object.create(null);
   for (const groups of sets) {
     if (!groups || typeof groups !== "object") continue;
     for (const [key, group] of Object.entries(groups)) {
@@ -103,7 +104,6 @@ export function mergeGroups(...sets) {
         into[side].cost += group[side].cost;
         addTokens(into[side].tokens, group[side].tokens);
       }
-      into.unpriced ||= group.unpriced;
     }
   }
   return merged;
@@ -124,6 +124,7 @@ function measured(group) {
 function borrowed(model, effort, pooled) {
   const sameEffort = Object.keys(pooled).filter((key) => key.endsWith(`|${effort}`)).map((key) => pooled[key]);
   const source = [sameEffort, Object.values(pooled)].map(combined).find((g) => g?.misses.count);
+  if (!source) return 0;
   const extraTurns = Math.max(0, perSearch(source.misses, "turns") - perSearch(source.hits, "turns"));
   const turns = source.misses.turns;
   const perTurn = Object.fromEntries(TOKEN_CLASSES.map((c) => [c, turns ? source.misses.tokens[c] / turns : 0]));
@@ -152,7 +153,7 @@ export function estimateSaving({ main, helpers }, pooled) {
       const [model, effort] = key.split("|");
       const own = pooled[key];
       const cost = own?.misses.count ? measured(own) : borrowed(model, effort, pooled);
-      if (cost === null || own?.unpriced) { unpriced.add(model); continue; }
+      if (cost === null || !priceOf(model)) { unpriced.add(model); continue; }
       dollars += group.hits.count * cost;
       const isMeasured = Boolean(own?.misses.count);
       detail.push({ role, model, effort, hits: group.hits.count, perMiss: round(cost), measured: isMeasured });

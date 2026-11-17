@@ -101,11 +101,7 @@ export function scoredSearches(transcript, root, { helper = false } = {}) {
   return out;
 }
 
-/** Scores one session: `{ scored, hits, misses: [{ query, wanted }] }`. */
-export function scoreSession(transcript, root) {
-  return tally(scoredSearches(transcript, root));
-}
-
+// A session's score: `{ scored, hits, misses: [{ query, wanted }] }`.
 function tally(searches) {
   return {
     scored: searches.length,

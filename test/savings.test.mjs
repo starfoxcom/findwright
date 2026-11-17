@@ -98,6 +98,32 @@ test("a session whose only searches ran in its helpers is recorded, so their mis
   rmSync(root, { recursive: true, force: true });
 });
 
+test("a malformed group in the recorded sessions is skipped, never fatal", () => {
+  const root = repo();
+  const zero = { input: 0, write5m: 0, write1h: 0, read: 0, output: 0 };
+  const side = (count, turns, cost, input = 0) => ({ count, turns, cost, tokens: { ...zero, input } });
+  const valid = { hits: side(0, 0, 0), misses: side(1, 1, 4, MILLION) };
+  // Each bad group sits under the same key as the valid one, so counting it would change the result.
+  const key = "claude-opus-5-5|high";
+  const malformed = [
+    ["not an object", "x"],
+    ["a group with no misses", { [key]: { hits: side(1, 0, 0) } }],
+    ["a negative count", { [key]: { hits: side(0, 0, 0), misses: side(-1, 0, 0) } }],
+    ["a count written as text", { [key]: { hits: side(0, 0, 0), misses: side("1", 0, 0) } }],
+    ["a side with no tokens", { [key]: { hits: side(0, 0, 0), misses: { count: 1, turns: 0, cost: 0 } } }],
+    ["keys named like object members", JSON.parse(JSON.stringify({ constructor: valid, toString: valid }))],
+  ];
+  const lines = [{ groups: { [key]: valid } }, ...malformed.map(([, groups]) => ({ groups }))]
+    .map((fields, i) => JSON.stringify({ session: `old-${i}`, scored: 1, hits: 0, misses: [], ...fields }));
+  mkdirSync(join(root, ".findwright"));
+  writeFileSync(join(root, ".findwright", "hits.jsonl"), lines.join("\n") + "\n");
+  const file = join(root, "now.jsonl");
+  transcript(file, [find("r1", "claude-opus-5-5", "src/a.mjs"), read("r2", "claude-opus-5-5", "src/a.mjs")]);
+  // Only the valid line counts: one recorded miss that cost $4.
+  assert.equal(recordSession(root, { transcript: file }).saved.main, 4, malformed.map(([name]) => name).join(", "));
+  rmSync(root, { recursive: true, force: true });
+});
+
 test("with no miss recorded anywhere the saving says why instead of guessing", () => {
   const root = repo();
   const only = join(root, "only.jsonl");
