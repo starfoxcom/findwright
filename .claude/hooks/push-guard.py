@@ -84,8 +84,8 @@ these run without a block:
 - a command over MAX_COMMAND characters.
 
 Project deny rules cover some of these by text (`git remote *--mi*`, `gh repo
-sync *--force*`). Input that is not JSON and any error while reading a
-command let the call through.
+sync *--force*`). Input that is not JSON, or holds no command string, lets
+the call through; an error inside the check refuses it.
 
 It runs from one of two places. Installed in `~/.claude/hooks/`, setup
 registers it in `~/.claude/settings.json` only after finding a Python 3.8+
@@ -97,8 +97,8 @@ which cannot know an absolute interpreter path: it takes the first of
 `python3`, `python` and `py` that is Python 3.8+ outside a virtual
 environment, and skips this file when `~/.claude/hooks/push-guard.py`
 exists and `~/.claude/settings.json` names it outside a permission
-rule. A project that ships it this way must keep tokensave's hook global:
-tokensave copies the launcher of a project's existing hooks into its own
+rule. A project that ships it this way must keep a code indexer's hook global:
+an indexer that copies the launcher of a project's existing hooks into its own
 project entries, and `sh run-hook.sh` is no launcher for it.
 Either way it runs through a `runpy` one-liner instead of
 `python <path>` because Python exits 2 when it cannot open a script, which
@@ -476,11 +476,12 @@ def main():
     tool = data.get("tool_name") if isinstance(data, dict) else None
     if tool not in ("Bash", "PowerShell"):
         return 0
-    try:
-        reason = check((data.get("tool_input") or {}).get("command") or "", tool)
-    except Exception:
-        # An error is not a certain force push.
+    tool_input = data.get("tool_input")
+    command = tool_input.get("command") if isinstance(tool_input, dict) else None
+    if not isinstance(command, str):
         return 0
+    # An error in the check exits 1, which the hook entry's onFailure turns into a refusal.
+    reason = check(command, tool)
     if reason:
         print(f"Blocked a force push: {reason}. Use `--force-with-lease` instead, which refuses "
               "to overwrite commits you have not fetched. If the command only mentions a force "

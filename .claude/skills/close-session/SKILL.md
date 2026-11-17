@@ -15,6 +15,8 @@ Only when this session claims a feature or milestone complete. Re-read its defin
 - ⚠️ **partial**: works in some cases; list the gaps;
 - ❌ **unmet**: open a follow-up and stop claiming completion.
 
+When `.claude/skills/verify/SKILL.md` exists, say for each change people can see or use whether `/verify` passed before its last commit; one it never ran before is ⚠️ at best.
+
 One ❌ means the feature is not complete. If an item stopped making sense mid-way, change the definition of done in its own commit first; never quietly call a gap "deferred".
 
 ## Derived docs
@@ -29,7 +31,19 @@ Run `python3 .claude/scripts/research-adherence.py` from the repo root (`python`
 
 ## FindWright hit rate
 
-When `$HOME/.bindwright/helper/node_modules/bindwright/findwright/cli.mjs` exists and `node --version` shows 22.13 or later, run `node "$HOME/.bindwright/helper/node_modules/bindwright/findwright/cli.mjs" hits` from the repo root; otherwise say the hit rate is not recorded on this computer, and why, and go on. It scores this session's FindWright searches (a hit when the file the session opened next was in the answer), records the figure in `.findwright/hits.jsonl` and prints `{rate, scored, goal, assess}`. Report the rate against the goal (90% unless `.findwright/config.json` sets `goal`). When `assess` is true, the last three sessions all fell short: run the same command with `assess`, explain each cause and suggested change in plain words, and apply a change to `.findwright/config.json` only on the user's yes.
+When `$HOME/.findwright/helper/node_modules/findwright/src/cli.mjs` exists and `node --version` shows 22.16 or later on the 22 line, or 24 or later, run `node "$HOME/.findwright/helper/node_modules/findwright/src/cli.mjs" hits` from the repo root; otherwise say the hit rate is not recorded on this computer, and why, and go on. It scores this session's FindWright searches (a hit when the file the session opened next was in the answer), records the figure in `.findwright/hits.jsonl` and prints `{rate, scored, goal, assess}`. Report the rate against the goal (90% unless `.findwright/config.json` sets `goal`). When it also prints `saved`, add one line from it: with `saved.main` set, "and you saved an estimated $<main> in the main session and $<helpers> in helper sessions", said as an estimate that counts only the extra turns a missed search costs, so it errs low; with `saved.main` null, say the saving is not measurable yet and give `saved.why`. Name each model in `saved.unpriced` as left out of the estimate. When `assess` is true, the last three sessions all fell short: run the same command with `assess`, explain each cause and suggested change in plain words, and apply a change to `.findwright/config.json` only on the user's yes.
+
+## Pruning pass
+
+Rules, tests and memory only ever grow, and a long rule file is where a session reads past a rule. So at most once a month, offer to prune. The date of the last pass, offered or run, lives in this clone's git config, which its worktrees share and no commit carries: `git config --local bindwright.lastPruning` prints it, and `git config --local bindwright.lastPruning <YYYY-MM-DD>` sets it. When it prints nothing, set today's date and skip this step, so the first offer comes a month after the first close that runs it; when it is less than 30 days old, skip this step. Otherwise ask once: "It has been a month: look for rules, tests and memory entries nothing uses any more?" On a no, set today's date and go on.
+
+On a yes, list the candidates, each with one line on why:
+
+- Rule text in `.claude/rules/` and `CLAUDE.md` that repeats another file, or names a file, command or setting that no longer exists.
+- Tests that are skipped for good, or that fail for the same reason as another test in their file (`.claude/rules/testing.md`, rule 2).
+- Memory entries in `~/.claude/projects/<project-slug>/memory/` that name a file or function that no longer exists, repeat another entry, or say what the repo's rules already say.
+
+This is a report only: write nothing for it, in the repo, the tracker or anywhere else, and leave what to do with each candidate to the user. Then set today's date.
 
 ## Project steps
 
