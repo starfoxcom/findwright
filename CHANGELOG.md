@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-17
+
 ### Added
 - `findwright hits` estimates what the session's searches saved, in dollars, split between the main session and the helper sessions it started (`"saved": {"main": 0.76, "helpers": 0.12, ...}`). A search that names the file the session opens next saves the extra model turns a miss costs before the file turns up. That cost is measured afresh from the transcripts of the project's ten newest sessions that searched, helpers included, per model and effort of the turn that searched, and each turn is priced at its own model's published rates, cache reads and writes and fast mode included. Only those turns count, not what their output adds to later turns, so the figure errs low. Until a missed search has been recorded, it says so instead of guessing ([#70](https://github.com/starfoxcom/findwright/issues/70)).
 - The plugin names its icon in `plugin.json`, so the plugin directory can show it on the listing ([#73](https://github.com/starfoxcom/findwright/issues/73)).
