@@ -128,9 +128,10 @@ const round = (dollars) => Math.round(dollars * 100) / 100;
 
 /**
  * The estimated saving of a session's main and helper searches: `{ main, helpers, groups,
- * unpriced }` in dollars, or `{ main: null, helpers: null, why }` when no recorded miss exists yet
- * to measure what a miss costs. `pooled` holds the groups of every session the project's
- * transcripts still hold, this one included; `groups` lists each model and effort with its hits and the cost of a miss.
+ * unpriced }` in dollars, or `{ main: null, helpers: null, why }` when no miss exists yet to
+ * measure what a miss costs. `pooled` holds the groups the estimate measures from: this session's
+ * and those of the other sessions the caller read. `groups` lists each model and effort with its
+ * hits and the cost of a miss.
  */
 export function estimateSaving({ main, helpers }, pooled) {
   if (!Object.values(pooled).some((g) => g.misses.count)) {
