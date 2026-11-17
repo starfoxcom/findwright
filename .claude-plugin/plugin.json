@@ -1,7 +1,7 @@
 {
   "name": "findwright",
   "displayName": "FindWright",
-  "version": "2.0.1",
+  "version": "2.1.0",
   "description": "A code index that adapts to each project: plain-English questions, names and regex searches over every file the project tracks, served to Claude over MCP.",
   "author": {
     "name": "Jorge Alexandro Zamudio Arredondo",
@@ -13,6 +13,7 @@
   "supportUrl": "https://github.com/starfoxcom/findwright/issues",
   "privacyPolicyUrl": "https://github.com/starfoxcom/findwright#privacy",
   "termsOfServiceUrl": "https://github.com/starfoxcom/findwright/blob/main/LICENSE",
+  "icon": "./.claude-plugin/icon.png",
   "license": "MIT",
   "keywords": ["search", "code-search", "index", "mcp", "regex"]
 }
