@@ -20,7 +20,7 @@ Work is tracked in GitHub issues: `.claude/rules/tracker.md` says where each ite
 
 ## Code research
 
-Find code with `/find` before reading files. This project uses **FindWright**; `/find` has the lookup sequence and the only cases where Grep and Glob are allowed. `/close-session` reports how often each was used.
+Find code with `/find` before reading files. This project uses **FindWright**; `/find` has the lookup sequence and the only cases where Grep and Glob are allowed.
 
 ## Sessions
 
