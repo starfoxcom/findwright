@@ -16,10 +16,10 @@ Change nothing in this step; it only reads.
 - **Node:** run `node --version`. FindWright needs Node 22.16 or later on the 22 line, or 24 or later, since it keeps its index in Node's built-in SQLite and needs its full-text search, which Node 23 and Node 22 before 22.16 lack. With a Node that qualifies, read Node's public release list, `https://nodejs.org/dist/index.json` (newest first; each entry has `version`, and `lts`, which is `false` for a release outside long-term support), for a newer release of the same major, which carries security fixes this one lacks. When the list cannot be read, note it for the plan.
 - **Helper:** `node -p "require(process.argv[1]).version" "<helper>/package.json"`, against the `version` in `<plugin>/.claude-plugin/plugin.json`.
 - **Registration:** `claude mcp get findwright`, and which `server.mjs` it runs.
-- With a helper installed, **the rest of the computer:** `node "<helper>/src/cli.mjs" home status` prints `{"hook": true|false, "others": [...], "autoUpdate": ..., "guidance": ...}`, where `others` names other code-search hooks registered in the user's settings, such as Bindwright's `findwright-first.py`. Without a helper, all of it is still to set up.
+- With a helper installed, **the rest of the computer:** `node "<helper>/src/cli.mjs" home status` prints `{"hook": true|false, "others": [...], "autoUpdate": ..., "guidance": ...}`, where `others` names other code-search hooks registered in the user's settings, such as Bindwright's `findwright-first.py`. Without a helper, it cannot be read yet: the plan lists the hook and auto-update as conditional, and steps 7 and 10 read it once the helper is in.
 - Inside a git repo (`git rev-parse --show-toplevel`), **the project:** whether `.findwright/config.json` has a `rules` list.
 
-**When Bindwright's setup hands over.** When this skill is followed as a hand-over from Bindwright's setup, that setup's plan already listed FindWright's part and got the user's yes: skip step 2, and apply every step below that step 1 found due, the search hook included unless `others` names another code-search hook.
+**When Bindwright's setup hands over.** When this skill is followed as a hand-over from Bindwright's setup, that setup's plan already listed FindWright's part and got the user's yes: skip step 2, and apply every step below that step 1 found due, the search hook included: step 7 leaves it out when another code-search hook is registered.
 
 ## 2. The plan
 
@@ -33,8 +33,8 @@ Otherwise, show one plan in plain words, in two groups, with what is already in 
   - The meaning model, a small code model that ranks files by meaning as well as by words: checked, and downloaded from Hugging Face (32 MB) when it is not there yet.
   - The registration with Claude Code for every project on this computer, so the tools load in every session.
   - The guidance for the agent, `~/.claude/rules/findwright.md`: when to use which tool, when a fallback to Grep or Glob is allowed, and the hit rate to report when a session closes.
-  - The search hook, which sends Grep, Glob and shell searches to FindWright in repos that have an index and lets everything else through; it backs up `settings.json` first. Leave it out of the plan when `others` names another code-search hook, since a second hook would answer every search twice, and say why.
-  - Auto-update for the wrights marketplace, only when `<plugin>` sits under `plugins/cache/wrights/` and `autoUpdate` is `null`: new FindWright versions then install by themselves.
+  - The search hook, which sends Grep, Glob and shell searches to FindWright in repos that have an index and lets everything else through; it backs up `settings.json` first. Leave it out of the plan when `others` names another code-search hook, since a second hook would answer every search twice, and say why. On a first install, say it goes in unless another code-search hook turns up once the helper can read the settings.
+  - Auto-update for the wrights marketplace, only when `<plugin>` sits under `plugins/cache/wrights/` and `autoUpdate` is `null`, or on a first install, where it is read once the helper is in: new FindWright versions then install by themselves. A setting the user turned off stays off.
 - **In this project**, inside a git repo with no `rules` list in its config: FindWright reads the project and writes the rules that name its code into `.findwright/config.json`, then builds the index in `.findwright/`, a folder that keeps itself out of git. It takes a few minutes.
 
 Then ask one question, "Set all of this up?", with "Yes" first and recommended, "Yes, without the search hook" when the plan holds the hook, and "No". On "No", change nothing, say that FindWright stays off until setup runs again and gets a yes, and stop.
@@ -80,7 +80,7 @@ Then write the guidance: run `node "<helper>/src/cli.mjs" home install-guidance`
 
 ## 7. The search hook
 
-When the plan held the hook and the answer was "Yes", and `home status` shows `hook` false: run `node "<helper>/src/cli.mjs" home install-hook`. It backs up the settings file to `settings.json.bak` before the change and refuses a settings file that is not valid JSON; on `{"error": ...}`, show the message and say the hook is off until the settings file is fixed and setup runs again, then go on, since FindWright itself works without it.
+Only when the plan held the hook and the answer was "Yes", or on a hand-over from Bindwright's setup. Read `node "<helper>/src/cli.mjs" home status` again now that the helper is in, since on a first install step 1 had no helper to read it with. When `others` names another code-search hook, say which, and that a second hook would answer every search twice, so it stays out. Otherwise, when `hook` is false, run `node "<helper>/src/cli.mjs" home install-hook`. It backs up the settings file to `settings.json.bak` before the change and refuses a settings file that is not valid JSON; on `{"error": ...}`, show the message and say the hook is off until the settings file is fixed and setup runs again, then go on, since FindWright itself works without it.
 
 ## 8. Fit the index to this project
 
@@ -104,9 +104,9 @@ Save it from the repo root with `node "<helper>/src/cli.mjs" counts project <kin
 
 FindWright keeps itself current. Claude Code's auto-update for the marketplace moves the plugin. When a session starts with a plugin that pins another helper, the search server installs that release in the background, checked against its SHA-256, then fetches the meaning model it pins; the next session runs the new helper and is told in one line that it happened, or why it could not, in which case the old helper keeps working.
 
-Only when this plugin came from the wrights marketplace (`<plugin>` sits under `plugins/cache/wrights/`), by the `autoUpdate` step 1 read:
+Only when this plugin came from the wrights marketplace (`<plugin>` sits under `plugins/cache/wrights/`), by the `autoUpdate` that `home status` prints now that the helper is in:
 
-- `null`: never set, and the plan listed it. Run `node "<helper>/src/cli.mjs" home auto-update on`, which backs up the settings file first. It is the same setting Bindwright uses, since both plugins come from wrights.
+- `null`: never set. Run `node "<helper>/src/cli.mjs" home auto-update on`, which backs up the settings file first. It is the same setting Bindwright uses, since both plugins come from wrights.
 - `false`: the user turned it off. Leave it, and say in one line that updates then come from `/plugin`.
 - `true`: nothing to do.
 
