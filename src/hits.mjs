@@ -4,10 +4,9 @@
 // misses back and says why they missed and what config change would help.
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { find } from "./find.mjs";
-import { absoluteOr } from "./paths.mjs";
+import { absoluteOr, claudeConfigDir } from "./paths.mjs";
 import { checkOwnFolder, configChangedAt, UNREADABLE } from "./store.mjs";
 import { estimateSaving, helperTranscripts, mergeGroups, searchGroups } from "./savings.mjs";
 
@@ -19,12 +18,12 @@ export const DEFAULT_GOAL = 90;
 const SESSIONS_BEFORE_ASSESS = 3;
 
 /**
- * Every transcript of the CLI sessions that run in `root`. FINDWRIGHT_TRANSCRIPTS
- * replaces the folder that holds them, for tests.
+ * Every transcript of the CLI sessions that run in `root`, from `projects/` in Claude Code's config
+ * folder. FINDWRIGHT_TRANSCRIPTS replaces the folder that holds them, for tests.
  */
 export function transcriptsOf(root) {
   const slug = resolve(root).replace(/[^A-Za-z0-9]/g, "-");
-  const folder = absoluteOr(process.env.FINDWRIGHT_TRANSCRIPTS, join(homedir(), ".claude", "projects", slug));
+  const folder = absoluteOr(process.env.FINDWRIGHT_TRANSCRIPTS, join(claudeConfigDir(), "projects", slug));
   if (!existsSync(folder)) return [];
   return readdirSync(folder).filter((f) => f.endsWith(".jsonl")).map((f) => join(folder, f));
 }
