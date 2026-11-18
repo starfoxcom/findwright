@@ -137,15 +137,15 @@ test("a helper at the plugin's version, or with no plugin pin, is left alone", a
   assert.equal(await followPlugin({ pin, ownVersion: "2.1.0", helper, fetchRelease: fail }), null);
 });
 
-test("a helper behind the plugin installs the pinned release and leaves no files behind", async () => {
+test("a helper behind the plugin installs the pinned release and leaves only the swap lock behind", async () => {
   const helper = oldHelper();
   const bytes = release("2.2.0");
   const result = await followPlugin({ pin: pinFor("2.2.0", bytes), ownVersion: "2.1.0", helper,
     fetchRelease: serve(bytes), install: installs("2.2.0") });
   assert.deepEqual(result, { from: "2.1.0", to: "2.2.0" });
   assert.equal(installedVersion(helper), "2.2.0");
-  assert.deepEqual(readdirSync(helper).filter((name) => name.startsWith(".staging-")), [],
-    "the staging folder is gone");
+  assert.deepEqual(readdirSync(helper).sort(), [".swap-lock.sqlite", "node_modules"],
+    "the staging folder and the lock's journal are gone");
   assert.deepEqual(readdirSync(join(helper, "node_modules")), ["findwright"], "the old copy is gone");
   assert.match(followNotice(result), /updated itself from 2\.1\.0 to 2\.2\.0/);
 });
