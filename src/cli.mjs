@@ -11,6 +11,7 @@
 //   findwright assess              (why recorded searches missed, and what would fix it)
 //   findwright home status|install-hook|remove-hook   (the search hook in Claude Code's settings)
 //   findwright home auto-update on|off   (Claude Code's auto-update for the wrights marketplace)
+//   findwright home install-guidance|remove-guidance   (the agent guidance in Claude Code's rules)
 //   findwright follow              (bring the helper to the release the installed plugin pins)
 //   findwright counts status|share on|share off|project <kind>|send   (opt-in usage counts)
 //   findwright model               (download the meaning model, check its pinned SHA-256, load it)

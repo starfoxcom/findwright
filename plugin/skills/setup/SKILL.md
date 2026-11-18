@@ -41,7 +41,9 @@ Run `claude mcp get findwright`.
 - **Registered with this helper's `server.mjs`:** nothing to do.
 - **Registered with another copy** (Bindwright's helper ships one at `~/.bindwright/helper/node_modules/bindwright/findwright/server.mjs`): say which copy runs now, and that the plugin's copy is the one this plugin keeps current, so setup switches to it: `claude mcp remove findwright --scope user`, then the `add` above.
 
-Say that the tools load from the next session, or after `/mcp` reconnects the servers.
+Then write FindWright's guidance for the agent, which every session reads: when to use which tool, when a fallback to Grep or Glob is allowed, and the hit-rate step when a session closes. Run `node "<helper>/src/cli.mjs" home install-guidance`. It writes `rules/findwright.md` in Claude Code's config folder, a file FindWright owns and keeps current, and prints `{"guidance": <path>, "written": true|false}`. Say in one line where it went.
+
+Say that the tools and the guidance load from the next session, or the tools after `/mcp` reconnects the servers.
 
 ## 5. The search hook
 
@@ -81,4 +83,4 @@ Only when this plugin came from the wrights marketplace (`<plugin>` sits under `
 
 ## 9. Finish
 
-Say in a few lines what is in place: the Node version, the helper version, the meaning model, the registration, the hook, auto-update on or off, the counts on or off, and for this project the config written or left out and its kind for the counts. Say that `/findwright:doctor` checks all of it, `/findwright:update` brings the helper to the plugin's version on demand, and `/findwright:remove` takes it back out.
+Say in a few lines what is in place: the Node version, the helper version, the meaning model, the registration, the guidance, the hook, auto-update on or off, the counts on or off, and for this project the config written or left out and its kind for the counts. Say that `/findwright:doctor` checks all of it, `/findwright:update` brings the helper to the plugin's version on demand, and `/findwright:remove` takes it back out.

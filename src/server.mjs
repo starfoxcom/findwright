@@ -13,6 +13,7 @@ import { find } from "./find.mjs";
 import { meaningModel } from "./meaning.mjs";
 import { failureToReport, sendDue } from "./counts.mjs";
 import { followNotice, isInstalledHelper, pluginPin, takeFollowResult } from "./follow.mjs";
+import { refreshGuidance } from "./guidance.mjs";
 
 const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
@@ -203,6 +204,13 @@ function followIfDue() {
   child.unref();
 }
 followIfDue();
+
+// Guidance setup wrote takes this helper's text at start, so a helper that updated itself brings its own.
+try {
+  if (isInstalledHelper(fileURLToPath(import.meta.url))) refreshGuidance();
+} catch {
+  // A rules folder that cannot be written leaves the old guidance and the server unaffected.
+}
 
 // The session-start notice, once a day, while this repo's last counts send failed. The server's
 // instructions are what a session reads at start, since the plugin ships no hooks.
