@@ -140,6 +140,23 @@ test("two servers following at once both end with the new helper in place", asyn
   assert.deepEqual(readdirSync(join(helper, "node_modules")), ["findwright"]);
 });
 
+test("a run that loses the swap to another run installing the same release reports success", async () => {
+  const helper = oldHelper();
+  const bytes = release("2.2.0");
+  const losesRace = async () => {
+    placeHelper(helper, "2.2.0");
+    throw new Error("ENOTEMPTY: directory not empty, rename");
+  };
+  const result = await followPlugin({ pin: pinFor("2.2.0", bytes), ownVersion: "2.1.0", helper,
+    fetchRelease: serve(bytes), install: losesRace });
+  assert.deepEqual(result, { from: "2.1.0", to: "2.2.0" });
+});
+
+test("a follow whose model step failed says find needs the model fetched", () => {
+  const notice = followNotice({ from: "2.1.0", to: "2.2.0", modelError: "HTTP 503" });
+  assert.match(notice, /updated itself from 2\.1\.0 to 2\.2\.0.*could not be fetched \(HTTP 503\)/);
+});
+
 test("a recorded follow is reported at one session start only", () => {
   const env = { FINDWRIGHT_HOME: temp("home") };
   recordFollow({ from: "2.1.0", to: "2.2.0" }, env);

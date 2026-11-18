@@ -6,8 +6,8 @@
 
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync }
-  from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, utimesSync,
+  writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative } from "node:path";
 
@@ -138,7 +138,12 @@ function swapIn(helper, staging) {
   const old = `${live}${OLD_SUFFIX}${randomUUID()}`;
   mkdirSync(dirname(live), { recursive: true });
   const hadOld = existsSync(live);
-  if (hadOld) renameSync(live, old);
+  if (hadOld) {
+    renameSync(live, old);
+    // A rename keeps the folder's time, so this starts the age clearLeftovers waits out.
+    const now = new Date();
+    utimesSync(old, now, now);
+  }
   try {
     renameSync(installedEntry(staging), live);
   } catch (error) {
@@ -189,6 +194,8 @@ export async function followPlugin({ pin, ownVersion, helper, fetchRelease = fet
     swapIn(helper, staging);
     return outcome;
   } catch (error) {
+    // A run that lost a race to another one installing the same release still ends with it in place.
+    if (installedVersion(helper) === pin.version) return outcome;
     return { ...outcome, error: error.name === "TimeoutError" ? "the download timed out" : error.message };
   } finally {
     rmSync(staging, { recursive: true, force: true });
@@ -236,10 +243,13 @@ export function takeFollowResult(env = process.env) {
 /** The line the session's start notice carries about a follow, or undefined when there is none. */
 export function followNotice(result) {
   if (typeof result?.from !== "string" || typeof result.to !== "string") return undefined;
-  if (!result.error) {
-    return `Tell the user in one line: FindWright's helper updated itself from ${result.from} to ${result.to} `
-      + "to match the plugin.";
+  const updated = `Tell the user in one line: FindWright's helper updated itself from ${result.from} to `
+    + `${result.to} to match the plugin`;
+  if (!result.error && result.modelError) {
+    return `${updated}, but the meaning model it pins could not be fetched (${result.modelError}), so find `
+      + "fails until /findwright:update fetches it.";
   }
+  if (!result.error) return `${updated}.`;
   return `Tell the user in one line: FindWright's helper is still ${result.from}, behind the plugin's `
     + `${result.to}, since its update failed (${result.error}); it tries again at the next session start, `
     + "and /findwright:update tries now.";
