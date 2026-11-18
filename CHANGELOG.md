@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- A relative `CLAUDE_CONFIG_DIR` is used as given, the way Claude Code reads it, so the guidance file, the plugin pin and the settings file are the ones in the folder Claude Code uses. 2.2.0 took it only as an absolute path and fell back to `~/.claude`, where Claude Code never looked. An empty value still means `~/.claude` ([#89](https://github.com/starfoxcom/findwright/issues/89)).
+
 ## [2.2.0] - 2026-11-18
 
 ### Added

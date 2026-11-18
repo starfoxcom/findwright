@@ -93,7 +93,7 @@ test("the pin comes from the user-scope install, then the newest, and skips what
   for (const [name, list, expected] of rows) assert.equal(pinWith(list), expected, name);
 });
 
-test("an empty or relative folder setting never reads from the folder the session runs in", () => {
+test("a relative config folder is read where Claude Code reads it; FindWright's own folder never is", () => {
   const repo = temp("repo");
   mkdirSync(join(repo, "plugins"), { recursive: true });
   writeFileSync(join(repo, "helper.json"), JSON.stringify(pinFor("6.6.6", release("6.6.6"))));
@@ -108,8 +108,9 @@ test("an empty or relative folder setting never reads from the folder the sessio
   Object.assign(process.env, { HOME: home, USERPROFILE: home });
   process.chdir(repo);
   try {
+    assert.notEqual(pluginPin({ CLAUDE_CONFIG_DIR: "" })?.version, "6.6.6", "an empty CLAUDE_CONFIG_DIR");
+    assert.equal(pluginPin({ CLAUDE_CONFIG_DIR: "." })?.version, "6.6.6", "a relative CLAUDE_CONFIG_DIR");
     for (const value of ["", "."]) {
-      assert.notEqual(pluginPin({ CLAUDE_CONFIG_DIR: value })?.version, "6.6.6", `CLAUDE_CONFIG_DIR "${value}"`);
       assert.notDeepEqual(takeFollowResult({ FINDWRIGHT_HOME: value }), planted, `FINDWRIGHT_HOME "${value}"`);
     }
     assert.ok(existsSync(join(repo, "follow.json")), "the repo's file is left alone");
