@@ -12,6 +12,7 @@ import { coverage, outline, search, symbols } from "./query.mjs";
 import { find } from "./find.mjs";
 import { meaningModel } from "./meaning.mjs";
 import { failureToReport, sendDue } from "./counts.mjs";
+import { followNotice, isInstalledHelper, pluginPin, takeFollowResult } from "./follow.mjs";
 
 const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
@@ -131,7 +132,8 @@ function checkArguments(tool, schema, args) {
 async function answer(message) {
   const { id, method, params } = message;
   if (method === "initialize") {
-    const instructions = [fitNotice(), countsNotice()].filter(Boolean).join("\n") || undefined;
+    const instructions = [followNotice(takeFollowResult()), fitNotice(), countsNotice()]
+      .filter(Boolean).join("\n") || undefined;
     return { protocolVersion: params?.protocolVersion ?? "2025-06-18", capabilities: { tools: {} },
       serverInfo: { name: "findwright", version: VERSION }, ...(instructions && { instructions }) };
   }
@@ -183,6 +185,24 @@ function sendCountsIfDue() {
   child.unref();
 }
 sendCountsIfDue();
+
+// When the installed plugin pins another helper release than this one, a detached child installs
+// it, so a slow download never delays the session; the next session's start notice says how it went.
+function followIfDue() {
+  try {
+    if (!isInstalledHelper(fileURLToPath(import.meta.url))) return;
+    const pin = pluginPin();
+    if (!pin || pin.version === VERSION) return;
+  } catch {
+    return;
+  }
+  const cli = fileURLToPath(new URL("./cli.mjs", import.meta.url));
+  const child = spawn(process.execPath, [cli, "follow", "--record"],
+    { detached: true, stdio: "ignore", windowsHide: true });
+  child.on("error", () => {});
+  child.unref();
+}
+followIfDue();
 
 // The session-start notice, once a day, while this repo's last counts send failed. The server's
 // instructions are what a session reads at start, since the plugin ships no hooks.

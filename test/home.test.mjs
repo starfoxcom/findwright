@@ -33,7 +33,7 @@ test("status on a missing settings file reports no hook and creates nothing", ()
   const file = fileWith("missing");
   assert.deepEqual(runHome("status", envFor(file)), {
     ok: true,
-    json: { settings: file, hook: false, others: [] },
+    json: { settings: file, hook: false, others: [], autoUpdate: null },
   });
   assert.equal(existsSync(file), false);
 });
@@ -168,12 +168,14 @@ test("status lists other -first hook scripts, not ours and not other hooks", () 
     settings: file,
     hook: false,
     others: ["findwright-first.py"],
+    autoUpdate: null,
   });
   runHome("install-hook", envFor(file));
   assert.deepEqual(runHome("status", envFor(file)).json, {
     settings: file,
     hook: true,
     others: ["findwright-first.py"],
+    autoUpdate: null,
   });
 });
 
@@ -190,5 +192,29 @@ test("the CLI prints the status as one line of JSON", () => {
     encoding: "utf8",
   });
   assert.equal(result.status, 0);
-  assert.deepEqual(JSON.parse(result.stdout), { settings: file, hook: false, others: [] });
+  assert.deepEqual(JSON.parse(result.stdout), { settings: file, hook: false, others: [], autoUpdate: null });
+});
+
+test("auto-update turns on for the wrights marketplace, keeps a user's entry and other keys, and turns off", () => {
+  const theirs = { source: { source: "github", repo: "starfoxcom/wrights", ref: "main" } };
+  const rows = [
+    ["no settings file", undefined, { source: { source: "github", repo: "starfoxcom/wrights" }, autoUpdate: true }],
+    ["an entry the user added", JSON.stringify({ extraKnownMarketplaces: { wrights: theirs } }),
+      { ...theirs, autoUpdate: true }],
+  ];
+  for (const [index, [name, text, expected]] of rows.entries()) {
+    const file = fileWith(`auto-${index}`, text);
+    assert.equal(runHome("auto-update on", envFor(file)).json.changed, true, name);
+    assert.deepEqual(readJson(file).extraKnownMarketplaces.wrights, expected, name);
+    assert.equal(runHome("status", envFor(file)).json.autoUpdate, true, name);
+  }
+  const other = { source: {} };
+  const file = fileWith("auto-keep", JSON.stringify({ theme: "dark", extraKnownMarketplaces: { other } }));
+  runHome("auto-update on", envFor(file));
+  assert.equal(runHome("auto-update on", envFor(file)).json.changed, false, "a second on changes nothing");
+  runHome("auto-update off", envFor(file));
+  const settings = readJson(file);
+  assert.equal(settings.theme, "dark");
+  assert.deepEqual(settings.extraKnownMarketplaces.other, { source: {} });
+  assert.equal(runHome("status", envFor(file)).json.autoUpdate, false, "an off reads as false, not as never set");
 });

@@ -136,3 +136,11 @@ test("a session started after a failed counts send is told once a day", () => {
   assert.match(instructionsAt(repo, home), /last send failed/);
   assert.equal(instructionsAt(repo, home), undefined, "a second session the same day");
 });
+
+test("a follow the last session's server ran is reported once at the next session start", () => {
+  const home = mkdtempSync(join(tmpdir(), "findwright-home-"));
+  writeFileSync(join(home, "follow.json"), JSON.stringify({ from: "2.1.0", to: "2.2.0" }));
+  const repo = fittedRepo({ rules: [] });
+  assert.match(instructionsAt(repo, home), /helper updated itself from 2\.1\.0 to 2\.2\.0/);
+  assert.equal(instructionsAt(repo, home), undefined, "the second session start says nothing more");
+});
