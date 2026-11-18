@@ -1,23 +1,28 @@
 // The helper follows its plugin. Each plugin version pins one helper release by its SHA-256 in its
 // helper.json; when the installed plugin pins another version than the helper installed, that
 // release is downloaded, checked and installed into a staging folder of its own, then swapped in.
-// A failed or interrupted install leaves the installed helper as it was, and two runs at once
-// each use their own staging folder, so neither can break the other.
+// A failed or interrupted install leaves the installed helper as it was. Runs at once each stage in
+// a folder of their own, and the swap itself runs under a lock, so only one run moves folders.
 
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, utimesSync,
-  writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync }
+  from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 const RELEASES = "https://github.com/starfoxcom/findwright/releases/download/";
 const DOWNLOAD_TIMEOUT_MS = 60_000;
 const INSTALL_TIMEOUT_MS = 2 * 60 * 1000;
 // Older than a whole download and install, so the run that made it has ended.
-const LEFTOVER_AGE_MS = 10 * 60 * 1000;
+const STAGING_AGE_MS = 10 * 60 * 1000;
 const STAGING_PREFIX = ".staging-";
 const OLD_SUFFIX = ".old-";
+const SWAP_LOCK = ".swap.lock";
+// A swap takes milliseconds, so a lock this old was left by a run stopped during one.
+const STALE_SWAP_LOCK_MS = 60_000;
+const SWAP_WAIT_MS = 10_000;
 
 const findwrightHome = (env) => env.FINDWRIGHT_HOME ?? join(homedir(), ".findwright");
 const resultFile = (env) => join(findwrightHome(env), "follow.json");
@@ -130,48 +135,79 @@ async function download(pin, fetchRelease) {
   return bytes;
 }
 
-// Puts the staged helper in place with two renames, putting the old one back when the second
-// fails. A run that finds the same version already in place leaves it as it is.
-function swapIn(helper, staging) {
-  if (installedVersion(helper) === installedVersion(staging)) return;
-  const live = installedEntry(helper);
-  const old = `${live}${OLD_SUFFIX}${randomUUID()}`;
-  mkdirSync(dirname(live), { recursive: true });
-  const hadOld = existsSync(live);
-  if (hadOld) {
-    renameSync(live, old);
-    // A rename keeps the folder's time, so this starts the age clearLeftovers waits out.
-    const now = new Date();
-    utimesSync(old, now, now);
+const removeQuietly = (path) => {
+  try {
+    rmSync(path, { recursive: true, force: true });
+  } catch {
+    // One that cannot be removed now is tried again on the next run.
   }
+};
+
+const isOlderThan = (path, ms) => {
+  try {
+    return Date.now() - statSync(path).mtimeMs > ms;
+  } catch {
+    return false;
+  }
+};
+
+// Runs `swap` holding the helper's swap lock, made with mkdir, which only one process can win.
+// Another run's swap ends within milliseconds, so this waits for it; a lock past its stale age was
+// left by a run stopped mid-swap and is taken over.
+async function withSwapLock(helper, swap) {
+  const lock = join(helper, SWAP_LOCK);
+  for (let waited = 0; ; waited += 100) {
+    try {
+      mkdirSync(lock);
+      break;
+    } catch (error) {
+      if (error.code !== "EEXIST") throw error;
+      if (isOlderThan(lock, STALE_SWAP_LOCK_MS)) removeQuietly(lock);
+      else if (waited >= SWAP_WAIT_MS) throw new Error("another update kept the helper locked");
+      else await sleep(100);
+    }
+  }
+  try {
+    swap();
+  } finally {
+    removeQuietly(lock);
+  }
+}
+
+// Puts the staged helper in place with two renames, putting the old one back when the second
+// fails, and clears old copies a stopped swap left. Runs only under the swap lock, so no other run
+// is moving folders; a run that finds the same version already in place leaves it as it is.
+function swapIn(helper, staging) {
+  const live = installedEntry(helper);
+  const modules = dirname(live);
+  mkdirSync(modules, { recursive: true });
+  for (const name of readdirSync(modules).filter((n) => n.startsWith(`findwright${OLD_SUFFIX}`))) {
+    removeQuietly(join(modules, name));
+  }
+  if (installedVersion(helper) === installedVersion(staging)) return;
+  const old = `${live}${OLD_SUFFIX}${randomUUID()}`;
+  const hadOld = existsSync(live);
+  if (hadOld) renameSync(live, old);
   try {
     renameSync(installedEntry(staging), live);
   } catch (error) {
     if (hadOld) renameSync(old, live);
     throw error;
   }
-  rmSync(old, { recursive: true, force: true });
+  removeQuietly(old);
 }
 
-// Staging folders and old copies a stopped run left behind, once no run can still be using them.
-function clearLeftovers(helper) {
-  const folders = [[helper, (name) => name.startsWith(STAGING_PREFIX)],
-    [dirname(installedEntry(helper)), (name) => name.startsWith(`findwright${OLD_SUFFIX}`)]];
-  for (const [folder, isLeftover] of folders) {
-    let names;
-    try {
-      names = readdirSync(folder);
-    } catch {
-      continue;
-    }
-    for (const name of names.filter(isLeftover)) {
-      const path = join(folder, name);
-      try {
-        if (Date.now() - statSync(path).mtimeMs > LEFTOVER_AGE_MS) rmSync(path, { recursive: true, force: true });
-      } catch {
-        // One that cannot be removed now is tried again on the next run.
-      }
-    }
+// Staging folders a stopped run left behind, once no run can still be using them.
+function clearStaging(helper) {
+  let names;
+  try {
+    names = readdirSync(helper);
+  } catch {
+    return;
+  }
+  for (const name of names.filter((n) => n.startsWith(STAGING_PREFIX))) {
+    const path = join(helper, name);
+    if (isOlderThan(path, STAGING_AGE_MS)) removeQuietly(path);
   }
 }
 
@@ -184,14 +220,14 @@ export async function followPlugin({ pin, ownVersion, helper, fetchRelease = fet
   const outcome = { from: ownVersion, to: pin.version };
   const staging = join(helper, `${STAGING_PREFIX}${randomUUID()}`);
   try {
-    clearLeftovers(helper);
+    clearStaging(helper);
     mkdirSync(staging, { recursive: true });
     const file = join(staging, pin.node.file);
     writeFileSync(file, await download(pin, fetchRelease));
     await install(staging, file);
     const staged = installedVersion(staging);
     if (staged !== pin.version) throw new Error(`the install left version ${staged ?? "none"}`);
-    swapIn(helper, staging);
+    await withSwapLock(helper, () => swapIn(helper, staging));
     return outcome;
   } catch (error) {
     // A run that lost a race to another one installing the same release still ends with it in place.

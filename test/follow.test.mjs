@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { followNotice, followPlugin, helperFolder, installedVersion, installRelease, isInstalledHelper,
@@ -138,6 +138,24 @@ test("two servers following at once both end with the new helper in place", asyn
   assert.deepEqual(results.map((r) => r.error), [undefined, undefined]);
   assert.equal(installedVersion(helper), "2.2.0");
   assert.deepEqual(readdirSync(join(helper, "node_modules")), ["findwright"]);
+});
+
+test("the swap waits for another run's lock, and takes over one a stopped run left", async () => {
+  const bytes = release("2.2.0");
+  const follow = (helper) => followPlugin({ pin: pinFor("2.2.0", bytes), ownVersion: "2.1.0", helper,
+    fetchRelease: serve(bytes), install: installs("2.2.0") });
+  const held = oldHelper();
+  mkdirSync(join(held, ".swap.lock"));
+  setTimeout(() => rmSync(join(held, ".swap.lock"), { recursive: true }), 300);
+  assert.deepEqual(await follow(held), { from: "2.1.0", to: "2.2.0" }, "a lock released soon");
+  assert.equal(installedVersion(held), "2.2.0");
+
+  const left = oldHelper();
+  mkdirSync(join(left, ".swap.lock"));
+  const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+  utimesSync(join(left, ".swap.lock"), hourAgo, hourAgo);
+  assert.deepEqual(await follow(left), { from: "2.1.0", to: "2.2.0" }, "a lock a stopped run left");
+  assert.deepEqual(readdirSync(left), ["node_modules"]);
 });
 
 test("a run that loses the swap to another run installing the same release reports success", async () => {
