@@ -9,6 +9,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync }
   from "node:fs";
 import { dirname, isAbsolute, join, relative } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { setTimeout as sleep } from "node:timers/promises";
 import { claudeConfigDir, findwrightHome } from "./paths.mjs";
 
@@ -19,9 +20,8 @@ const INSTALL_TIMEOUT_MS = 2 * 60 * 1000;
 const STAGING_AGE_MS = 10 * 60 * 1000;
 const STAGING_PREFIX = ".staging-";
 const OLD_SUFFIX = ".old-";
-const SWAP_LOCK = ".swap.lock";
-// A swap takes milliseconds, so a lock this old was left by a run stopped during one.
-const STALE_SWAP_LOCK_MS = 60_000;
+const SWAP_LOCK = ".swap-lock.sqlite";
+const SQLITE_BUSY = 5;
 const SWAP_WAIT_MS = 10_000;
 
 const resultFile = (env) => join(findwrightHome(env), "follow.json");
@@ -162,27 +162,31 @@ const isOlderThan = (path, ms) => {
   }
 };
 
-// Runs `swap` holding the helper's swap lock, made with mkdir, which only one process can win, and
-// returns what it returns.
-// Another run's swap ends within milliseconds, so this waits for it; a lock past its stale age was
-// left by a run stopped mid-swap and is taken over.
-async function withSwapLock(helper, swap) {
-  const lock = join(helper, SWAP_LOCK);
-  for (let waited = 0; ; waited += 100) {
-    try {
-      mkdirSync(lock);
-      break;
-    } catch (error) {
-      if (error.code !== "EEXIST") throw error;
-      if (isOlderThan(lock, STALE_SWAP_LOCK_MS)) removeQuietly(lock);
-      else if (waited >= SWAP_WAIT_MS) throw new Error("another update kept the helper locked");
-      else await sleep(100);
-    }
-  }
+/**
+ * Runs `swap` holding the helper's swap lock and returns what it returns. The lock is an exclusive
+ * transaction on a SQLite file in the helper folder, so it rests on the operating system's file lock,
+ * which the system drops when the process holding it ends: a run stopped mid-swap leaves no lock to
+ * take over. Another run's swap ends within milliseconds, so this waits for it. `swap` runs
+ * synchronously, so the lock is never held across an await.
+ */
+export async function withSwapLock(helper, swap) {
+  mkdirSync(helper, { recursive: true });
+  const lock = new DatabaseSync(join(helper, SWAP_LOCK));
   try {
+    for (let waited = 0; ; waited += 100) {
+      try {
+        lock.exec("BEGIN EXCLUSIVE");
+        break;
+      } catch (error) {
+        if (error.errcode !== SQLITE_BUSY) throw error;
+        if (waited >= SWAP_WAIT_MS) throw new Error("another update kept the helper locked");
+        await sleep(100);
+      }
+    }
     return swap();
   } finally {
-    removeQuietly(lock);
+    // Nothing was written; closing the connection ends the transaction and releases the lock.
+    lock.close();
   }
 }
 
