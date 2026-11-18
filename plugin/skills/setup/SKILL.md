@@ -45,7 +45,7 @@ Say that the tools load from the next session, or after `/mcp` reconnects the se
 
 ## 5. The search hook
 
-The hook sends Grep, Glob and shell searches to FindWright in repos that have an index, and lets everything else through. Run `node "<helper>/src/cli.mjs" home status`. It prints `{"hook": true|false, "others": [...]}`, where `others` names other code-search hooks registered in the user's settings, such as Bindwright's `findwright-first.py`.
+The hook sends Grep, Glob and shell searches to FindWright in repos that have an index, and lets everything else through. Run `node "<helper>/src/cli.mjs" home status`. It prints `{"hook": true|false, "others": [...], "autoUpdate": ...}`, where `others` names other code-search hooks registered in the user's settings, such as Bindwright's `findwright-first.py`.
 
 - `hook` true: nothing to do.
 - `others` not empty: say which, and that a second hook would answer every search twice, so leave it out.
@@ -69,6 +69,16 @@ Then, inside a git repo, when sharing is on and `counts status` run from the rep
 
 Save it from the repo root with `node "<helper>/src/cli.mjs" counts project <kind>`, the kind written `game`, `business-app`, `developer-tool`, `mobile-app`, `website` or `other`, or `none` to leave it out, which is remembered so no later run asks again. The counts cover the project's past sessions too, sent oldest first in daily batches.
 
-## 8. Finish
+## 8. Updates
 
-Say in a few lines what is in place: the Node version, the helper version, the meaning model, the registration, the hook, the counts on or off, and for this project the config written or left out and its kind for the counts. Say that `/findwright:doctor` checks all of it, `/findwright:update` keeps the helper at the plugin's version, and `/findwright:remove` takes it back out.
+FindWright keeps itself current. Claude Code's auto-update for the marketplace moves the plugin, and at each session start the search server brings the helper to the release the new plugin pins, checked against its SHA-256, then fetches the meaning model that helper pins. Each session is told in one line when that happened, or why it could not, in which case the old helper keeps working.
+
+Only when this plugin came from the wrights marketplace (`<plugin>` sits under `plugins/cache/wrights/`): read `autoUpdate` from the `home status` of step 5.
+
+- `null`: never set. Turn it on, since it is on by default: run `node "<helper>/src/cli.mjs" home auto-update on`, and say in one line that new FindWright versions now install by themselves, a few minutes into a session, and that `home auto-update off` turns that off. It backs up the settings file first. It is the same setting Bindwright uses, since both plugins come from wrights.
+- `false`: the user turned it off. Leave it, and say in one line that updates then come from `/plugin`.
+- `true`: nothing to do.
+
+## 9. Finish
+
+Say in a few lines what is in place: the Node version, the helper version, the meaning model, the registration, the hook, auto-update on or off, the counts on or off, and for this project the config written or left out and its kind for the counts. Say that `/findwright:doctor` checks all of it, `/findwright:update` brings the helper to the plugin's version on demand, and `/findwright:remove` takes it back out.

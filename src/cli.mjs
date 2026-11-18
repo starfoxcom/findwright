@@ -10,6 +10,8 @@
 //                                   and estimate what its searches saved)
 //   findwright assess              (why recorded searches missed, and what would fix it)
 //   findwright home status|install-hook|remove-hook   (the search hook in Claude Code's settings)
+//   findwright home auto-update on|off   (Claude Code's auto-update for the wrights marketplace)
+//   findwright follow              (bring the helper to the release the installed plugin pins)
 //   findwright counts status|share on|share off|project <kind>|send   (opt-in usage counts)
 //   findwright model               (download the meaning model, check its pinned SHA-256, load it)
 //   findwright try <rules.json>    (what draft rules would name, without writing the config)
@@ -25,6 +27,7 @@ import { ensureModel, loadModel, MODEL } from "./embed.mjs";
 import { runHome } from "./home.mjs";
 import { readFileSync } from "node:fs";
 import { tryRules } from "./trial.mjs";
+import { followPlugin, helperFolder, installedVersion, modelStep, pluginPin } from "./follow.mjs";
 
 function parse(argv) {
   const opts = { positional: [], globs: [], ignoreCase: false, context: 0, all: false };
@@ -86,6 +89,28 @@ async function installModel() {
   }
 }
 
+// Brings the installed helper to the release the installed plugin pins, then fetches the model the
+// new helper pins, as the server does at start. Prints `{"from", "to"}`, the same with `"error"`
+// when it failed and the old helper stayed, or `{"current", "pinned"}` when nothing was due.
+async function printFollow() {
+  const helper = helperFolder();
+  const current = installedVersion(helper);
+  if (!current) {
+    console.log(JSON.stringify({ error: "FindWright's helper is not installed; /findwright:setup installs it" }));
+    process.exitCode = 1;
+    return;
+  }
+  const pin = pluginPin();
+  const result = await followPlugin({ pin, ownVersion: current, helper });
+  if (!result) {
+    console.log(JSON.stringify({ current, pinned: pin?.version ?? null }));
+    return;
+  }
+  const model = result.error ? null : await modelStep(helper);
+  console.log(JSON.stringify(model?.error ? { ...result, modelError: model.error } : result));
+  if (result.error || model?.error) process.exitCode = 1;
+}
+
 // The draft rules in `file`: a list of rules, or a config whose `rules` holds them.
 function printTrial(root, file) {
   let rules;
@@ -104,10 +129,11 @@ function printTrial(root, file) {
 async function main() {
   const [command, ...rest] = process.argv.slice(2);
   // Home settings and counts live outside any repo, so these run before the repo lookup below.
-  if (command === "home") return printHome(rest[0]);
+  if (command === "home") return printHome(rest.join(" "));
   if (command === "counts") return printCounts(rest);
   // The meaning model lives outside any repo too: setup installs it with this command.
   if (command === "model") return installModel();
+  if (command === "follow") return printFollow();
   const root = gitRoot();
   if (!root) throw new Error("findwright runs inside a git repository");
   const opts = parse(rest);

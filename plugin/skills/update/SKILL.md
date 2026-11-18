@@ -5,7 +5,7 @@ description: "Bring FindWright's helper up to the plugin's version and check its
 
 # /findwright:update
 
-The plugin and its helper move in step: each plugin version pins one helper release by its SHA-256. This skill brings the helper to the plugin's version.
+The plugin and its helper move in step: each plugin version pins one helper release by its SHA-256. The search server brings the helper to the plugin's version by itself at each session start; this skill does it on demand, says what changed, and checks the rest of the setup.
 
 1. Run steps 1 to 3 of `${CLAUDE_PLUGIN_ROOT}/skills/setup/SKILL.md`: Node 22.16 or later (or 24 and up) with every security fix, then the helper, updated to the plugin's version, then the meaning model the new helper pins.
 2. Once the new helper is in, read the sections of `<helper>/CHANGELOG.md` for every version after the old helper's, and say, newest first, what is new, changed and fixed, plus anything the user may want to act on.

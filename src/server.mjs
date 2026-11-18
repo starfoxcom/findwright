@@ -3,9 +3,9 @@
 // itself to the release the installed plugin pins, so a plugin update needs no typed command.
 
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { followNotice, followPlugin, helperFolder, isInstalledHelper, pluginPin } from "./follow.mjs";
+import { followNotice, followPlugin, helperFolder, installedVersion, isInstalledHelper, modelStep, pluginPin }
+  from "./follow.mjs";
 
 const entry = fileURLToPath(import.meta.url);
 
@@ -20,24 +20,16 @@ function runNewEntry() {
   child.on("exit", (code) => process.exit(code ?? 1));
 }
 
-// A new helper can pin a new meaning model; it downloads in the background, as setup's step does.
-function fetchModel() {
-  const cli = fileURLToPath(new URL("./cli.mjs", import.meta.url));
-  const child = spawn(process.execPath, [cli, "model"], { detached: true, stdio: "ignore", windowsHide: true });
-  child.on("error", () => {});
-  child.unref();
-}
-
-const result = isInstalledHelper(entry) ? await followPlugin({
-  pin: pluginPin(),
-  ownVersion: JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version,
-  helper: helperFolder(),
-}) : null;
+const helper = helperFolder();
+const result = isInstalledHelper(entry)
+  ? await followPlugin({ pin: pluginPin(), ownVersion: installedVersion(helper), helper })
+  : null;
 const notice = followNotice(result);
 if (notice) process.env.FINDWRIGHT_HELPER_NOTICE = notice;
 
 if (result && !result.error) {
-  fetchModel();
+  // A new helper can pin a new meaning model; it downloads in the background.
+  modelStep(helper, { background: true });
   runNewEntry();
 } else {
   await import("./serve.mjs");

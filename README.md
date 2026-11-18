@@ -17,7 +17,9 @@ FindWright is a Claude Code plugin of its own; it needs nothing else. In a Claud
 
 The `wrights` marketplace ([starfoxcom/wrights](https://github.com/starfoxcom/wrights)) lists FindWright and Bindwright, each pinned to its own release.
 
-Then run `/findwright:setup`. It installs the helper, the part that runs on your computer, from the plugin's GitHub release after checking it against the SHA-256 the plugin pins, into `~/.findwright/helper` for your user only. It then registers FindWright for every project, offers a hook that sends searches to it in indexed repos, and fits the index to the project you are in. `/findwright:update` keeps the helper at the plugin's version, `/findwright:doctor` checks the setup and `/findwright:remove` takes it back out.
+Then run `/findwright:setup`. It installs the helper, the part that runs on your computer, from the plugin's GitHub release after checking it against the SHA-256 the plugin pins, into `~/.findwright/helper` for your user only. It then registers FindWright for every project, offers a hook that sends searches to it in indexed repos, fits the index to the project you are in, and turns on Claude Code's auto-update for the wrights marketplace unless you turned it off before.
+
+FindWright then keeps itself current: auto-update moves the plugin, and at the next session start the search server brings the helper to the release the new plugin pins, checked against its SHA-256 the same way, and says so in one line. When that fails, the old helper keeps working and the session is told why. `/findwright:update` does the same on demand, `/findwright:doctor` checks the setup and `/findwright:remove` takes it back out.
 
 [Bindwright](https://github.com/starfoxcom/bindwright) offers FindWright as its code-search tool and sets it up the same way.
 
@@ -35,6 +37,8 @@ findwright coverage                        # files per type, and files with no s
 findwright refresh                         # bring the index level with the working tree
 findwright try <rules.json>                # what draft rules would name, without saving them
 findwright counts status|share on|share off|project <kind>|send   # the opt-in usage counts
+findwright follow                          # bring the helper to the release the plugin pins
+findwright home auto-update on|off         # Claude Code's auto-update for the wrights marketplace
 ```
 
 A glob starting with `!` leaves out the files it matches, as in ripgrep: `--glob '*.md' --glob '!CHANGELOG.md'` searches every Markdown file but the changelog, and `!` globs alone search every other file.

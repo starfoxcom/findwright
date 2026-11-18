@@ -138,7 +138,7 @@ test("a session started after a failed counts send is told once a day", () => {
 });
 
 test("the notice of a helper that just followed its plugin reaches the session start", () => {
-  const notice = "Tell the user in one line: FindWright's helper updated itself from 2.1.0 to 2.2.0 to match the plugin.";
+  const notice = "Tell the user in one line: FindWright's helper updated itself from 2.1.0 to 2.2.0.";
   const input = `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })}\n`;
   const run = spawnSync(process.execPath, [server], { input, encoding: "utf8", timeout: 10_000,
     env: { ...env, FINDWRIGHT_ROOT: fittedRepo({ rules: [] }), FINDWRIGHT_HELPER_NOTICE: notice } });

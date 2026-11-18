@@ -4,7 +4,8 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { followNotice, followPlugin, helperFolder, installRelease, isInstalledHelper, pluginPin } from "../src/follow.mjs";
+import { followNotice, followPlugin, helperFolder, installRelease, isInstalledHelper, pluginPin }
+  from "../src/follow.mjs";
 import { gzipStored } from "../tools/pack/gzip.mjs";
 import { tarArchive } from "../tools/pack/tar.mjs";
 
@@ -97,7 +98,8 @@ test("a failed download, check or install keeps the old helper and says why", as
   const bytes = release("2.2.0");
   const pin = pinFor("2.2.0", bytes);
   const rows = [
-    ["a download that does not match the pin", serve(Buffer.from("tampered")), installs("2.2.0"), /does not match the SHA-256/],
+    ["a download that does not match the pin", serve(Buffer.from("tampered")), installs("2.2.0"),
+      /does not match the SHA-256/],
     ["a download the server refuses", async () => ({ ok: false, status: 404 }), installs("2.2.0"), /HTTP 404/],
     ["an install that fails", serve(bytes), async () => { throw new Error("npm install failed: EPERM"); }, /EPERM/],
     ["an install that leaves another version", serve(bytes), installs("2.1.0"), /left version 2\.1\.0/],

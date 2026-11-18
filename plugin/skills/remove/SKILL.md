@@ -12,6 +12,6 @@ Takes FindWright out in the reverse order setup put it in, so no hook keeps send
 3. **The registration:** when `claude mcp get findwright` names `<helper>/src/server.mjs`, ask, then run `claude mcp remove findwright --scope user`. A registration that points at another copy, such as Bindwright's, belongs to that tool: leave it and say so.
 4. **The helper:** ask, then delete the folder `$HOME/.findwright/helper` and the file `$HOME/.findwright/counts.json`.
 5. **Project indexes:** each indexed repo holds a `.findwright/` folder (the index, and `config.json` when the project has one). Say they stay, since `config.json` may be the project's own and the index rebuilds in seconds, and that deleting `.findwright/index.db*` in a repo frees its space.
-6. **The plugin:** say to run `/plugin uninstall findwright` to finish.
+6. **The plugin:** say to run `/plugin uninstall findwright` to finish. The wrights marketplace's auto-update stays as it is, since other plugins from it, such as Bindwright, use the same setting; say that `node "<helper>/src/cli.mjs" home auto-update off`, run before step 4, turns it off.
 
 End with one line per part: removed, or kept and why.

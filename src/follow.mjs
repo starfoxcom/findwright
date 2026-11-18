@@ -43,7 +43,9 @@ export function pluginPin(env = process.env) {
   let installs;
   try {
     const plugins = JSON.parse(readFileSync(join(config, "plugins", "installed_plugins.json"), "utf8")).plugins;
-    installs = Object.entries(plugins ?? {}).filter(([key]) => key.startsWith("findwright@")).flatMap(([, list]) => list);
+    installs = Object.entries(plugins ?? {})
+      .filter(([key]) => key.startsWith("findwright@"))
+      .flatMap(([, list]) => list);
   } catch {
     return null;
   }
@@ -121,8 +123,43 @@ async function takeLock(lock) {
   return false;
 }
 
-const installedVersion = (helper) =>
-  JSON.parse(readFileSync(join(helper, "node_modules", "findwright", "package.json"), "utf8")).version;
+const installedEntry = (helper, ...parts) => join(helper, "node_modules", "findwright", ...parts);
+
+/** The version of the helper installed in `helper`, or null when none is. */
+export function installedVersion(helper) {
+  try {
+    return JSON.parse(readFileSync(installedEntry(helper, "package.json"), "utf8")).version;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Runs the installed helper's model step, which fetches the meaning model it pins, as setup does.
+ * In the background it returns null at once; otherwise it resolves to the step's line of JSON.
+ */
+export function modelStep(helper, { background = false } = {}) {
+  const args = [installedEntry(helper, "src", "cli.mjs"), "model"];
+  if (background) {
+    const child = spawn(process.execPath, args, { detached: true, stdio: "ignore", windowsHide: true });
+    child.on("error", () => {});
+    child.unref();
+    return Promise.resolve(null);
+  }
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, args, { stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
+    let output = "";
+    child.stdout.on("data", (chunk) => { output += chunk; });
+    child.on("error", (error) => resolve({ error: error.message }));
+    child.on("close", () => {
+      try {
+        resolve(JSON.parse(output.trim().split("\n").at(-1)));
+      } catch {
+        resolve({ error: "the model step printed no result" });
+      }
+    });
+  });
+}
 
 /**
  * Brings the helper to the version `pin` names: `{ from, to }` once installed, `{ from, to, error }`
@@ -142,7 +179,7 @@ export async function followPlugin({ pin, ownVersion, helper, fetchRelease = fet
   try {
     writeFileSync(file, await download(pin, fetchRelease));
     await install(helper, file);
-    const version = installedVersion(helper);
+    const version = installedVersion(helper) ?? "none";
     if (version !== pin.version) throw new Error(`the install left version ${version} in place`);
     return outcome;
   } catch (error) {
