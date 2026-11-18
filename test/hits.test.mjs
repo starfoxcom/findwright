@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { recordSession, sinceFit } from "../src/hits.mjs";
+import { join, resolve } from "node:path";
+import { recordSession, sinceFit, transcriptsOf } from "../src/hits.mjs";
 
 const short = (n, fields) => ({ session: `s${n}`, scored: 10, hits: 5, misses: [], ...fields });
 
@@ -17,6 +17,30 @@ function repoFittedAt(when) {
   utimesSync(config, when, when);
   return root;
 }
+
+test("transcripts are read from Claude Code's config folder when CLAUDE_CONFIG_DIR names one", () => {
+  const config = mkdtempSync(join(tmpdir(), "findwright-config-"));
+  const root = mkdtempSync(join(tmpdir(), "findwright-"));
+  const folder = join(config, "projects", resolve(root).replace(/[^A-Za-z0-9]/g, "-"));
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(folder, "session.jsonl"), "");
+  const saved = {
+    CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR,
+    FINDWRIGHT_TRANSCRIPTS: process.env.FINDWRIGHT_TRANSCRIPTS,
+  };
+  process.env.CLAUDE_CONFIG_DIR = config;
+  delete process.env.FINDWRIGHT_TRANSCRIPTS;
+  try {
+    assert.deepEqual(transcriptsOf(root), [join(folder, "session.jsonl")]);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    rmSync(config, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("only sessions recorded since the config last changed count, by their time or an older line's date", () => {
   const root = repoFittedAt(new Date("2026-06-15T12:00:00Z"));

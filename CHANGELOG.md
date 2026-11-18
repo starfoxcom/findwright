@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] - 2026-11-18
+
+### Fixed
+- `findwright hits`, the saving estimate and the usage counts read session transcripts from Claude Code's config folder, so they find the sessions on a computer that sets `CLAUDE_CONFIG_DIR`. They always looked in `~/.claude/projects` ([#86](https://github.com/starfoxcom/findwright/issues/86)).
+- A relative `CLAUDE_CONFIG_DIR` is used as given, the way Claude Code reads it, so the guidance file, the plugin pin and the settings file are the ones in the folder Claude Code uses. 2.2.0 took it only as an absolute path and fell back to `~/.claude`, where Claude Code never looked. An empty value still means `~/.claude` ([#89](https://github.com/starfoxcom/findwright/issues/89)).
+- When the helper updates itself, the step that puts the new copy in place holds a lock that the operating system drops when the process holding it ends, so a run stopped during that step leaves no lock behind. Two runs that started together right after one was stopped could both take over the old lock and move the helper's folders at the same time ([#82](https://github.com/starfoxcom/findwright/issues/82)).
+
 ## [2.2.0] - 2026-11-18
 
 ### Added

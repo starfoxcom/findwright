@@ -1,10 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync }
-  from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
+import { pathToFileURL } from "node:url";
 import { followNotice, followPlugin, helperFolder, installedVersion, installRelease, isInstalledHelper,
   pluginPin, recordFollow, takeFollowResult } from "../src/follow.mjs";
 import { gzipStored } from "../tools/pack/gzip.mjs";
@@ -93,7 +95,7 @@ test("the pin comes from the user-scope install, then the newest, and skips what
   for (const [name, list, expected] of rows) assert.equal(pinWith(list), expected, name);
 });
 
-test("an empty or relative folder setting never reads from the folder the session runs in", () => {
+test("a relative config folder is read where Claude Code reads it; FindWright's own folder never is", () => {
   const repo = temp("repo");
   mkdirSync(join(repo, "plugins"), { recursive: true });
   writeFileSync(join(repo, "helper.json"), JSON.stringify(pinFor("6.6.6", release("6.6.6"))));
@@ -108,8 +110,9 @@ test("an empty or relative folder setting never reads from the folder the sessio
   Object.assign(process.env, { HOME: home, USERPROFILE: home });
   process.chdir(repo);
   try {
+    assert.notEqual(pluginPin({ CLAUDE_CONFIG_DIR: "" })?.version, "6.6.6", "an empty CLAUDE_CONFIG_DIR");
+    assert.equal(pluginPin({ CLAUDE_CONFIG_DIR: "." })?.version, "6.6.6", "a relative CLAUDE_CONFIG_DIR");
     for (const value of ["", "."]) {
-      assert.notEqual(pluginPin({ CLAUDE_CONFIG_DIR: value })?.version, "6.6.6", `CLAUDE_CONFIG_DIR "${value}"`);
       assert.notDeepEqual(takeFollowResult({ FINDWRIGHT_HOME: value }), planted, `FINDWRIGHT_HOME "${value}"`);
     }
     assert.ok(existsSync(join(repo, "follow.json")), "the repo's file is left alone");
@@ -134,14 +137,15 @@ test("a helper at the plugin's version, or with no plugin pin, is left alone", a
   assert.equal(await followPlugin({ pin, ownVersion: "2.1.0", helper, fetchRelease: fail }), null);
 });
 
-test("a helper behind the plugin installs the pinned release and leaves no files behind", async () => {
+test("a helper behind the plugin installs the pinned release and leaves only the swap lock behind", async () => {
   const helper = oldHelper();
   const bytes = release("2.2.0");
   const result = await followPlugin({ pin: pinFor("2.2.0", bytes), ownVersion: "2.1.0", helper,
     fetchRelease: serve(bytes), install: installs("2.2.0") });
   assert.deepEqual(result, { from: "2.1.0", to: "2.2.0" });
   assert.equal(installedVersion(helper), "2.2.0");
-  assert.deepEqual(readdirSync(helper), ["node_modules"], "the staging folder is gone");
+  assert.deepEqual(readdirSync(helper).sort(), [".swap-lock.sqlite", "node_modules"],
+    "the staging folder and the lock's journal are gone");
   assert.deepEqual(readdirSync(join(helper, "node_modules")), ["findwright"], "the old copy is gone");
   assert.match(followNotice(result), /updated itself from 2\.1\.0 to 2\.2\.0/);
 });
@@ -181,22 +185,44 @@ test("of two servers following at once, only the one that installed reports it",
   assert.deepEqual(readdirSync(join(helper, "node_modules")), ["findwright"]);
 });
 
-test("the swap waits for another run's lock, and takes over one a stopped run left", async () => {
-  const bytes = release("2.2.0");
-  const follow = (helper) => followPlugin({ pin: pinFor("2.2.0", bytes), ownVersion: "2.1.0", helper,
-    fetchRelease: serve(bytes), install: installs("2.2.0") });
-  const held = oldHelper();
-  mkdirSync(join(held, ".swap.lock"));
-  setTimeout(() => rmSync(join(held, ".swap.lock"), { recursive: true }), 300);
-  assert.deepEqual(await follow(held), { from: "2.1.0", to: "2.2.0" }, "a lock released soon");
-  assert.equal(installedVersion(held), "2.2.0");
+// A run in its own process: "stop" takes the swap lock and hangs inside the swap until it is killed;
+// "swap" logs when its swap starts and ends.
+const FOLLOW_URL = pathToFileURL(join(import.meta.dirname, "..", "src", "follow.mjs")).href;
+const LOCK_RUN = `
+import { appendFileSync } from "node:fs";
+import { withSwapLock } from ${JSON.stringify(FOLLOW_URL)};
+const [helper, log, mode] = process.argv.slice(2);
+const pause = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+await withSwapLock(helper, () => {
+  if (mode === "stop") {
+    process.stdout.write("locked\\n");
+    pause(60_000);
+  }
+  appendFileSync(log, "in\\n");
+  pause(300);
+  appendFileSync(log, "out\\n");
+});
+`;
 
-  const left = oldHelper();
-  mkdirSync(join(left, ".swap.lock"));
-  const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
-  utimesSync(join(left, ".swap.lock"), hourAgo, hourAgo);
-  assert.deepEqual(await follow(left), { from: "2.1.0", to: "2.2.0" }, "a lock a stopped run left");
-  assert.deepEqual(readdirSync(left), ["node_modules"]);
+test("a run stopped mid-swap leaves no lock, and the runs waiting on it swap one at a time", async () => {
+  const dir = temp("lock");
+  const script = join(dir, "run.mjs");
+  const log = join(dir, "log.txt");
+  writeFileSync(script, LOCK_RUN);
+  writeFileSync(log, "");
+  const run = (mode) => {
+    const child = spawn(process.execPath, [script, join(dir, "helper"), log, mode],
+      { stdio: ["ignore", "pipe", "inherit"] });
+    return { child, exit: new Promise((done) => child.on("exit", done)) };
+  };
+  const stopped = run("stop");
+  await new Promise((done) => stopped.child.stdout.once("data", done));
+  const waiting = [run("swap"), run("swap")];
+  await sleep(500);
+  assert.equal(readFileSync(log, "utf8"), "", "no swap starts while another run holds the lock");
+  stopped.child.kill("SIGKILL");
+  assert.deepEqual(await Promise.all(waiting.map((each) => each.exit)), [0, 0], "both runs finish");
+  assert.equal(readFileSync(log, "utf8"), "in\nout\nin\nout\n", "the two swaps never overlap");
 });
 
 test("a run that fails while another run installs the same release reports nothing", async () => {
