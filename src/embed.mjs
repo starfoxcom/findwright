@@ -4,7 +4,7 @@
 // pinned revision, checked against pinned SHA-256 sums, and kept in memory as
 // int8 rows with one scale each (16 MB).
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -43,8 +43,10 @@ export async function ensureModel(dir = modelsDir()) {
     if (!response.ok) throw new Error(`Downloading ${file} failed: HTTP ${response.status}`);
     const bytes = Buffer.from(await response.arrayBuffer());
     if (sha256(bytes) !== sum) throw new Error(`${file} does not match its pinned SHA-256; refusing it`);
-    writeFileSync(`${target}.part`, bytes);
-    renameSync(`${target}.part`, target);
+    // A part file of its own, so two downloads at once each rename a complete file.
+    const part = `${target}.${randomUUID()}.part`;
+    writeFileSync(part, bytes);
+    renameSync(part, target);
   }
   return folder;
 }

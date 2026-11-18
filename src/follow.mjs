@@ -47,9 +47,17 @@ export function isInstalledHelper(file, env = process.env) {
   return path !== "" && !path.startsWith("..") && !isAbsolute(path);
 }
 
+// Compared in the form fetch requests, so `..` segments cannot lead outside the releases.
+const isReleaseUrl = (url) => {
+  try {
+    return typeof url === "string" && new URL(url).href === url && url.startsWith(RELEASES);
+  } catch {
+    return false;
+  }
+};
+
 const isPin = (pin) => typeof pin?.version === "string" && typeof pin.node?.file === "string"
-  && /^[\w.+-]+\.tgz$/.test(pin.node.file) && typeof pin.node.url === "string"
-  && pin.node.url.startsWith(RELEASES) && typeof pin.node.sha256 === "string"
+  && /^[\w.+-]+\.tgz$/.test(pin.node.file) && isReleaseUrl(pin.node.url) && typeof pin.node.sha256 === "string"
   && /^[0-9a-f]{64}$/.test(pin.node.sha256);
 
 function rankInstalls(a, b) {
@@ -234,7 +242,7 @@ export async function followPlugin({ pin, ownVersion, helper, fetchRelease = fet
     if (installedVersion(helper) === pin.version) return outcome;
     return { ...outcome, error: error.name === "TimeoutError" ? "the download timed out" : error.message };
   } finally {
-    rmSync(staging, { recursive: true, force: true });
+    removeQuietly(staging);
   }
 }
 
@@ -269,7 +277,7 @@ export function recordFollow(result, env = process.env) {
 export function takeFollowResult(env = process.env) {
   try {
     const result = JSON.parse(readFileSync(resultFile(env), "utf8"));
-    rmSync(resultFile(env), { force: true });
+    removeQuietly(resultFile(env));
     return result;
   } catch {
     return null;
