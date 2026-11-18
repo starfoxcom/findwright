@@ -8,6 +8,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { absoluteOr } from "./paths.mjs";
 
 export const MODEL = {
   name: "potion-code-16M-v2",
@@ -20,7 +21,7 @@ export const MODEL = {
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
-const modelsDir = () => process.env.FINDWRIGHT_MODELS ?? join(homedir(), ".cache", "findwright", "models");
+const modelsDir = () => absoluteOr(process.env.FINDWRIGHT_MODELS, join(homedir(), ".cache", "findwright", "models"));
 
 /** The model folder when every file is there and matches its pinned SHA-256, else null. */
 export function installedModel(dir = modelsDir()) {
