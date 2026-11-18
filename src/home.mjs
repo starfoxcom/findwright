@@ -1,12 +1,14 @@
-// Registers the FindWright search hook in Claude Code's settings.json. The file is
+// Registers the FindWright search hook in Claude Code's settings.json and turns the wrights
+// marketplace's auto-update on or off there; the agent guidance lives in guidance.mjs. The file is
 // edited as JSON so every other key and hook keeps its content. A file that is not
 // valid JSON is refused, never rewritten, because rewriting it would lose the user's
 // settings.
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isObject } from "./store.mjs";
+import { guidanceState, installGuidance, removeGuidance } from "./guidance.mjs";
+import { absoluteOr, claudeConfigDir } from "./paths.mjs";
 
 const MATCHER = "Grep|Glob|Bash|PowerShell";
 const HOOK_PATH = fileURLToPath(new URL("../hooks/findwright-first.mjs", import.meta.url));
@@ -14,22 +16,31 @@ const HOOK_PATH = fileURLToPath(new URL("../hooks/findwright-first.mjs", import.
 const COMMAND = `node "${HOOK_PATH.replaceAll("\\", "/")}"`;
 const OUR_HOOK = { type: "command", command: COMMAND, timeout: 10 };
 const SCRIPT_NAME = /[\w.-]+-first\.(?:py|mjs)(?!\w)/g;
+// The marketplace FindWright ships from, as Claude Code's settings name it for auto-update.
+const MARKETPLACE = "wrights";
+const MARKETPLACE_SOURCE = { source: "github", repo: "starfoxcom/wrights" };
 const ACTIONS = new Map([
   ["status", statusOf],
   ["install-hook", installHook],
   ["remove-hook", removeHook],
+  ["auto-update on", (file) => setAutoUpdate(file, true)],
+  ["auto-update off", (file) => setAutoUpdate(file, false)],
+  ["install-guidance", (file, env) => success(installGuidance(env))],
+  ["remove-guidance", (file, env) => success(removeGuidance(env))],
 ]);
 
-export function settingsPath(env = process.env, home = homedir()) {
-  if (env.FINDWRIGHT_SETTINGS) return env.FINDWRIGHT_SETTINGS;
-  return join(env.CLAUDE_CONFIG_DIR || join(home, ".claude"), "settings.json");
+export function settingsPath(env = process.env) {
+  return absoluteOr(env.FINDWRIGHT_SETTINGS, join(claudeConfigDir(env), "settings.json"));
 }
 
 // Returns { ok, json }: json is printed as the one line of output, ok false means exit 1.
 export function runHome(action, env = process.env) {
   const run = ACTIONS.get(action);
-  if (!run) return failure("usage: findwright home status | install-hook | remove-hook");
-  return run(settingsPath(env));
+  if (!run) {
+    return failure("usage: findwright home status | install-hook | remove-hook | auto-update on|off"
+      + " | install-guidance | remove-guidance");
+  }
+  return run(settingsPath(env), env);
 }
 
 function success(json) {
@@ -40,14 +51,34 @@ function failure(message) {
   return { ok: false, json: { error: message } };
 }
 
-function statusOf(file) {
+function statusOf(file, env) {
   const read = readSettings(file);
   if (read.error) return failure(read.error);
   return success({
     settings: file,
     hook: hasOurHook(read.settings),
     others: otherScripts(read.settings),
+    // null when never set, so setup can tell a user's "off" from no answer yet.
+    autoUpdate: read.settings.extraKnownMarketplaces?.[MARKETPLACE]?.autoUpdate ?? null,
+    guidance: guidanceState(env),
   });
+}
+
+// Claude Code updates a marketplace's installed plugins when its settings entry has autoUpdate on.
+function setAutoUpdate(file, on) {
+  const read = readSettings(file);
+  if (read.error) return failure(read.error);
+  const marketplaces = read.settings.extraKnownMarketplaces ?? {};
+  const entry = marketplaces[MARKETPLACE] ?? {};
+  if (!isObject(marketplaces) || !isObject(entry)) {
+    return failure(`${file} has an extraKnownMarketplaces value that is not an object; left unchanged`);
+  }
+  if (entry.autoUpdate === on) return success({ settings: file, autoUpdate: on, changed: false, backup: null });
+  const backup = read.exists ? backUp(file) : null;
+  read.settings.extraKnownMarketplaces = { ...marketplaces,
+    [MARKETPLACE]: { source: MARKETPLACE_SOURCE, ...entry, autoUpdate: on } };
+  writeSettings(file, read.settings);
+  return success({ settings: file, autoUpdate: on, changed: true, backup });
 }
 
 function installHook(file) {

@@ -6,9 +6,9 @@ import { randomBytes } from "node:crypto";
 import {
   mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
-import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { scoredSearches, transcriptsOf } from "./hits.mjs";
+import { findwrightHome } from "./paths.mjs";
 import { isObject } from "./store.mjs";
 
 /** The project kinds a person can pick. */
@@ -25,7 +25,7 @@ const DEFAULT_COUNTER_URL = "https://findwright-counter.starfoxcom.workers.dev";
 
 const emptyState = () => ({ asked: false, share: false, projects: {} });
 const stateFile = () =>
-  join(process.env.FINDWRIGHT_HOME ?? join(homedir(), ".findwright"), "counts.json");
+  join(findwrightHome(), "counts.json");
 const projectKey = (root) => realpathSync.native(resolve(root));
 
 // A missing or damaged file reads as empty state, so the next answer starts from nothing.

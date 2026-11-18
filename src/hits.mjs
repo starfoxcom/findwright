@@ -7,6 +7,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { find } from "./find.mjs";
+import { absoluteOr } from "./paths.mjs";
 import { checkOwnFolder, configChangedAt, UNREADABLE } from "./store.mjs";
 import { estimateSaving, helperTranscripts, mergeGroups, searchGroups } from "./savings.mjs";
 
@@ -23,8 +24,7 @@ const SESSIONS_BEFORE_ASSESS = 3;
  */
 export function transcriptsOf(root) {
   const slug = resolve(root).replace(/[^A-Za-z0-9]/g, "-");
-  const folder = process.env.FINDWRIGHT_TRANSCRIPTS
-    ?? join(homedir(), ".claude", "projects", slug);
+  const folder = absoluteOr(process.env.FINDWRIGHT_TRANSCRIPTS, join(homedir(), ".claude", "projects", slug));
   if (!existsSync(folder)) return [];
   return readdirSync(folder).filter((f) => f.endsWith(".jsonl")).map((f) => join(folder, f));
 }

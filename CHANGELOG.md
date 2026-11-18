@@ -5,7 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.2.0] - 2026-11-18
+
+### Added
+- The helper follows its plugin. When a session starts, the search server reads which helper release the installed plugin pins, and when that is another version than its own, it installs that release in the background, so the session never waits: it downloads the release, checks it against the pinned SHA-256, installs it the way setup does into a folder of its own, puts it in place only once it is complete, then fetches the meaning model the new helper pins. The next session runs the new helper and is told in one line that it happened, or why it could not, in which case the old helper keeps working. `findwright follow` does the same from the shell. A helper from before this release needs one `/findwright:update` to get it ([#80](https://github.com/starfoxcom/findwright/issues/80)).
+- Setup turns on Claude Code's auto-update for the wrights marketplace when FindWright came from it, so new versions install without `/plugin`. A setting already turned off stays off. `findwright home auto-update on|off` changes it, and `home status` reports it ([#80](https://github.com/starfoxcom/findwright/issues/80)).
+- FindWright brings its own guidance for the agent, so it works the same with or without Bindwright. Setup writes `rules/findwright.md` in Claude Code's config folder, which every session reads: use FindWright's tools for code research, fall back to Grep or Glob only after two differently worded queries found nothing (marking a shell search with `# FINDWRIGHT_BYPASS: <reason>`), and report the hit rate and the estimated saving when a session closes. The file is FindWright's alone: update and the search server keep it current, and `/findwright:remove` deletes it. `findwright home install-guidance|remove-guidance` does the same from the shell, and `home status` reports it ([#84](https://github.com/starfoxcom/findwright/issues/84)).
 
 ## [2.1.0] - 2026-11-17
 
