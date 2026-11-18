@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { followNotice, followPlugin, helperFolder, installedVersion, installRelease, isInstalledHelper,
-  pluginPin, recordFollow, takeFollowResult } from "../src/follow.mjs";
+  pinAt, pluginPin, recordFollow, takeFollowResult } from "../src/follow.mjs";
 import { gzipStored } from "../tools/pack/gzip.mjs";
 import { tarArchive } from "../tools/pack/tar.mjs";
 
@@ -93,6 +93,23 @@ test("the pin comes from the user-scope install, then the newest, and skips what
     ["a list that is not a list", null, null],
   ];
   for (const [name, list, expected] of rows) assert.equal(pinWith(list), expected, name);
+});
+
+test("the pin of a plugin folder setup names is read from that folder and checked like any other", () => {
+  const bytes = release("9.0.0");
+  const folder = (pin) => {
+    const path = temp("plugin");
+    if (pin) writeFileSync(join(path, "helper.json"), JSON.stringify(pin));
+    return path;
+  };
+  const outside = pinFor("9.1.0", bytes);
+  outside.node.url = "https://example.com/findwright-9.1.0.tgz";
+  const rows = [
+    ["a folder with a release pin", folder(pinFor("9.0.0", bytes)), "9.0.0"],
+    ["a folder with no pin", folder(null), null],
+    ["a pin outside the releases", folder(outside), null],
+  ];
+  for (const [name, path, expected] of rows) assert.equal(pinAt(path)?.version ?? null, expected, name);
 });
 
 test("a relative config folder is read where Claude Code reads it; FindWright's own folder never is", () => {

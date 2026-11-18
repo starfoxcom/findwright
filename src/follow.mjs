@@ -70,9 +70,22 @@ function rankInstalls(a, b) {
 }
 
 /**
- * The helper release the installed FindWright plugin pins (`{ version, node: { file, url, sha256 } }`),
- * read from Claude Code's list of installed plugins, or null when no plugin is installed or its pin
- * cannot be read. A user-scope install wins over others; among equals, the newest update.
+ * The helper release the plugin in `pluginRoot` pins (`{ version, node: { file, url, sha256 } }`),
+ * read from its `helper.json`, or null when the folder holds no pin or the pin is not a release's.
+ */
+export function pinAt(pluginRoot) {
+  try {
+    const pin = JSON.parse(readFileSync(join(pluginRoot, "helper.json"), "utf8"));
+    return isPin(pin) ? pin : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The helper release the installed FindWright plugin pins, read from Claude Code's list of installed
+ * plugins, or null when no plugin is installed or its pin cannot be read. A user-scope install wins
+ * over others; among equals, the newest update.
  */
 export function pluginPin(env = process.env) {
   const config = claudeConfigDir(env);
@@ -86,15 +99,8 @@ export function pluginPin(env = process.env) {
   } catch {
     return null;
   }
-  for (const install of installs.sort(rankInstalls)) {
-    try {
-      const pin = JSON.parse(readFileSync(join(install.installPath, "helper.json"), "utf8"));
-      if (isPin(pin)) return pin;
-    } catch {
-      // An install whose folder is gone or holds no pin is skipped.
-    }
-  }
-  return null;
+  // An install whose folder is gone or holds no pin is skipped.
+  return installs.sort(rankInstalls).map((install) => pinAt(install.installPath)).find(Boolean) ?? null;
 }
 
 /** The version of the helper installed under `folder`, or null when none is. */

@@ -12,7 +12,7 @@
 //   findwright home status|install-hook|remove-hook   (the search hook in Claude Code's settings)
 //   findwright home auto-update on|off   (Claude Code's auto-update for the wrights marketplace)
 //   findwright home install-guidance|remove-guidance   (the agent guidance in Claude Code's rules)
-//   findwright follow              (bring the helper to the release the installed plugin pins)
+//   findwright follow [--plugin <folder>]   (bring the helper to the release the plugin pins)
 //   findwright counts status|share on|share off|project <kind>|send   (opt-in usage counts)
 //   findwright model               (download the meaning model, check its pinned SHA-256, load it)
 //   findwright try <rules.json>    (what draft rules would name, without writing the config)
@@ -28,7 +28,8 @@ import { ensureModel, loadModel, MODEL } from "./embed.mjs";
 import { runHome } from "./home.mjs";
 import { readFileSync } from "node:fs";
 import { tryRules } from "./trial.mjs";
-import { followPlugin, helperFolder, installedVersion, modelStep, pluginPin, recordFollow } from "./follow.mjs";
+import { followPlugin, helperFolder, installedVersion, modelStep, pinAt, pluginPin, recordFollow }
+  from "./follow.mjs";
 
 function parse(argv) {
   const opts = { positional: [], globs: [], ignoreCase: false, context: 0, all: false };
@@ -90,19 +91,22 @@ async function installModel() {
   }
 }
 
-// Brings the installed helper to the release the installed plugin pins, then fetches the model the
-// new helper pins. Prints `{"from", "to"}`, the same with `"error"` when it failed and the old helper
-// stayed, or `{"current", "pinned"}` when nothing was due. With `record`, as the server runs it, the
-// result is also saved for the next session's start notice.
-async function printFollow(record) {
+// Brings the installed helper to the release the installed plugin pins, or the plugin in
+// `pluginRoot` when setup names one, then fetches the model the new helper pins. Prints
+// `{"from", "to"}`, the same with `"error"` when it failed and the old helper stayed, or
+// `{"current", "pinned"}` when nothing was due. With `record`, as the server runs it, the result is
+// also saved for the next session's start notice.
+async function printFollow(record, pluginRoot) {
   const helper = helperFolder();
   const current = installedVersion(helper);
-  if (!current) {
-    console.log(JSON.stringify({ error: "FindWright's helper is not installed; /findwright:setup installs it" }));
+  const pin = pluginRoot ? pinAt(pluginRoot) : pluginPin();
+  const failure = !current ? "FindWright's helper is not installed; /findwright:setup installs it"
+    : pluginRoot && !pin ? `${pluginRoot} holds no helper pin` : null;
+  if (failure) {
+    console.log(JSON.stringify({ error: failure }));
     process.exitCode = 1;
     return;
   }
-  const pin = pluginPin();
   const result = await followPlugin({ pin, ownVersion: current, helper });
   if (!result) {
     // Read again, since another run may have installed the pinned version meanwhile.
@@ -138,7 +142,10 @@ async function main() {
   if (command === "counts") return printCounts(rest);
   // The meaning model lives outside any repo too: setup installs it with this command.
   if (command === "model") return installModel();
-  if (command === "follow") return printFollow(rest.includes("--record"));
+  if (command === "follow") {
+    const plugin = rest.indexOf("--plugin");
+    return printFollow(rest.includes("--record"), plugin === -1 ? undefined : rest[plugin + 1]);
+  }
   const root = gitRoot();
   if (!root) throw new Error("findwright runs inside a git repository");
   const opts = parse(rest);
