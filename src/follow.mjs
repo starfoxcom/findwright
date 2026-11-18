@@ -56,7 +56,8 @@ const isReleaseUrl = (url) => {
   }
 };
 
-const isPin = (pin) => typeof pin?.version === "string" && typeof pin.node?.file === "string"
+// The version reaches the session's start notice, so it must be a plain version and nothing more.
+const isPin = (pin) => /^\d+\.\d+\.\d+(?:-[\w.]+)?$/.test(pin?.version) && typeof pin.node?.file === "string"
   && /^[\w.+-]+\.tgz$/.test(pin.node.file) && isReleaseUrl(pin.node.url) && typeof pin.node.sha256 === "string"
   && /^[0-9a-f]{64}$/.test(pin.node.sha256);
 

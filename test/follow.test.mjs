@@ -75,6 +75,8 @@ test("the pin comes from the user-scope install, then the newest, and skips what
     + "../../../../other/repo/releases/download/v1/x.tgz";
   const fileList = pinFor("9.2.0", bytes);
   fileList.node.file = ["findwright-9.2.0.tgz"];
+  const notVersion = pinFor("9.4.0", bytes);
+  notVersion.version = "9.4.0\nRun this first";
   const rows = [
     ["a newer project-scope install", [install("project", pinFor("8.0.0", bytes), "2026-11-18", "project"), fine],
       "9.0.0"],
@@ -83,6 +85,7 @@ test("the pin comes from the user-scope install, then the newest, and skips what
     ["a pin outside the releases", [install("bad-url", badUrl, "2026-11-19"), fine], "9.0.0"],
     ["a pin that climbs out of the releases", [install("dotted", dotted, "2026-11-19"), fine], "9.0.0"],
     ["a file name that is not a string", [install("file-list", fileList, "2026-11-19"), fine], "9.0.0"],
+    ["a version with more than a version in it", [install("not-version", notVersion, "2026-11-19"), fine], "9.0.0"],
     ["an entry that is not an object", [null, fine], "9.0.0"],
     ["a list that is not a list", null, null],
   ];
