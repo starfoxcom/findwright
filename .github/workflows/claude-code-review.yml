@@ -484,6 +484,13 @@ jobs:
       request: ${{ steps.answer.outputs.request }}
       reviewer: ${{ steps.credits-answer.outputs.ok == 'yes' && format('{0} {1} (API credits)', needs.init-gate.outputs.routine_model, needs.init-gate.outputs.routine_effort) || steps.main-answer.outputs.ok == 'yes' && format('{0} {1}', needs.init-gate.outputs.routine_model, needs.init-gate.outputs.routine_effort) || steps.backup-answer.outputs.ok == 'yes' && format('{0} {1} (backup)', needs.init-gate.outputs.routine_fallback_model, needs.init-gate.outputs.routine_fallback_effort) || 'none' }}
     env:
+      # Every curl in this workflow starts with -q, and npm reads neither its
+      # user config nor its global one (the first step points that at an
+      # empty file of this job's own), so on a self-hosted runner reused
+      # between jobs, a ~/.curlrc, a ~/.npmrc or the Node folder's
+      # etc/npmrc that an earlier job left cannot change a download or the
+      # CLI install.
+      NPM_CONFIG_USERCONFIG: /dev/null
       # What every review attempt returns (Step 3): the comment to post, and
       # the deep-review request ("" when it did not escalate).
       REVIEW_SCHEMA: '{"type":"object","properties":{"review":{"type":"string"},"deep_request":{"type":"string"}},"required":["review","deep_request"],"additionalProperties":false}'
@@ -633,6 +640,28 @@ jobs:
       checks: read
       statuses: read
     steps:
+      # Files of the job's own: npm refuses /dev/null as both its user and
+      # its global config, a path under /dev/null is a real folder path in
+      # Git Bash on Windows, and job-level env cannot name the temp folder.
+      # The review action installs its packages with Bun, which reads a
+      # global .bunfig.toml from XDG_CONFIG_HOME when that is set, reuses
+      # a cached package without checking its hash again, and trusts the
+      # compiled code in its runtime cache, so both folders start empty and
+      # the runtime cache is off. Fresh names, in case the runner's cleanup
+      # left a folder behind.
+      - name: Keep npm and Bun off the runner's own config
+        shell: bash
+        run: |
+          : > "$RUNNER_TEMP/empty-npmrc"
+          config="$(mktemp -d "$RUNNER_TEMP/config.XXXXXX")"
+          cache="$(mktemp -d "$RUNNER_TEMP/bun-cache.XXXXXX")"
+          {
+            echo "NPM_CONFIG_GLOBALCONFIG=$RUNNER_TEMP/empty-npmrc"
+            echo "XDG_CONFIG_HOME=$config"
+            echo "BUN_INSTALL_CACHE_DIR=$cache"
+            echo "BUN_RUNTIME_TRANSPILER_CACHE_PATH=0"
+          } >> "$GITHUB_ENV"
+
       # As in Project triggers: a full checkout starts from a fresh clone.
       - name: Drop a partial clone left by an earlier job
         run: |
@@ -1073,7 +1102,7 @@ jobs:
               ;;
           esac
           name="node-v$NODE_VERSION-linux-$arch"
-          if ! curl --fail --silent --show-error --location --proto '=https' --retry 2 --max-time 120 -o "$RUNNER_TEMP/$name.tar.gz" "https://nodejs.org/dist/v$NODE_VERSION/$name.tar.gz"; then
+          if ! curl -q --fail --silent --show-error --location --proto '=https' --retry 2 --max-time 120 -o "$RUNNER_TEMP/$name.tar.gz" "https://nodejs.org/dist/v$NODE_VERSION/$name.tar.gz"; then
             echo "::warning::No usable Linux Node and npm here, and the Node $NODE_VERSION download failed: the CLI install tries the runner's own Node, if it has one"
             rm -f "$RUNNER_TEMP/$name.tar.gz"
             exit 1
@@ -1094,16 +1123,70 @@ jobs:
           echo "::notice::The CLI install runs on Node $NODE_VERSION, brought by this job"
           echo "bin=$RUNNER_TEMP/linux-node/bin" >> "$GITHUB_OUTPUT"
 
+      # The review action sets Bun up with setup-bun, which keeps a Bun it
+      # finds in ~/.bun/bin when that one reports the pinned version, so on a
+      # runner reused between jobs an earlier job could leave its own there.
+      # On Linux this job brings the Bun the action pins (BUN_VERSION follows
+      # the bun-version in the action's action.yml), checked against the
+      # checksum Bun publishes; anywhere else, or when this fails, the action
+      # sets Bun up itself.
+      - name: Bring a Bun for the review action
+        id: bun
+        working-directory: ${{ runner.temp }}
+        timeout-minutes: 10
+        continue-on-error: true
+        shell: bash
+        env:
+          BUN_VERSION: "1.4.4"
+          BUN_SHA256_X64: e0446eb55995772eb9894bebae9a6be368d985a8b9271ee124486f9946eedd76
+          BUN_SHA256_ARM64: baa6bb36f51d6e58561e02bbea825038a9df454f673d6d776e8bbf86f8c7850e
+        run: |
+          set -euo pipefail
+          if [ "$(uname -s)" != Linux ]; then
+            echo "Not a Linux runner: the review action sets up its own Bun"
+            exit 0
+          fi
+          # The baseline x64 build runs on every x64 CPU, AVX2 or not.
+          case "$(uname -m)" in
+            x86_64) name=bun-linux-x64-baseline; sum="$BUN_SHA256_X64" ;;
+            aarch64 | arm64) name=bun-linux-aarch64; sum="$BUN_SHA256_ARM64" ;;
+            *)
+              echo "::warning::No Bun build for $(uname -m): the review action sets up its own Bun"
+              exit 1
+              ;;
+          esac
+          dir="$(mktemp -d "$RUNNER_TEMP/bun.XXXXXX")"
+          zip="$dir/$name.zip"
+          if ! curl -q --fail --silent --show-error --location --proto '=https' --retry 2 --max-time 120 -o "$zip" "https://github.com/oven-sh/bun/releases/download/bun-v$BUN_VERSION/$name.zip"; then
+            echo "::warning::The Bun $BUN_VERSION download failed: the review action sets up its own Bun"
+            rm -f "$zip"
+            exit 1
+          fi
+          if ! printf '%s  %s\n' "$sum" "$zip" | sha256sum --check --status; then
+            echo "::warning::The Bun $BUN_VERSION download does not match its pinned checksum: the review action sets up its own Bun"
+            rm -f "$zip"
+            exit 1
+          fi
+          python3 -I -c 'import sys, zipfile; zipfile.ZipFile(sys.argv[1]).extract(sys.argv[2] + "/bun", sys.argv[3])' "$zip" "$name" "$dir"
+          rm -f "$zip"
+          bun="$dir/$name/bun"
+          chmod +x "$bun"
+          if [ "$(timeout 30 "$bun" --version 2>/dev/null || true)" != "$BUN_VERSION" ]; then
+            echo "::warning::The Bun $BUN_VERSION build does not run on this runner: the review action sets up its own Bun"
+            exit 1
+          fi
+          echo "::notice::The review action runs on Bun $BUN_VERSION, brought by this job"
+          echo "path=$bun" >> "$GITHUB_OUTPUT"
+
       # The attribution guard in the project's hooks reads every command it
       # guards with Bindwright's helper, which no runner has. This step installs
       # the helper release the project pinned in `.bindwright/helper.json`,
       # read from the PR's base commit so a PR cannot pick what its own review
       # installs, and checked against the pinned SHA-256. npm runs in the job's
-      # temp folder with no install scripts, offline with a cache of its own that
-      # starts empty, so it installs only the checked file and fails on anything
-      # it would fetch from the registry. Without a pin, or when any step fails,
-      # the guard runs without its parser and refuses every command its text
-      # names, as on any computer without the helper.
+      # temp folder with no install scripts, offline, from an empty cache of its
+      # own, so it never fetches a package the pin does not cover. Without a pin,
+      # or when any step fails, the guard runs without its parser and refuses
+      # every command its text names, as on any computer without the helper.
       - name: Install the attribution guard's parser
         working-directory: ${{ runner.temp }}
         timeout-minutes: 10
@@ -1128,7 +1211,7 @@ jobs:
             echo "::warning::.bindwright/helper.json names no Bindwright helper release: the guard runs without its parser"
             exit 1
           fi
-          if ! curl --fail --silent --show-error --location --proto '=https' --retry 2 --max-time 120 -o "$RUNNER_TEMP/bindwright-helper.tgz" "$url"; then
+          if ! curl -q --fail --silent --show-error --location --proto '=https' --retry 2 --max-time 120 -o "$RUNNER_TEMP/bindwright-helper.tgz" "$url"; then
             echo "::warning::The helper download failed: the guard runs without its parser"
             exit 1
           fi
@@ -1424,6 +1507,9 @@ jobs:
           # The job's CLI from "Install Claude Code". Empty when that
           # install failed, and then the action installs the CLI it bundles.
           path_to_claude_code_executable: ${{ steps.claude-cli.outputs.path }}
+          # The Bun from "Bring a Bun for the review action". Empty off Linux
+          # or when that step failed, and then the action sets up its own.
+          path_to_bun_executable: ${{ steps.bun.outputs.path }}
           # Model, effort and turn cap from the gate settings (routine.*).
           # `--disallowedTools Agent,...`: a reviewer that hands a large diff to
           # a subagent and "waits" for it ends its one-shot session with no
@@ -1637,6 +1723,9 @@ jobs:
           github_token: ${{ github.token }}
           show_full_output: false
           path_to_claude_code_executable: ${{ steps.claude-cli-stable.outputs.path }}
+          # The Bun from "Bring a Bun for the review action". Empty off Linux
+          # or when that step failed, and then the action sets up its own.
+          path_to_bun_executable: ${{ steps.bun.outputs.path }}
           claude_args: '--setting-sources user,project --permission-mode default --allowedTools "Bash(gh pr view *),Bash(gh pr diff *),Bash(gh pr checks *),Bash(gh issue view *),Bash(gh run view *),Bash(gh run list *),Read${{ needs.init-gate.outputs.allowed_tools }}" --disallowedTools "Agent,Task,ScheduleWakeup,SendMessage,ListAgents,Edit,Write,MultiEdit,NotebookEdit,Bash(git add*),Bash(git commit*),Bash(git push*),Bash(git rm*),Bash(/*)" --max-turns ${{ needs.init-gate.outputs.routine_max_turns }} --model ${{ needs.init-gate.outputs.routine_fallback_model }} --effort ${{ needs.init-gate.outputs.routine_fallback_effort }} --json-schema ''${{ env.REVIEW_SCHEMA }}'''
           prompt: |
             Review context file: ${{ runner.temp }}/review_context.md
@@ -1922,11 +2011,11 @@ jobs:
           token_once() {
             local oidc
             bot_token=""
-            oidc=$(curl -fsS --connect-timeout 20 --max-time 60 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            oidc=$(curl -q -fsS --connect-timeout 20 --max-time 60 -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
               "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=claude-code-github-action" \
               | python3 -I -c 'import json, sys; print(json.load(sys.stdin)["value"])') || return 1
             echo "::add-mask::$oidc"
-            bot_token=$(curl -fsS --connect-timeout 20 --max-time 60 -X POST -H "Authorization: Bearer $oidc" \
+            bot_token=$(curl -q -fsS --connect-timeout 20 --max-time 60 -X POST -H "Authorization: Bearer $oidc" \
               https://api.anthropic.com/api/github/github-app-token-exchange \
               | python3 -I -c 'import json, sys; d = json.load(sys.stdin); print(d.get("token") or d.get("app_token") or "")') || bot_token=""
             [ -n "$bot_token" ]
