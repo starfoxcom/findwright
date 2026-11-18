@@ -159,7 +159,8 @@ const isOlderThan = (path, ms) => {
   }
 };
 
-// Runs `swap` holding the helper's swap lock, made with mkdir, which only one process can win.
+// Runs `swap` holding the helper's swap lock, made with mkdir, which only one process can win, and
+// returns what it returns.
 // Another run's swap ends within milliseconds, so this waits for it; a lock past its stale age was
 // left by a run stopped mid-swap and is taken over.
 async function withSwapLock(helper, swap) {
@@ -176,7 +177,7 @@ async function withSwapLock(helper, swap) {
     }
   }
   try {
-    swap();
+    return swap();
   } finally {
     removeQuietly(lock);
   }
@@ -184,7 +185,7 @@ async function withSwapLock(helper, swap) {
 
 // Puts the staged helper in place with two renames, putting the old one back when the second
 // fails, and clears old copies a stopped swap left. Runs only under the swap lock, so no other run
-// is moving folders; a run that finds the same version already in place leaves it as it is.
+// is moving folders. Returns false when another run already put the same version in place.
 function swapIn(helper, staging) {
   const live = installedEntry(helper);
   const modules = dirname(live);
@@ -192,7 +193,7 @@ function swapIn(helper, staging) {
   for (const name of readdirSync(modules).filter((n) => n.startsWith(`findwright${OLD_SUFFIX}`))) {
     removeQuietly(join(modules, name));
   }
-  if (installedVersion(helper) === installedVersion(staging)) return;
+  if (installedVersion(helper) === installedVersion(staging)) return false;
   const old = `${live}${OLD_SUFFIX}${randomUUID()}`;
   const hadOld = existsSync(live);
   if (hadOld) renameSync(live, old);
@@ -203,6 +204,7 @@ function swapIn(helper, staging) {
     throw error;
   }
   removeQuietly(old);
+  return true;
 }
 
 // Staging folders a stopped run left behind, once no run can still be using them.
@@ -220,8 +222,10 @@ function clearStaging(helper) {
 }
 
 /**
- * Brings the helper to the version `pin` names: `{ from, to }` once installed, `{ from, to, error }`
- * when the download or the install failed (the old helper stays), or null when there was nothing to do.
+ * Brings the helper to the version `pin` names: `{ from, to }` once this run installed it,
+ * `{ from, to, error }` when the download or the install failed (the old helper stays), or null when
+ * there was nothing to do, another run having installed it included. Only the run that installed it
+ * reports it, so that run alone goes on to the model step and the notice.
  */
 export async function followPlugin({ pin, ownVersion, helper, fetchRelease = fetch, install = installRelease }) {
   if (!pin || pin.version === ownVersion) return null;
@@ -235,11 +239,10 @@ export async function followPlugin({ pin, ownVersion, helper, fetchRelease = fet
     await install(staging, file);
     const staged = installedVersion(staging);
     if (staged !== pin.version) throw new Error(`the install left version ${staged ?? "none"}`);
-    await withSwapLock(helper, () => swapIn(helper, staging));
-    return outcome;
+    return (await withSwapLock(helper, () => swapIn(helper, staging))) ? outcome : null;
   } catch (error) {
-    // A run that lost a race to another one installing the same release still ends with it in place.
-    if (installedVersion(helper) === pin.version) return outcome;
+    // A run that failed while another one installed the same release has nothing left to report.
+    if (installedVersion(helper) === pin.version) return null;
     return { ...outcome, error: error.name === "TimeoutError" ? "the download timed out" : error.message };
   } finally {
     removeQuietly(staging);

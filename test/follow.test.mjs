@@ -133,13 +133,13 @@ test("a failed download, check or install keeps the old helper and says why", as
   }
 });
 
-test("two servers following at once both end with the new helper in place", async () => {
+test("of two servers following at once, only the one that installed reports it", async () => {
   const helper = oldHelper();
   const bytes = release("2.2.0");
   const run = () => followPlugin({ pin: pinFor("2.2.0", bytes), ownVersion: "2.1.0", helper,
     fetchRelease: serve(bytes), install: installs("2.2.0") });
   const results = await Promise.all([run(), run()]);
-  assert.deepEqual(results.map((r) => r.error), [undefined, undefined]);
+  assert.deepEqual(results.filter(Boolean), [{ from: "2.1.0", to: "2.2.0" }]);
   assert.equal(installedVersion(helper), "2.2.0");
   assert.deepEqual(readdirSync(join(helper, "node_modules")), ["findwright"]);
 });
@@ -162,7 +162,7 @@ test("the swap waits for another run's lock, and takes over one a stopped run le
   assert.deepEqual(readdirSync(left), ["node_modules"]);
 });
 
-test("a run that loses the swap to another run installing the same release reports success", async () => {
+test("a run that fails while another run installs the same release reports nothing", async () => {
   const helper = oldHelper();
   const bytes = release("2.2.0");
   const losesRace = async () => {
@@ -171,7 +171,7 @@ test("a run that loses the swap to another run installing the same release repor
   };
   const result = await followPlugin({ pin: pinFor("2.2.0", bytes), ownVersion: "2.1.0", helper,
     fetchRelease: serve(bytes), install: losesRace });
-  assert.deepEqual(result, { from: "2.1.0", to: "2.2.0" });
+  assert.equal(result, null);
 });
 
 test("a follow whose model step failed says find needs the model fetched", () => {

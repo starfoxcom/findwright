@@ -104,7 +104,8 @@ async function printFollow(record) {
   const pin = pluginPin();
   const result = await followPlugin({ pin, ownVersion: current, helper });
   if (!result) {
-    console.log(JSON.stringify({ current, pinned: pin?.version ?? null }));
+    // Read again, since another run may have installed the pinned version meanwhile.
+    console.log(JSON.stringify({ current: installedVersion(helper), pinned: pin?.version ?? null }));
     return;
   }
   const model = result.error ? null : await modelStep(helper);

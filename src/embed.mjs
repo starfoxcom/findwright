@@ -4,10 +4,10 @@
 // pinned revision, checked against pinned SHA-256 sums, and kept in memory as
 // int8 rows with one scale each (16 MB).
 
-import { createHash, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 
 export const MODEL = {
   name: "potion-code-16M-v2",
@@ -43,37 +43,10 @@ export async function ensureModel(dir = modelsDir()) {
     if (!response.ok) throw new Error(`Downloading ${file} failed: HTTP ${response.status}`);
     const bytes = Buffer.from(await response.arrayBuffer());
     if (sha256(bytes) !== sum) throw new Error(`${file} does not match its pinned SHA-256; refusing it`);
-    writeInPlace(target, bytes);
+    writeFileSync(`${target}.part`, bytes);
+    renameSync(`${target}.part`, target);
   }
   return folder;
-}
-
-// Older than any download, so the process that wrote it has stopped.
-const PART_AGE_MS = 10 * 60 * 1000;
-
-// Writes through a part file of its own, so two downloads at once each rename a complete file, and
-// removes the part when the write or the rename fails; a stopped process's part is cleared later.
-export function writeInPlace(target, bytes) {
-  clearOldParts(dirname(target));
-  const part = `${target}.${randomUUID()}.part`;
-  try {
-    writeFileSync(part, bytes);
-    renameSync(part, target);
-  } catch (error) {
-    rmSync(part, { force: true });
-    throw error;
-  }
-}
-
-function clearOldParts(folder) {
-  for (const name of readdirSync(folder).filter((n) => n.endsWith(".part"))) {
-    const path = join(folder, name);
-    try {
-      if (Date.now() - statSync(path).mtimeMs > PART_AGE_MS) rmSync(path, { force: true });
-    } catch {
-      // A part another process just removed, or one held open, is left for the next download.
-    }
-  }
 }
 
 function halfToFloat(h) {
