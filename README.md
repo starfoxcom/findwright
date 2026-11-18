@@ -19,7 +19,7 @@ The `wrights` marketplace ([starfoxcom/wrights](https://github.com/starfoxcom/wr
 
 Then run `/findwright:setup`. It installs the helper, the part that runs on your computer, from the plugin's GitHub release after checking it against the SHA-256 the plugin pins, into `~/.findwright/helper` for your user only. It then registers FindWright for every project, offers a hook that sends searches to it in indexed repos, fits the index to the project you are in, and turns on Claude Code's auto-update for the wrights marketplace unless you turned it off before.
 
-FindWright then keeps itself current: auto-update moves the plugin, and at the next session start the search server brings the helper to the release the new plugin pins, checked against its SHA-256 the same way, and says so in one line. When that fails, the old helper keeps working and the session is told why. `/findwright:update` does the same on demand, `/findwright:doctor` checks the setup and `/findwright:remove` takes it back out.
+FindWright then keeps itself current: auto-update moves the plugin, and when a session starts with it, the search server installs the helper the new plugin pins in the background, checked against its SHA-256 the same way. The next session runs it and says so in one line. When that fails, the old helper keeps working and the next session is told why. `/findwright:update` does the same on demand, `/findwright:doctor` checks the setup and `/findwright:remove` takes it back out.
 
 [Bindwright](https://github.com/starfoxcom/bindwright) offers FindWright as its code-search tool and sets it up the same way.
 

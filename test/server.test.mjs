@@ -137,10 +137,10 @@ test("a session started after a failed counts send is told once a day", () => {
   assert.equal(instructionsAt(repo, home), undefined, "a second session the same day");
 });
 
-test("the notice of a helper that just followed its plugin reaches the session start", () => {
-  const notice = "Tell the user in one line: FindWright's helper updated itself from 2.1.0 to 2.2.0.";
-  const input = `${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} })}\n`;
-  const run = spawnSync(process.execPath, [server], { input, encoding: "utf8", timeout: 10_000,
-    env: { ...env, FINDWRIGHT_ROOT: fittedRepo({ rules: [] }), FINDWRIGHT_HELPER_NOTICE: notice } });
-  assert.ok(JSON.parse(run.stdout.trim()).result.instructions.includes(notice));
+test("a follow the last session's server ran is reported once at the next session start", () => {
+  const home = mkdtempSync(join(tmpdir(), "findwright-home-"));
+  writeFileSync(join(home, "follow.json"), JSON.stringify({ from: "2.1.0", to: "2.2.0" }));
+  const repo = fittedRepo({ rules: [] });
+  assert.match(instructionsAt(repo, home), /helper updated itself from 2\.1\.0 to 2\.2\.0/);
+  assert.equal(instructionsAt(repo, home), undefined, "the second session start says nothing more");
 });

@@ -71,7 +71,7 @@ Save it from the repo root with `node "<helper>/src/cli.mjs" counts project <kin
 
 ## 8. Updates
 
-FindWright keeps itself current. Claude Code's auto-update for the marketplace moves the plugin, and at each session start the search server brings the helper to the release the new plugin pins, checked against its SHA-256, then fetches the meaning model that helper pins. Each session is told in one line when that happened, or why it could not, in which case the old helper keeps working.
+FindWright keeps itself current. Claude Code's auto-update for the marketplace moves the plugin. When a session starts with a plugin that pins another helper, the search server installs that release in the background, checked against its SHA-256, then fetches the meaning model it pins; the next session runs the new helper and is told in one line that it happened, or why it could not, in which case the old helper keeps working.
 
 Only when this plugin came from the wrights marketplace (`<plugin>` sits under `plugins/cache/wrights/`): read `autoUpdate` from the `home status` of step 5.
 

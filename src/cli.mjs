@@ -27,7 +27,7 @@ import { ensureModel, loadModel, MODEL } from "./embed.mjs";
 import { runHome } from "./home.mjs";
 import { readFileSync } from "node:fs";
 import { tryRules } from "./trial.mjs";
-import { followPlugin, helperFolder, installedVersion, modelStep, pluginPin } from "./follow.mjs";
+import { followPlugin, helperFolder, installedVersion, modelStep, pluginPin, recordFollow } from "./follow.mjs";
 
 function parse(argv) {
   const opts = { positional: [], globs: [], ignoreCase: false, context: 0, all: false };
@@ -90,9 +90,10 @@ async function installModel() {
 }
 
 // Brings the installed helper to the release the installed plugin pins, then fetches the model the
-// new helper pins, as the server does at start. Prints `{"from", "to"}`, the same with `"error"`
-// when it failed and the old helper stayed, or `{"current", "pinned"}` when nothing was due.
-async function printFollow() {
+// new helper pins. Prints `{"from", "to"}`, the same with `"error"` when it failed and the old helper
+// stayed, or `{"current", "pinned"}` when nothing was due. With `record`, as the server runs it, the
+// result is also saved for the next session's start notice.
+async function printFollow(record) {
   const helper = helperFolder();
   const current = installedVersion(helper);
   if (!current) {
@@ -107,8 +108,10 @@ async function printFollow() {
     return;
   }
   const model = result.error ? null : await modelStep(helper);
-  console.log(JSON.stringify(model?.error ? { ...result, modelError: model.error } : result));
-  if (result.error || model?.error) process.exitCode = 1;
+  const outcome = model?.error ? { ...result, modelError: model.error } : result;
+  if (record) recordFollow(outcome);
+  console.log(JSON.stringify(outcome));
+  if (outcome.error || outcome.modelError) process.exitCode = 1;
 }
 
 // The draft rules in `file`: a list of rules, or a config whose `rules` holds them.
@@ -133,7 +136,7 @@ async function main() {
   if (command === "counts") return printCounts(rest);
   // The meaning model lives outside any repo too: setup installs it with this command.
   if (command === "model") return installModel();
-  if (command === "follow") return printFollow();
+  if (command === "follow") return printFollow(rest.includes("--record"));
   const root = gitRoot();
   if (!root) throw new Error("findwright runs inside a git repository");
   const opts = parse(rest);

@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { followNotice, followPlugin, helperFolder, installRelease, isInstalledHelper, pluginPin }
-  from "../src/follow.mjs";
+import { followNotice, followPlugin, helperFolder, installedVersion, installRelease, isInstalledHelper,
+  pluginPin, recordFollow, takeFollowResult } from "../src/follow.mjs";
 import { gzipStored } from "../tools/pack/gzip.mjs";
 import { tarArchive } from "../tools/pack/tar.mjs";
 
@@ -25,11 +25,18 @@ function pinFor(version, bytes) {
 
 const serve = (bytes) => async () => ({ ok: true, status: 200, arrayBuffer: async () => bytes });
 
-// A fake install that leaves the given version where npm would put it.
-const installs = (version) => async (helper) => {
-  mkdirSync(join(helper, "node_modules", "findwright"), { recursive: true });
-  writeFileSync(join(helper, "node_modules", "findwright", "package.json"), JSON.stringify({ version }));
-};
+// Leaves `version` where npm puts the package under `folder`, as an install does.
+function placeHelper(folder, version) {
+  mkdirSync(join(folder, "node_modules", "findwright"), { recursive: true });
+  writeFileSync(join(folder, "node_modules", "findwright", "package.json"), JSON.stringify({ version }));
+}
+const installs = (version) => async (folder) => placeHelper(folder, version);
+
+function oldHelper() {
+  const helper = temp("helper");
+  placeHelper(helper, "2.1.0");
+  return helper;
+}
 
 test("only the copy setup installs follows the plugin", () => {
   const env = { FINDWRIGHT_HOME: temp("home") };
@@ -42,42 +49,44 @@ test("only the copy setup installs follows the plugin", () => {
   for (const [name, file, expected] of rows) assert.equal(isInstalledHelper(file, env), expected, name);
 });
 
-test("the pin comes from the user-scope install, then the newest, and skips one it cannot read", () => {
+test("the pin comes from the user-scope install, then the newest, and skips what it cannot read", () => {
   const config = temp("config");
+  const bytes = release("9.0.0");
   const folder = (name, pin) => {
     const path = join(config, "cache", name);
     mkdirSync(path, { recursive: true });
     if (pin) writeFileSync(join(path, "helper.json"), JSON.stringify(pin));
     return path;
   };
-  const bytes = release("9.0.0");
-  const writeInstalls = (list) => {
+  const env = { CLAUDE_CONFIG_DIR: config };
+  const pinWith = (list) => {
     mkdirSync(join(config, "plugins"), { recursive: true });
     writeFileSync(join(config, "plugins", "installed_plugins.json"), JSON.stringify({ version: 2,
       plugins: { "findwright@wrights": list, "bindwright@wrights": [{ scope: "user", installPath: folder("bw") }] } }));
+    return pluginPin(env)?.version ?? null;
   };
-  const env = { CLAUDE_CONFIG_DIR: config };
   assert.equal(pluginPin(env), null, "no list of installed plugins");
-
-  writeInstalls([
-    { scope: "project", installPath: folder("project", pinFor("8.0.0", bytes)), lastUpdated: "2026-11-18T00:00:00Z" },
-    { scope: "user", installPath: folder("old", pinFor("7.0.0", bytes)), lastUpdated: "2026-11-01T00:00:00Z" },
-    { scope: "user", installPath: folder("new", pinFor("9.0.0", bytes)), lastUpdated: "2026-11-17T00:00:00Z" },
-  ]);
-  assert.equal(pluginPin(env).version, "9.0.0");
-
-  const badUrl = { ...pinFor("9.1.0", bytes) };
-  badUrl.node = { ...badUrl.node, url: "https://example.com/findwright-9.1.0.tgz" };
-  writeInstalls([
-    { scope: "user", installPath: folder("gone"), lastUpdated: "2026-11-19T00:00:00Z" },
-    { scope: "user", installPath: folder("bad-url", badUrl), lastUpdated: "2026-11-18T00:00:00Z" },
-    { scope: "user", installPath: folder("fine", pinFor("9.0.0", bytes)), lastUpdated: "2026-11-17T00:00:00Z" },
-  ]);
-  assert.equal(pluginPin(env).version, "9.0.0", "a folder with no pin and a pin outside the releases are skipped");
+  const install = (name, pin, lastUpdated, scope = "user") => ({ scope, installPath: folder(name, pin), lastUpdated });
+  const fine = install("fine", pinFor("9.0.0", bytes), "2026-11-17");
+  const badUrl = pinFor("9.1.0", bytes);
+  badUrl.node.url = "https://example.com/findwright-9.1.0.tgz";
+  const fileList = pinFor("9.2.0", bytes);
+  fileList.node.file = ["findwright-9.2.0.tgz"];
+  const rows = [
+    ["a newer project-scope install", [install("project", pinFor("8.0.0", bytes), "2026-11-18", "project"), fine],
+      "9.0.0"],
+    ["an older user-scope install", [install("old", pinFor("7.0.0", bytes), "2026-11-01"), fine], "9.0.0"],
+    ["a folder with no pin", [install("gone", null, "2026-11-19"), fine], "9.0.0"],
+    ["a pin outside the releases", [install("bad-url", badUrl, "2026-11-19"), fine], "9.0.0"],
+    ["a file name that is not a string", [install("file-list", fileList, "2026-11-19"), fine], "9.0.0"],
+    ["an entry that is not an object", [null, fine], "9.0.0"],
+    ["a list that is not a list", null, null],
+  ];
+  for (const [name, list, expected] of rows) assert.equal(pinWith(list), expected, name);
 });
 
 test("a helper at the plugin's version, or with no plugin pin, is left alone", async () => {
-  const helper = temp("helper");
+  const helper = oldHelper();
   const fail = async () => assert.fail("nothing should be downloaded");
   assert.equal(await followPlugin({ pin: null, ownVersion: "2.1.0", helper, fetchRelease: fail }), null);
   const pin = pinFor("2.1.0", release("2.1.0"));
@@ -85,49 +94,64 @@ test("a helper at the plugin's version, or with no plugin pin, is left alone", a
 });
 
 test("a helper behind the plugin installs the pinned release and leaves no files behind", async () => {
-  const helper = temp("helper");
+  const helper = oldHelper();
   const bytes = release("2.2.0");
   const result = await followPlugin({ pin: pinFor("2.2.0", bytes), ownVersion: "2.1.0", helper,
     fetchRelease: serve(bytes), install: installs("2.2.0") });
   assert.deepEqual(result, { from: "2.1.0", to: "2.2.0" });
-  assert.deepEqual(readdirSync(helper), ["node_modules"], "the release file and the lock are gone");
+  assert.equal(installedVersion(helper), "2.2.0");
+  assert.deepEqual(readdirSync(helper), ["node_modules"], "the staging folder is gone");
+  assert.deepEqual(readdirSync(join(helper, "node_modules")), ["findwright"], "the old copy is gone");
   assert.match(followNotice(result), /updated itself from 2\.1\.0 to 2\.2\.0/);
 });
 
 test("a failed download, check or install keeps the old helper and says why", async () => {
   const bytes = release("2.2.0");
   const pin = pinFor("2.2.0", bytes);
+  const partial = async (folder) => {
+    mkdirSync(join(folder, "node_modules", "findwright"), { recursive: true });
+    throw new Error("npm install was stopped (SIGTERM) after its two-minute limit");
+  };
   const rows = [
     ["a download that does not match the pin", serve(Buffer.from("tampered")), installs("2.2.0"),
       /does not match the SHA-256/],
     ["a download the server refuses", async () => ({ ok: false, status: 404 }), installs("2.2.0"), /HTTP 404/],
-    ["an install that fails", serve(bytes), async () => { throw new Error("npm install failed: EPERM"); }, /EPERM/],
+    ["an install stopped halfway", serve(bytes), partial, /stopped \(SIGTERM\)/],
     ["an install that leaves another version", serve(bytes), installs("2.1.0"), /left version 2\.1\.0/],
   ];
   for (const [name, fetchRelease, install, why] of rows) {
-    const helper = temp("helper");
+    const helper = oldHelper();
     const result = await followPlugin({ pin, ownVersion: "2.1.0", helper, fetchRelease, install });
     assert.match(result.error, why, name);
-    assert.ok(!existsSync(join(helper, pin.node.file)) && !existsSync(join(helper, ".follow.lock")), name);
+    assert.equal(installedVersion(helper), "2.1.0", name);
+    assert.deepEqual(readdirSync(helper), ["node_modules"], name);
     assert.match(followNotice(result), /still 2\.1\.0, behind the plugin's 2\.2\.0/, name);
   }
 });
 
-test("a server that finds another one installing waits for it instead of installing twice", async () => {
-  const helper = temp("helper");
-  const lock = join(helper, ".follow.lock");
-  writeFileSync(lock, "1");
-  setTimeout(() => rmSync(lock), 300);
-  const fail = async () => assert.fail("the second server must not download");
-  const pin = pinFor("2.2.0", release("2.2.0"));
-  assert.equal(await followPlugin({ pin, ownVersion: "2.1.0", helper, fetchRelease: fail }), null);
+test("two servers following at once both end with the new helper in place", async () => {
+  const helper = oldHelper();
+  const bytes = release("2.2.0");
+  const run = () => followPlugin({ pin: pinFor("2.2.0", bytes), ownVersion: "2.1.0", helper,
+    fetchRelease: serve(bytes), install: installs("2.2.0") });
+  const results = await Promise.all([run(), run()]);
+  assert.deepEqual(results.map((r) => r.error), [undefined, undefined]);
+  assert.equal(installedVersion(helper), "2.2.0");
+  assert.deepEqual(readdirSync(join(helper, "node_modules")), ["findwright"]);
 });
 
-test("the real install puts the pinned release into the helper folder", async () => {
-  const helper = temp("helper");
-  const file = join(helper, "findwright-2.2.0.tgz");
+test("a recorded follow is reported at one session start only", () => {
+  const env = { FINDWRIGHT_HOME: temp("home") };
+  recordFollow({ from: "2.1.0", to: "2.2.0" }, env);
+  assert.deepEqual(takeFollowResult(env), { from: "2.1.0", to: "2.2.0" });
+  assert.equal(takeFollowResult(env), null);
+});
+
+test("the real install puts the pinned release into the folder", async () => {
+  const folder = temp("staging");
+  const file = join(folder, "findwright-2.2.0.tgz");
   writeFileSync(file, release("2.2.0"));
-  await installRelease(helper, file);
-  const installed = JSON.parse(readFileSync(join(helper, "node_modules", "findwright", "package.json"), "utf8"));
+  await installRelease(folder, file);
+  const installed = JSON.parse(readFileSync(join(folder, "node_modules", "findwright", "package.json"), "utf8"));
   assert.equal(installed.version, "2.2.0");
 });
