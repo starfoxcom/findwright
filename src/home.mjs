@@ -1,5 +1,5 @@
-// Registers the FindWright search hook in Claude Code's settings.json, and turns the wrights
-// marketplace's auto-update on or off there. The file is
+// Registers the FindWright search hook in Claude Code's settings.json and turns the wrights
+// marketplace's auto-update on or off there; the agent guidance lives in guidance.mjs. The file is
 // edited as JSON so every other key and hook keeps its content. A file that is not
 // valid JSON is refused, never rewritten, because rewriting it would lose the user's
 // settings.
@@ -8,6 +8,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isObject } from "./store.mjs";
+import { guidanceState, installGuidance, removeGuidance } from "./guidance.mjs";
 
 const MATCHER = "Grep|Glob|Bash|PowerShell";
 const HOOK_PATH = fileURLToPath(new URL("../hooks/findwright-first.mjs", import.meta.url));
@@ -24,6 +25,8 @@ const ACTIONS = new Map([
   ["remove-hook", removeHook],
   ["auto-update on", (file) => setAutoUpdate(file, true)],
   ["auto-update off", (file) => setAutoUpdate(file, false)],
+  ["install-guidance", (file, env) => success(installGuidance(env))],
+  ["remove-guidance", (file, env) => success(removeGuidance(env))],
 ]);
 
 export function settingsPath(env = process.env, home = homedir()) {
@@ -34,8 +37,11 @@ export function settingsPath(env = process.env, home = homedir()) {
 // Returns { ok, json }: json is printed as the one line of output, ok false means exit 1.
 export function runHome(action, env = process.env) {
   const run = ACTIONS.get(action);
-  if (!run) return failure("usage: findwright home status | install-hook | remove-hook | auto-update on|off");
-  return run(settingsPath(env));
+  if (!run) {
+    return failure("usage: findwright home status | install-hook | remove-hook | auto-update on|off"
+      + " | install-guidance | remove-guidance");
+  }
+  return run(settingsPath(env), env);
 }
 
 function success(json) {
@@ -46,7 +52,7 @@ function failure(message) {
   return { ok: false, json: { error: message } };
 }
 
-function statusOf(file) {
+function statusOf(file, env) {
   const read = readSettings(file);
   if (read.error) return failure(read.error);
   return success({
@@ -55,6 +61,7 @@ function statusOf(file) {
     others: otherScripts(read.settings),
     // null when never set, so setup can tell a user's "off" from no answer yet.
     autoUpdate: read.settings.extraKnownMarketplaces?.[MARKETPLACE]?.autoUpdate ?? null,
+    guidance: guidanceState(env),
   });
 }
 

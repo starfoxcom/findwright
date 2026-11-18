@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { runHome } from "../src/home.mjs";
+import { guidancePath, refreshGuidance } from "../src/guidance.mjs";
 
 const CLI = fileURLToPath(new URL("../src/cli.mjs", import.meta.url));
 const HOOK_PATH = fileURLToPath(new URL("../hooks/findwright-first.mjs", import.meta.url));
@@ -21,7 +22,9 @@ function fileWith(name, text) {
   if (text !== undefined) writeFileSync(file, text);
   return file;
 }
-const envFor = (file) => ({ FINDWRIGHT_SETTINGS: file });
+// The guidance file and the helper path it names stay inside the test folder too.
+const isolated = { CLAUDE_CONFIG_DIR: join(dir, "config"), FINDWRIGHT_HOME: join(dir, "findwright") };
+const envFor = (file) => ({ FINDWRIGHT_SETTINGS: file, ...isolated });
 const readText = (file) => readFileSync(file, "utf8");
 const readJson = (file) => JSON.parse(readText(file));
 
@@ -33,7 +36,7 @@ test("status on a missing settings file reports no hook and creates nothing", ()
   const file = fileWith("missing");
   assert.deepEqual(runHome("status", envFor(file)), {
     ok: true,
-    json: { settings: file, hook: false, others: [], autoUpdate: null },
+    json: { settings: file, hook: false, others: [], autoUpdate: null, guidance: "missing" },
   });
   assert.equal(existsSync(file), false);
 });
@@ -169,6 +172,7 @@ test("status lists other -first hook scripts, not ours and not other hooks", () 
     hook: false,
     others: ["findwright-first.py"],
     autoUpdate: null,
+    guidance: "missing",
   });
   runHome("install-hook", envFor(file));
   assert.deepEqual(runHome("status", envFor(file)).json, {
@@ -176,6 +180,7 @@ test("status lists other -first hook scripts, not ours and not other hooks", () 
     hook: true,
     others: ["findwright-first.py"],
     autoUpdate: null,
+    guidance: "missing",
   });
 });
 
@@ -188,11 +193,12 @@ test("an unknown home action is refused with usage", () => {
 test("the CLI prints the status as one line of JSON", () => {
   const file = fileWith("cli");
   const result = spawnSync(process.execPath, [CLI, "home", "status"], {
-    env: { ...process.env, FINDWRIGHT_SETTINGS: file },
+    env: { ...process.env, FINDWRIGHT_SETTINGS: file, ...isolated },
     encoding: "utf8",
   });
   assert.equal(result.status, 0);
-  assert.deepEqual(JSON.parse(result.stdout), { settings: file, hook: false, others: [], autoUpdate: null });
+  assert.deepEqual(JSON.parse(result.stdout),
+    { settings: file, hook: false, others: [], autoUpdate: null, guidance: "missing" });
 });
 
 test("auto-update turns on for the wrights marketplace, keeps a user's entry and other keys, and turns off", () => {
@@ -217,4 +223,24 @@ test("auto-update turns on for the wrights marketplace, keeps a user's entry and
   assert.equal(settings.theme, "dark");
   assert.deepEqual(settings.extraKnownMarketplaces.other, { source: {} });
   assert.equal(runHome("status", envFor(file)).json.autoUpdate, false, "an off reads as false, not as never set");
+});
+
+test("the guidance is written naming the installed helper, kept current, and removed", () => {
+  const env = envFor(fileWith("guidance"));
+  const file = guidancePath(env);
+  const status = () => runHome("status", env).json.guidance;
+  assert.equal(refreshGuidance(env), false, "a refresh never writes guidance setup did not");
+  assert.equal(existsSync(file), false);
+  assert.deepEqual(runHome("install-guidance", env).json, { guidance: file, written: true });
+  const helper = join(isolated.FINDWRIGHT_HOME, "helper", "node_modules", "findwright").replaceAll("\\", "/");
+  assert.ok(readText(file).includes(`node "${helper}/src/cli.mjs" hits`), "the close step names the helper");
+  assert.ok(!readText(file).includes("{{"), "no placeholder is left");
+  assert.equal(status(), "current");
+  assert.equal(runHome("install-guidance", env).json.written, false, "a second install changes nothing");
+  writeFileSync(file, "an older text");
+  assert.equal(status(), "outdated");
+  assert.equal(refreshGuidance(env), true);
+  assert.equal(status(), "current");
+  assert.deepEqual(runHome("remove-guidance", env).json, { guidance: file, removed: true });
+  assert.equal(status(), "missing");
 });

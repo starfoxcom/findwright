@@ -17,7 +17,7 @@ FindWright is a Claude Code plugin of its own; it needs nothing else. In a Claud
 
 The `wrights` marketplace ([starfoxcom/wrights](https://github.com/starfoxcom/wrights)) lists FindWright and Bindwright, each pinned to its own release.
 
-Then run `/findwright:setup`. It installs the helper, the part that runs on your computer, from the plugin's GitHub release after checking it against the SHA-256 the plugin pins, into `~/.findwright/helper` for your user only. It then registers FindWright for every project, offers a hook that sends searches to it in indexed repos, fits the index to the project you are in, and turns on Claude Code's auto-update for the wrights marketplace unless you turned it off before.
+Then run `/findwright:setup`. It installs the helper, the part that runs on your computer, from the plugin's GitHub release after checking it against the SHA-256 the plugin pins, into `~/.findwright/helper` for your user only. It then registers FindWright for every project, writes its guidance for the agent (which tool to use when, when a fallback to Grep is allowed, and the hit rate to report when a session closes) into `~/.claude/rules/findwright.md`, a file of its own, offers a hook that sends searches to it in indexed repos, fits the index to the project you are in, and turns on Claude Code's auto-update for the wrights marketplace unless you turned it off before.
 
 FindWright then keeps itself current: auto-update moves the plugin, and when a session starts with it, the search server installs the helper the new plugin pins in the background, checked against its SHA-256 the same way. The next session runs it and says so in one line. When that fails, the old helper keeps working and the next session is told why. `/findwright:update` does the same on demand, `/findwright:doctor` checks the setup and `/findwright:remove` takes it back out.
 
@@ -39,6 +39,7 @@ findwright try <rules.json>                # what draft rules would name, withou
 findwright counts status|share on|share off|project <kind>|send   # the opt-in usage counts
 findwright follow                          # bring the helper to the release the plugin pins
 findwright home auto-update on|off         # Claude Code's auto-update for the wrights marketplace
+findwright home install-guidance|remove-guidance   # the agent guidance in Claude Code's rules
 ```
 
 A glob starting with `!` leaves out the files it matches, as in ripgrep: `--glob '*.md' --glob '!CHANGELOG.md'` searches every Markdown file but the changelog, and `!` globs alone search every other file.
