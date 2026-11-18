@@ -3,15 +3,15 @@
 // edits text someone else wrote, and removing it is deleting it.
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { helperFolder } from "./follow.mjs";
+import { claudeConfigDir } from "./paths.mjs";
 
 const TEMPLATE = new URL("./agent-guidance.md", import.meta.url);
 
 /** Where the guidance lives: `<CLAUDE_CONFIG_DIR or ~/.claude>/rules/findwright.md`. */
-export function guidancePath(env = process.env, home = homedir()) {
-  return join(env.CLAUDE_CONFIG_DIR || join(home, ".claude"), "rules", "findwright.md");
+export function guidancePath(env = process.env) {
+  return join(claudeConfigDir(env), "rules", "findwright.md");
 }
 
 // The commands in it name the installed helper, the copy setup keeps current, wherever this one runs.

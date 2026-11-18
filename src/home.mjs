@@ -4,11 +4,11 @@
 // valid JSON is refused, never rewritten, because rewriting it would lose the user's
 // settings.
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isObject } from "./store.mjs";
 import { guidanceState, installGuidance, removeGuidance } from "./guidance.mjs";
+import { absoluteOr, claudeConfigDir } from "./paths.mjs";
 
 const MATCHER = "Grep|Glob|Bash|PowerShell";
 const HOOK_PATH = fileURLToPath(new URL("../hooks/findwright-first.mjs", import.meta.url));
@@ -29,9 +29,8 @@ const ACTIONS = new Map([
   ["remove-guidance", (file, env) => success(removeGuidance(env))],
 ]);
 
-export function settingsPath(env = process.env, home = homedir()) {
-  if (env.FINDWRIGHT_SETTINGS) return env.FINDWRIGHT_SETTINGS;
-  return join(env.CLAUDE_CONFIG_DIR || join(home, ".claude"), "settings.json");
+export function settingsPath(env = process.env) {
+  return absoluteOr(env.FINDWRIGHT_SETTINGS, join(claudeConfigDir(env), "settings.json"));
 }
 
 // Returns { ok, json }: json is printed as the one line of output, ok false means exit 1.

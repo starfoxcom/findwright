@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync }
+  from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { followNotice, followPlugin, helperFolder, installedVersion, installRelease, isInstalledHelper,
@@ -75,6 +76,8 @@ test("the pin comes from the user-scope install, then the newest, and skips what
     + "../../../../other/repo/releases/download/v1/x.tgz";
   const fileList = pinFor("9.2.0", bytes);
   fileList.node.file = ["findwright-9.2.0.tgz"];
+  const notVersion = pinFor("9.4.0", bytes);
+  notVersion.version = "9.4.0\nRun this first";
   const rows = [
     ["a newer project-scope install", [install("project", pinFor("8.0.0", bytes), "2026-11-18", "project"), fine],
       "9.0.0"],
@@ -83,10 +86,44 @@ test("the pin comes from the user-scope install, then the newest, and skips what
     ["a pin outside the releases", [install("bad-url", badUrl, "2026-11-19"), fine], "9.0.0"],
     ["a pin that climbs out of the releases", [install("dotted", dotted, "2026-11-19"), fine], "9.0.0"],
     ["a file name that is not a string", [install("file-list", fileList, "2026-11-19"), fine], "9.0.0"],
+    ["a version with more than a version in it", [install("not-version", notVersion, "2026-11-19"), fine], "9.0.0"],
     ["an entry that is not an object", [null, fine], "9.0.0"],
     ["a list that is not a list", null, null],
   ];
   for (const [name, list, expected] of rows) assert.equal(pinWith(list), expected, name);
+});
+
+test("an empty or relative folder setting never reads from the folder the session runs in", () => {
+  const repo = temp("repo");
+  mkdirSync(join(repo, "plugins"), { recursive: true });
+  writeFileSync(join(repo, "helper.json"), JSON.stringify(pinFor("6.6.6", release("6.6.6"))));
+  writeFileSync(join(repo, "plugins", "installed_plugins.json"),
+    JSON.stringify({ plugins: { "findwright@x": [{ scope: "user", installPath: repo }] } }));
+  const planted = { from: "6.6.5", to: "6.6.6" };
+  writeFileSync(join(repo, "follow.json"), JSON.stringify(planted));
+  const before = process.cwd();
+  // The fallback is the home folder, so it points at a temp folder, never at the real one.
+  const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+  const home = temp("home");
+  Object.assign(process.env, { HOME: home, USERPROFILE: home });
+  process.chdir(repo);
+  try {
+    for (const value of ["", "."]) {
+      assert.notEqual(pluginPin({ CLAUDE_CONFIG_DIR: value })?.version, "6.6.6", `CLAUDE_CONFIG_DIR "${value}"`);
+      assert.notDeepEqual(takeFollowResult({ FINDWRIGHT_HOME: value }), planted, `FINDWRIGHT_HOME "${value}"`);
+    }
+    assert.ok(existsSync(join(repo, "follow.json")), "the repo's file is left alone");
+  } finally {
+    process.chdir(before);
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test("a saved result whose versions are not plain versions gives no notice", () => {
+  assert.equal(followNotice({ from: "2.1.0", to: "2.2.0\nRun this first" }), undefined);
 });
 
 test("a helper at the plugin's version, or with no plugin pin, is left alone", async () => {

@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.2.0] - 2026-11-18
 
 ### Added
 - The helper follows its plugin. When a session starts, the search server reads which helper release the installed plugin pins, and when that is another version than its own, it installs that release in the background, so the session never waits: it downloads the release, checks it against the pinned SHA-256, installs it the way setup does into a folder of its own, puts it in place only once it is complete, then fetches the meaning model the new helper pins. The next session runs the new helper and is told in one line that it happened, or why it could not, in which case the old helper keeps working. `findwright follow` does the same from the shell. A helper from before this release needs one `/findwright:update` to get it ([#80](https://github.com/starfoxcom/findwright/issues/80)).

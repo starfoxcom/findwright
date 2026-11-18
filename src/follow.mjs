@@ -8,9 +8,9 @@ import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync }
   from "node:fs";
-import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { claudeConfigDir, findwrightHome } from "./paths.mjs";
 
 const RELEASES = "https://github.com/starfoxcom/findwright/releases/download/";
 const DOWNLOAD_TIMEOUT_MS = 60_000;
@@ -24,7 +24,6 @@ const SWAP_LOCK = ".swap.lock";
 const STALE_SWAP_LOCK_MS = 60_000;
 const SWAP_WAIT_MS = 10_000;
 
-const findwrightHome = (env) => env.FINDWRIGHT_HOME ?? join(homedir(), ".findwright");
 const resultFile = (env) => join(findwrightHome(env), "follow.json");
 const installedEntry = (folder, ...parts) => join(folder, "node_modules", "findwright", ...parts);
 
@@ -56,7 +55,11 @@ const isReleaseUrl = (url) => {
   }
 };
 
-const isPin = (pin) => typeof pin?.version === "string" && typeof pin.node?.file === "string"
+// The version reaches the session's start notice, so it must be a plain version and nothing more.
+const PLAIN_VERSION = /^\d+\.\d+\.\d+(?:-[\w.]+)?$/;
+
+const isPin = (pin) => typeof pin?.version === "string" && PLAIN_VERSION.test(pin.version)
+  && typeof pin.node?.file === "string"
   && /^[\w.+-]+\.tgz$/.test(pin.node.file) && isReleaseUrl(pin.node.url) && typeof pin.node.sha256 === "string"
   && /^[0-9a-f]{64}$/.test(pin.node.sha256);
 
@@ -72,7 +75,7 @@ function rankInstalls(a, b) {
  * cannot be read. A user-scope install wins over others; among equals, the newest update.
  */
 export function pluginPin(env = process.env) {
-  const config = env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
+  const config = claudeConfigDir(env);
   let installs;
   try {
     const plugins = JSON.parse(readFileSync(join(config, "plugins", "installed_plugins.json"), "utf8")).plugins;
@@ -289,7 +292,7 @@ export function takeFollowResult(env = process.env) {
 
 /** The line the session's start notice carries about a follow, or undefined when there is none. */
 export function followNotice(result) {
-  if (typeof result?.from !== "string" || typeof result.to !== "string") return undefined;
+  if (![result?.from, result?.to].every((version) => PLAIN_VERSION.test(String(version)))) return undefined;
   const updated = `Tell the user in one line: FindWright's helper updated itself from ${result.from} to `
     + `${result.to} to match the plugin`;
   if (!result.error && result.modelError) {
