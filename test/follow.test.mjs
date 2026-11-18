@@ -92,6 +92,21 @@ test("the pin comes from the user-scope install, then the newest, and skips what
   for (const [name, list, expected] of rows) assert.equal(pinWith(list), expected, name);
 });
 
+test("an empty config folder setting never reads a pin from the folder the session runs in", () => {
+  const repo = temp("repo");
+  mkdirSync(join(repo, "plugins"), { recursive: true });
+  writeFileSync(join(repo, "helper.json"), JSON.stringify(pinFor("6.6.6", release("6.6.6"))));
+  writeFileSync(join(repo, "plugins", "installed_plugins.json"),
+    JSON.stringify({ plugins: { "findwright@x": [{ scope: "user", installPath: repo }] } }));
+  const before = process.cwd();
+  process.chdir(repo);
+  try {
+    assert.notEqual(pluginPin({ CLAUDE_CONFIG_DIR: "" })?.version, "6.6.6");
+  } finally {
+    process.chdir(before);
+  }
+});
+
 test("a helper at the plugin's version, or with no plugin pin, is left alone", async () => {
   const helper = oldHelper();
   const fail = async () => assert.fail("nothing should be downloaded");

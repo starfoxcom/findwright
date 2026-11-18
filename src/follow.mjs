@@ -57,7 +57,10 @@ const isReleaseUrl = (url) => {
 };
 
 // The version reaches the session's start notice, so it must be a plain version and nothing more.
-const isPin = (pin) => /^\d+\.\d+\.\d+(?:-[\w.]+)?$/.test(pin?.version) && typeof pin.node?.file === "string"
+const PLAIN_VERSION = /^\d+\.\d+\.\d+(?:-[\w.]+)?$/;
+
+const isPin = (pin) => typeof pin?.version === "string" && PLAIN_VERSION.test(pin.version)
+  && typeof pin.node?.file === "string"
   && /^[\w.+-]+\.tgz$/.test(pin.node.file) && isReleaseUrl(pin.node.url) && typeof pin.node.sha256 === "string"
   && /^[0-9a-f]{64}$/.test(pin.node.sha256);
 
@@ -73,7 +76,8 @@ function rankInstalls(a, b) {
  * cannot be read. A user-scope install wins over others; among equals, the newest update.
  */
 export function pluginPin(env = process.env) {
-  const config = env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude");
+  // An empty value falls back to the home folder too, never to a path relative to the session's repo.
+  const config = env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
   let installs;
   try {
     const plugins = JSON.parse(readFileSync(join(config, "plugins", "installed_plugins.json"), "utf8")).plugins;
