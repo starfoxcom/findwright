@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- `findwright hits`, the saving estimate and the usage counts read session transcripts from Claude Code's config folder, so they find the sessions on a computer that sets `CLAUDE_CONFIG_DIR`. They always looked in `~/.claude/projects` ([#86](https://github.com/starfoxcom/findwright/issues/86)).
+
 ## [2.2.0] - 2026-11-18
 
 ### Added
