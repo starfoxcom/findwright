@@ -102,6 +102,10 @@ test("an empty or relative folder setting never reads from the folder the sessio
   const planted = { from: "6.6.5", to: "6.6.6" };
   writeFileSync(join(repo, "follow.json"), JSON.stringify(planted));
   const before = process.cwd();
+  // The fallback is the home folder, so it points at a temp folder, never at the real one.
+  const saved = { HOME: process.env.HOME, USERPROFILE: process.env.USERPROFILE };
+  const home = temp("home");
+  Object.assign(process.env, { HOME: home, USERPROFILE: home });
   process.chdir(repo);
   try {
     for (const value of ["", "."]) {
@@ -111,6 +115,10 @@ test("an empty or relative folder setting never reads from the folder the sessio
     assert.ok(existsSync(join(repo, "follow.json")), "the repo's file is left alone");
   } finally {
     process.chdir(before);
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
 });
 
