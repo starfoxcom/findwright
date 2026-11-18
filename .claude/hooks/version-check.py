@@ -11,7 +11,8 @@ last release with `.github/scripts/version_check.py`:
 
 The numbering comes from `advanced.versioning` in `.bindwright/project.json`:
 `semver`, or `calver` with its `versionFormat`. With `none`, no saved answers
-or no check script, every command runs. A tag that is not shaped like a version
+or no check script, every command runs, as it does in a GitHub Actions run, whose
+checkout may be a pull request's. A tag that is not shaped like a version
 of the scheme (`git tag backup`) is not a release, so it runs too.
 
 A command whose text names a tag, a release or a PR is read the way the shell
@@ -428,6 +429,10 @@ def first_refusal(commands, project, scheme, fmt):
 
 
 def main():
+    # In GitHub Actions the checkout may be a pull request's, whose check script is untrusted,
+    # and no release is made through the assistant there.
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        return 0
     try:
         data = json.loads(sys.stdin.buffer.read().decode("utf-8", "replace"))
     except ValueError:
