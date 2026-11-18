@@ -25,13 +25,9 @@ Update `README.md` or `CLAUDE.md` when this session changed what they describe, 
 
 Then check the living docs are still current: for each behaviour, name, path, command or number the session's diff changed, search `README.md`, `CLAUDE.md`, `docs/` and `.claude/rules/` for the old wording, and fix every claim that no longer holds. Dated records (released changelog entries, dated notes) stay as written. `docs/docs-audit.md` covers a full sweep.
 
-## Code-research count
+## The code-search tool's own close step
 
-Run `python3 .claude/scripts/research-adherence.py` from the repo root (`python` on Windows). It reads the transcript and compares calls to FindWright with plain code searches that carry no bypass marker: Grep and Glob calls, and shell commands that start with a recursive search. Searches of docs, logs and data, and filters on another command's output, do not count. Report its line. Below 70% means the next session starts by finding out why.
-
-## FindWright hit rate
-
-When `$HOME/.findwright/helper/node_modules/findwright/src/cli.mjs` exists and `node --version` shows 22.16 or later on the 22 line, or 24 or later, run `node "$HOME/.findwright/helper/node_modules/findwright/src/cli.mjs" hits` from the repo root; otherwise say the hit rate is not recorded on this computer, and why, and go on. It scores this session's FindWright searches (a hit when the file the session opened next was in the answer), records the figure in `.findwright/hits.jsonl` and prints `{rate, scored, goal, assess}`. Report the rate against the goal (90% unless `.findwright/config.json` sets `goal`). When it also prints `saved`, add one line from it: with `saved.main` set, "and you saved an estimated $<main> in the main session and $<helpers> in helper sessions", said as an estimate that counts only the extra turns a missed search costs, so it errs low; with `saved.main` null, say the saving is not measurable yet and give `saved.why`. Name each model in `saved.unpriced` as left out of the estimate. When `assess` is true, the last three sessions all fell short: run the same command with `assess`, explain each cause and suggested change in plain words, and apply a change to `.findwright/config.json` only on the user's yes.
+When the guidance FindWright installed for the agent names a step for the end of a session, such as a report on how its searches did, run it here.
 
 ## Pruning pass
 
