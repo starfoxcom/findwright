@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync }
+  from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { followNotice, followPlugin, helperFolder, installedVersion, installRelease, isInstalledHelper,
@@ -92,19 +93,29 @@ test("the pin comes from the user-scope install, then the newest, and skips what
   for (const [name, list, expected] of rows) assert.equal(pinWith(list), expected, name);
 });
 
-test("an empty config folder setting never reads a pin from the folder the session runs in", () => {
+test("an empty or relative folder setting never reads from the folder the session runs in", () => {
   const repo = temp("repo");
   mkdirSync(join(repo, "plugins"), { recursive: true });
   writeFileSync(join(repo, "helper.json"), JSON.stringify(pinFor("6.6.6", release("6.6.6"))));
   writeFileSync(join(repo, "plugins", "installed_plugins.json"),
     JSON.stringify({ plugins: { "findwright@x": [{ scope: "user", installPath: repo }] } }));
+  const planted = { from: "6.6.5", to: "6.6.6" };
+  writeFileSync(join(repo, "follow.json"), JSON.stringify(planted));
   const before = process.cwd();
   process.chdir(repo);
   try {
-    assert.notEqual(pluginPin({ CLAUDE_CONFIG_DIR: "" })?.version, "6.6.6");
+    for (const value of ["", "."]) {
+      assert.notEqual(pluginPin({ CLAUDE_CONFIG_DIR: value })?.version, "6.6.6", `CLAUDE_CONFIG_DIR "${value}"`);
+      assert.notDeepEqual(takeFollowResult({ FINDWRIGHT_HOME: value }), planted, `FINDWRIGHT_HOME "${value}"`);
+    }
+    assert.ok(existsSync(join(repo, "follow.json")), "the repo's file is left alone");
   } finally {
     process.chdir(before);
   }
+});
+
+test("a saved result whose versions are not plain versions gives no notice", () => {
+  assert.equal(followNotice({ from: "2.1.0", to: "2.2.0\nRun this first" }), undefined);
 });
 
 test("a helper at the plugin's version, or with no plugin pin, is left alone", async () => {
