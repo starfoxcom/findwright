@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.1] - 2026-11-18
+
+### Fixed
+- Setup always shows its own plan: a hand-over from Bindwright's setup can no longer skip it. On a first run Bindwright's plan cannot see what FindWright will need, so its yes could have covered items nobody listed. Bindwright's setup now runs FindWright's setup, which shows its own plan and asks once ([#100](https://github.com/starfoxcom/findwright/issues/100)).
+
 ## [2.3.0] - 2026-11-18
 
 ### Added
