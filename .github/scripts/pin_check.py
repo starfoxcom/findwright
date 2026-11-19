@@ -16,7 +16,10 @@ Pins it reads:
   the version it names in the comment after it.
 
 It also lists every action a workflow uses by a tag or branch instead of a
-commit (`uses: actions/checkout@v6`): a tag can be moved to other code.
+commit (`uses: actions/checkout@v6`): a tag can be moved to other code. And
+it lists a Bun a workflow brings by hand (`BUN_VERSION: "1.4.4"`) that is not
+the `bun-version` the review action pinned in the same file names in its
+`action.yml`, which it reads on GitHub.
 
 The deep review runs it on a PR's diff to look up, on GitHub, each action pin
 the PR adds, since the reviewer's own tools cannot reach other repos:
@@ -28,6 +31,7 @@ names points to its commit and not verified otherwise, or nothing when the
 diff adds no pin.
 """
 
+import base64
 import json
 import re
 import subprocess
@@ -35,6 +39,9 @@ import sys
 import time
 
 CLI = re.compile(r'^\s*(?:CLI_VERSION|PINNED_VERSION):\s*"?(\d+(?:\.\d+)*)"?\s*(?:#.*)?$')
+BUN = re.compile(r'^\s*BUN_VERSION:\s*"?(\d+(?:\.\d+)*)"?\s*(?:#.*)?$')
+ACTION_BUN = re.compile(r"""^\s*bun-version:\s*['"]?(\d+(?:\.\d+)*)['"]?\s*(?:#.*)?$""", re.MULTILINE)
+ACTION_REPO = "anthropics/claude-code-action"
 ACTION = re.compile(r"^\s*(?:-\s+)?uses:\s*anthropics/claude-code-action@([0-9a-f]{40})\b(?:\s*#\s*(.*))?$")
 DOCKER = re.compile(r"^\s*(?:-\s+)?uses:\s*['\"]?docker://([^\s'\"#]+)")
 USES = re.compile(r"^\s*(?:-\s+)?uses:\s*['\"]?([\w.-]+/[\w./-]+)@([^\s'\"#]+)")
@@ -194,6 +201,52 @@ def behind(found, cli, action_sha):
     return [(kind, label, places) for (kind, _), (label, places) in groups.items()]
 
 
+def bun_pins(name, text):
+    """[(version, "file:line")] for every Bun a workflow brings by hand."""
+    return [(m.group(1), "%s:%d" % (name, n))
+            for n, line in enumerate(text.splitlines(), 1) for m in [BUN.match(line)] if m]
+
+
+def action_bun(sha, fetch):
+    """The `bun-version` the review action's `action.yml` names at a commit, or None."""
+    reply = fetch("repos/%s/contents/action.yml?ref=%s" % (ACTION_REPO, sha))
+    content = reply.get("content") if isinstance(reply, dict) else None
+    if not isinstance(content, str):
+        return None
+    try:
+        text = base64.b64decode(content).decode("utf-8")
+    except ValueError:
+        return None
+    m = ACTION_BUN.search(text)
+    return m.group(1) if m else None
+
+
+def bun_mismatches(files, fetch):
+    """A Markdown line per hand-pinned Bun that differs from the `bun-version` of the
+    review action pinned in the same file. Each action commit is looked up once."""
+    lines, cache = [], {}
+    for name, text in files:
+        buns = bun_pins(name, text)
+        if not buns:
+            continue
+        actions = dict.fromkeys((value, label) for kind, value, label, _ in pins(name, text) if kind == "action")
+        for sha, label in actions:
+            if sha not in cache:
+                try:
+                    cache[sha] = action_bun(sha, fetch)
+                except LookupError:
+                    cache[sha] = LookupError
+            wanted = cache[sha]
+            for version, place in buns:
+                if wanted is LookupError or wanted is None:
+                    lines.append("- Bun `%s` at `%s`: could not read the `bun-version` of action `%s`\n"
+                                 % (version, place, label))
+                elif version != wanted:
+                    lines.append("- Bun `%s` at `%s` is not the `bun-version` %s that action `%s` names\n"
+                                 % (version, place, wanted, label))
+    return "".join(lines)
+
+
 def report(stale, cli, action_version):
     newest = {"cli": "CLI " + cli, "action": "action " + action_version}
     what = {"cli": "CLI", "action": "Review action"}
@@ -222,10 +275,11 @@ def main(argv):
         version = _option(args, "--action-version")
         if not VERSION.fullmatch(cli) or not SHA.fullmatch(sha) or not args:
             raise ValueError("usage: pin_check.py --cli X.Y.Z --action-sha SHA --action-version V FILE...")
-        found, unpinned = [], []
+        found, unpinned, files = [], [], []
         for name in args:
             with open(name, encoding="utf-8") as fh:
                 text = fh.read()
+            files.append((name, text))
             found += pins(name, text)
             unpinned += floating(name, text)
     except (ValueError, OSError) as e:
@@ -233,6 +287,7 @@ def main(argv):
         return 1
     sys.stdout.write(report(behind(found, cli, sha), cli, version))
     sys.stdout.write("".join("- Action %s is not pinned to a commit\n" % u for u in unpinned))
+    sys.stdout.write(bun_mismatches(files, gh_fetch))
     return 0
 
 
