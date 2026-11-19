@@ -19,8 +19,6 @@ Change nothing in this step; it only reads.
 - With a helper installed, **the rest of the computer:** `node "<helper>/src/cli.mjs" home status` prints `{"hook": true|false, "others": [...], "autoUpdate": ..., "guidance": ...}`, where `others` names other code-search hooks registered in the user's settings, such as Bindwright's `findwright-first.py`. Without a helper, it cannot be read yet: the plan lists the hook and auto-update as conditional, and steps 7 and 10 read it once the helper is in.
 - Inside a git repo (`git rev-parse --show-toplevel`), **the project:** whether `.findwright/config.json` has a `rules` list.
 
-**When Bindwright's setup hands over.** When this skill is followed as a hand-over from Bindwright's setup, that setup's plan already listed FindWright's part and got the user's yes: skip step 2, and apply every step below that step 1 found due, the search hook included: step 7 leaves it out when another code-search hook is registered.
-
 ## 2. The plan
 
 When everything is in place, say so in one line, with the helper's version, and go on to step 9.
@@ -80,7 +78,7 @@ Then write the guidance: run `node "<helper>/src/cli.mjs" home install-guidance`
 
 ## 7. The search hook
 
-Only when the plan held the hook and the answer was "Yes", or on a hand-over from Bindwright's setup. Read `node "<helper>/src/cli.mjs" home status` again now that the helper is in, since on a first install step 1 had no helper to read it with. When `others` names another code-search hook, say which, and that a second hook would answer every search twice, so it stays out. Otherwise, when `hook` is false, run `node "<helper>/src/cli.mjs" home install-hook`. It backs up the settings file to `settings.json.bak` before the change and refuses a settings file that is not valid JSON; on `{"error": ...}`, show the message and say the hook is off until the settings file is fixed and setup runs again, then go on, since FindWright itself works without it.
+Only when the plan held the hook and the answer was "Yes". Read `node "<helper>/src/cli.mjs" home status` again now that the helper is in, since on a first install step 1 had no helper to read it with. When `others` names another code-search hook, say which, and that a second hook would answer every search twice, so it stays out. Otherwise, when `hook` is false, run `node "<helper>/src/cli.mjs" home install-hook`. It backs up the settings file to `settings.json.bak` before the change and refuses a settings file that is not valid JSON; on `{"error": ...}`, show the message and say the hook is off until the settings file is fixed and setup runs again, then go on, since FindWright itself works without it.
 
 ## 8. Fit the index to this project
 
