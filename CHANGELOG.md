@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-11-18
+
+### Added
+- Setup shows one plan before it changes anything. It first checks what is in place, then lists everything it will install or change on the computer (Node's newest patch, the helper, the meaning model, the registration, the agent guidance, the search hook, auto-update) and in the project (the rules that name its code and the index), and applies it on one "Set all of this up?". A no changes nothing. The search hook can be left out of the same answer. When Bindwright's setup hands over, its own plan already listed FindWright's part and got the yes, so FindWright's plan is skipped ([#100](https://github.com/starfoxcom/findwright/issues/100)).
+- `findwright follow --plugin <folder>` installs the helper release that plugin folder pins, instead of the one Claude Code's plugin list names ([#100](https://github.com/starfoxcom/findwright/issues/100)).
+
+### Fixed
+- Two sessions running setup at once no longer share the helper's download path, where one could delete the other's checked file or install a half-written one. With a helper installed, setup updates it through `findwright follow --plugin`, which stages each run in a folder of its own and swaps the new copy in under the lock the background update takes. A first install downloads into a folder of its own run ([#100](https://github.com/starfoxcom/findwright/issues/100)).
+- `/findwright:doctor` names a command for every fix, where it pointed at steps of the setup skill, and the install steps on the page and in the README name the reload a new plugin needs before setup ([#100](https://github.com/starfoxcom/findwright/issues/100)).
+
 ## [2.2.1] - 2026-11-18
 
 ### Fixed
