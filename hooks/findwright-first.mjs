@@ -14,6 +14,8 @@ const SEARCH_TOOLS = ["grep", "rg", "ag", "ack", "ripgrep", "findstr"];
 const SEARCH_PHRASES = ["git grep"];
 // Commands whose output is a file's text, so a grep piped after them searches that file.
 const FILE_READERS = ["cat", "type", "get-content", "gc", "head", "tail", "less", "more"];
+// Flags that make a search walk folders instead of reading its input.
+const RECURSIVE_FLAGS = { grep: /^-[a-z]*r|^--(dereference-)?recursive$|^-d$/i, findstr: /^\/s$/i };
 const BLOCK_EXIT_CODE = 2;
 
 function findIndexFolder(start) {
@@ -61,11 +63,25 @@ function firstWord(chunk) {
   return (chunk ?? "").trimStart().split(/\s/, 1)[0].toLowerCase();
 }
 
+// A search reads files, not its input, when it walks folders or names a file after its
+// pattern. Quoted text, including a quote a `|` inside it cut short, and redirections are
+// not file names.
+function readsFiles(chunk) {
+  const plain = chunk.replace(/"[^"]*("|$)|'[^']*('|$)/g, "''").replace(/\s\d?>>?\s*\S+/g, "");
+  const [tool, ...args] = plain.trim().split(/\s+/);
+  const name = tool.toLowerCase();
+  if (args.some((arg) => RECURSIVE_FLAGS[name]?.test(arg))) return true;
+  const isOption = (arg) => arg.startsWith("-") || (name === "findstr" && arg.startsWith("/"));
+  return args.filter((arg) => !isOption(arg)).length > 1;
+}
+
 // A grep after a plain pipe reads the previous command's output, such as test results
-// or a file list, unless that command printed a file. git grep ignores its input.
+// or a file list, unless that command printed a file or the grep reads files itself.
+// git grep ignores its input.
 function isOutputFilter(chunk, splitter, upstream) {
   if (splitter !== "|") return false;
   if (SEARCH_PHRASES.some((phrase) => chunk.startsWith(phrase))) return false;
+  if (readsFiles(chunk)) return false;
   return !FILE_READERS.includes(firstWord(upstream));
 }
 
