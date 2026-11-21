@@ -13,14 +13,18 @@ const COMMAND_SPLITTERS = /(\|\||&&|\||;|\n|\$\(|`|xargs |-exec )/;
 const SEARCH_TOOLS = ["grep", "rg", "ag", "ack", "ripgrep", "findstr"];
 const SEARCH_PHRASES = ["git grep"];
 // Commands whose output is never a file's text (test runs, file lists, logs), so a search
-// piped after them filters that output. Any other command may print a file.
-const OUTPUT_SOURCES = [
-  "ls", "dir", "get-childitem", "gci", "find", "echo", "gh", "npm", "npx", "pnpm", "yarn",
-  "node", "pytest", "cargo", "go", "dotnet", "make", "docker", "ps", "get-process",
-];
-const GIT_OUTPUT = ["status", "log", "ls-files", "branch", "remote", "tag", "stash", "worktree"];
-// Stages that only reshape the output fed to them.
-const RESHAPERS = ["sort", "uniq", "head", "tail", "cut", "tr", "wc", "sed", "awk", ...SEARCH_TOOLS];
+// piped after them filters that output: `true` for any use, or the second words that keep it so.
+// Any other command may print a file (find through -exec, node -p, gh api, a make target).
+const OUTPUT_SOURCES = {
+  ls: true, dir: true, "get-childitem": true, gci: true, echo: true, ps: true, pytest: true,
+  node: ["--test"], npm: ["test", "ls", "outdated"], gh: ["run", "pr", "issue", "release", "workflow"],
+  git: ["status", "log", "ls-files", "branch", "remote", "tag", "worktree"],
+  cargo: ["test"], go: ["test"], dotnet: ["test"],
+};
+// Stages that reshape the output fed to them: these take options and counts only, so any other
+// word is a file they read instead; the pattern tools take one pattern or script.
+const RESHAPERS = ["sort", "uniq", "head", "tail", "cut", "wc"];
+const PATTERN_TOOLS = ["sed", "awk", ...SEARCH_TOOLS];
 // Flags that make a search walk folders instead of reading its input.
 const RECURSIVE_FLAGS = { grep: /^-[a-z]*r|^--(dereference-)?recursive$|^-d$/i, findstr: /^\/s$/i };
 const BLOCK_EXIT_CODE = 2;
@@ -66,20 +70,28 @@ function startsWithSearchTool(token) {
   return isTool || isPhrase;
 }
 
-function firstWord(chunk) {
-  return (chunk ?? "").trimStart().split(/\s/, 1)[0].toLowerCase();
-}
-
 // A search reads files, not its input, when it walks folders or names a file after its
 // pattern. Quoted text, including a quote a `|` inside it cut short, and redirections are
 // not file names.
 function readsFiles(chunk) {
-  const plain = chunk.replace(/"[^"]*("|$)|'[^']*('|$)/g, "''").replace(/\s\d?>>?\s*\S+/g, "");
+  const { name, args, operands } = parseStage(chunk);
+  if (args.some((arg) => RECURSIVE_FLAGS[name]?.test(arg))) return true;
+  return operands.length > 1;
+}
+
+// A stage's command name, its words, and the words that are not options.
+function parseStage(stage) {
+  const plain = stage.replace(/"[^"]*("|$)|'[^']*('|$)/g, "''").replace(/\s\d?>>?\s*\S+/g, "");
   const [tool, ...args] = plain.trim().split(/\s+/);
   const name = tool.toLowerCase();
-  if (args.some((arg) => RECURSIVE_FLAGS[name]?.test(arg))) return true;
   const isOption = (arg) => arg.startsWith("-") || (name === "findstr" && arg.startsWith("/"));
-  return args.filter((arg) => !isOption(arg)).length > 1;
+  return { name, args, operands: args.filter((arg) => !isOption(arg)) };
+}
+
+function isReshaper(stage) {
+  const { name, operands } = parseStage(stage);
+  if (RESHAPERS.includes(name)) return operands.every((word) => /^\d+$/.test(word));
+  return PATTERN_TOOLS.includes(name) && !readsFiles(stage);
 }
 
 // The stages of the plain `|` pipeline that feeds the chunk at `index`, first stage first.
@@ -91,10 +103,10 @@ function feedingStages(parts, index) {
 
 function isOutputSource(stage) {
   const [command, subcommand] = stage.trim().toLowerCase().split(/\s+/);
-  return command === "git" ? GIT_OUTPUT.includes(subcommand) : OUTPUT_SOURCES.includes(command);
+  const uses = Object.hasOwn(OUTPUT_SOURCES, command) ? OUTPUT_SOURCES[command] : [];
+  return uses === true || uses.includes(subcommand);
 }
 
-const isReshaper = (stage) => RESHAPERS.includes(firstWord(stage)) && !readsFiles(stage);
 
 // A search filters output, not code, when its pipeline starts with a command that never prints
 // a file's text, every stage between only reshapes that output, and the search reads only its
