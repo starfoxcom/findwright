@@ -8,9 +8,12 @@ import { dirname, join, resolve } from "node:path";
 const BYPASS_MARKER = "FINDWRIGHT_BYPASS:";
 const SHELL_TOOLS = ["Bash", "PowerShell"];
 // Where a shell starts a new command, so a search after a pipe or inside $(...) is seen.
-const COMMAND_SPLITTERS = ["|", "&&", "||", ";", "\n", "$(", "`", "xargs ", "-exec "];
+// The capture group keeps each splitter, so a chunk knows what came before it.
+const COMMAND_SPLITTERS = /(\|\||&&|\||;|\n|\$\(|`|xargs |-exec )/;
 const SEARCH_TOOLS = ["grep", "rg", "ag", "ack", "ripgrep", "findstr"];
 const SEARCH_PHRASES = ["git grep"];
+// Commands whose output is a file's text, so a grep piped after them searches that file.
+const FILE_READERS = ["cat", "type", "get-content", "gc", "head", "tail", "less", "more"];
 const BLOCK_EXIT_CODE = 2;
 
 function findIndexFolder(start) {
@@ -54,15 +57,28 @@ function startsWithSearchTool(token) {
   return isTool || isPhrase;
 }
 
-function splitOn(parts, splitter) {
-  return parts.flatMap((part) => part.split(splitter));
+function firstWord(chunk) {
+  return (chunk ?? "").trimStart().split(/\s/, 1)[0].toLowerCase();
+}
+
+// A grep after a plain pipe reads the previous command's output, such as test results
+// or a file list, unless that command printed a file. git grep ignores its input.
+function isOutputFilter(chunk, splitter, upstream) {
+  if (splitter !== "|") return false;
+  if (SEARCH_PHRASES.some((phrase) => chunk.startsWith(phrase))) return false;
+  return !FILE_READERS.includes(firstWord(upstream));
 }
 
 // Heuristic on purpose: a false positive only asks for a bypass marker, while a missed
 // search silently skips the index.
 function isGrepLikeShell(command) {
-  const chunks = COMMAND_SPLITTERS.reduce(splitOn, [command]);
-  return chunks.some((chunk) => startsWithSearchTool(chunk.trimStart()));
+  const parts = command.split(COMMAND_SPLITTERS);
+  for (let index = 0; index < parts.length; index += 2) {
+    const chunk = parts[index].trimStart();
+    if (!startsWithSearchTool(chunk)) continue;
+    if (!isOutputFilter(chunk, parts[index - 1], parts[index - 2])) return true;
+  }
+  return false;
 }
 
 function isShellSearch(payload) {
