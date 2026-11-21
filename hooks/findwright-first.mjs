@@ -7,12 +7,14 @@ import { dirname, join, resolve } from "node:path";
 
 const BYPASS_MARKER = "FINDWRIGHT_BYPASS:";
 const SHELL_TOOLS = ["Bash", "PowerShell"];
-// Where a shell may start a command, read without regard to quotes, so a search after a pipe,
-// inside $(...) or inside a quoted command string such as `bash -c "..."` is seen.
+// Where a shell may start a command, read without regard to quotes: the quick check for whether a
+// command names a search at all, and for a search inside a quoted command string (`bash -c "..."`).
 const COMMAND_SPLITTERS = /\|\||&&|\||&|;|\n|\$\(|`|xargs |-exec /;
 // Shell operators between simple commands, and an output redirection (`>`, `>>`, `&>`, `2>&1`).
 const OPERATOR = /^(\|\||&&|\|&|\||;|\n|&(?!>))/;
 const OUTPUT_REDIRECT = /^&?>>?(&[\d-]*)?/;
+// `|&` pipes the error output too.
+const PIPES = ["|", "|&"];
 const SEARCH_TOOLS = ["grep", "rg", "ag", "ack", "ripgrep", "findstr"];
 const SEARCH_PHRASES = ["git grep"];
 // Commands whose output is never a file's text (test runs, file lists, logs), so a search
@@ -23,6 +25,12 @@ const OUTPUT_SOURCES = {
   node: ["--test"], npm: ["test", "ls", "outdated"], gh: ["run", "pr", "issue", "release", "workflow"],
   git: ["status", "log", "ls-files", "branch", "remote", "tag", "worktree"],
   cargo: ["test"], go: ["test"], dotnet: ["test"],
+};
+// Words that make an allowed source print a file's text or a diff after all: git log with a patch,
+// a line range or combined diffs, and gh pr diff, a workflow's YAML or a downloaded asset.
+const PRINTS_FILES = {
+  git: /^(-[^-]*[puL]|-c$|--(patch|cc|remerge-diff|diff-merges|unified))/,
+  gh: /^(diff|download|--yaml|-y)$/,
 };
 // Stages that reshape the output fed to them. They take options and counts only, so any other
 // word is a file they read instead. Scripted tools (sed, awk) can read files and are left out.
@@ -96,7 +104,7 @@ function readQuoted(command, at) {
 // quotes; null when it holds what cannot be read word by word: command substitution, a subshell,
 // an unclosed quote, or an unquoted variable or glob, which can expand to file names. An input
 // redirection stays a word, so it counts as a file. A word spelled with a quote or a backslash
-// says so, since such a command name is one the plain split cannot read.
+// says so, since a quoted string can be a command another shell runs.
 function tokenize(command) {
   const tokens = [];
   let word = null;
@@ -137,8 +145,7 @@ function tokenize(command) {
 }
 
 // Simple commands, each with its words and the operator before it; a redirection's target
-// is dropped, since output written to a file is no file read. Null when a command's name is
-// quoted or escaped (`\grep`, `"gr"ep`).
+// is dropped, since output written to a file is no file read.
 function simpleCommands(tokens) {
   const commands = [{ operator: null, words: [] }];
   let dropsNextWord = false;
@@ -146,10 +153,24 @@ function simpleCommands(tokens) {
     if (token.operator) commands.push({ operator: token.operator, words: [] });
     else if ("redirect" in token) dropsNextWord = token.redirect;
     else if (dropsNextWord) dropsNextWord = false;
-    else if (token.isQuoted && commands.at(-1).words.length === 0) return null;
     else commands.at(-1).words.push(token.word);
   }
   return commands;
+}
+
+function namesSearch(text) {
+  return text.split(COMMAND_SPLITTERS).some((part) => startsWithSearchTool(part.trimStart()));
+}
+
+// A search tool's name as a whole word anywhere, so one behind `sudo`, `timeout 5` or `sh -c '`
+// is read too; `--grep` and `grep.txt` are other words.
+const SEARCH_WORD = new RegExp(`(^|[^\\w-])(${SEARCH_TOOLS.join("|")})(?![\\w.-])`, "i");
+
+// A command runs a search when any of its words is a search tool, which also covers one run
+// through another command (`xargs grep`, `sudo grep`, `find -exec grep`).
+function runsSearch(words) {
+  return words.some((word, at) => SEARCH_TOOLS.includes(word.toLowerCase())
+    || (word === "git" && words[at + 1] === "grep"));
 }
 
 // A command's name, its arguments, and the arguments that are not options. Every word after
@@ -178,8 +199,9 @@ function isReshaper(words) {
   return SEARCH_TOOLS.includes(name) && !readsFiles(words);
 }
 
-function isOutputSource([command = "", subcommand = ""]) {
+function isOutputSource([command = "", subcommand = "", ...rest]) {
   const name = command.toLowerCase();
+  if ([subcommand, ...rest].some((word) => PRINTS_FILES[name]?.test(word))) return false;
   const uses = Object.hasOwn(OUTPUT_SOURCES, name) ? OUTPUT_SOURCES[name] : [];
   return uses === true || uses.includes(subcommand.toLowerCase());
 }
@@ -189,27 +211,23 @@ function isOutputSource([command = "", subcommand = ""]) {
 // its input. git grep ignores its input.
 function isOutputFilter(commands, index) {
   const stages = [];
-  for (let at = index; commands[at].operator === "|"; at--) stages.unshift(commands[at - 1].words);
+  for (let at = index; PIPES.includes(commands[at].operator); at--) stages.unshift(commands[at - 1].words);
   const search = commands[index].words;
-  if (stages.length === 0 || readsFiles(search) || search[0] === "git") return false;
+  if (stages.length === 0 || !SEARCH_TOOLS.includes(search[0].toLowerCase()) || readsFiles(search)) return false;
   const [source, ...between] = stages;
   return isOutputSource(source) && between.every(isReshaper);
 }
 
 // Heuristic on purpose: a false positive only asks for a bypass marker, while a missed
-// search silently skips the index. So a command passes only when the shell reading finds every
-// search the plain split finds, and each one filters output.
+// search silently skips the index. So the shell reading alone decides: a command passes only
+// when it holds no quoted string that names a search, which another shell may run, and every
+// command in it that runs a search filters output.
 function isGrepLikeShell(command) {
-  const found = command.split(COMMAND_SPLITTERS).filter((part) => startsWithSearchTool(part.trimStart()));
-  if (found.length === 0) return false;
+  if (!namesSearch(command) && !SEARCH_WORD.test(command)) return false;
   const tokens = tokenize(command);
-  const commands = tokens && simpleCommands(tokens);
-  if (!commands) return true;
-  const searches = commands
-    .map((entry, index) => ({ words: entry.words, index }))
-    .filter(({ words }) => startsWithSearchTool(words.join(" ")));
-  if (searches.length !== found.length) return true;
-  return !searches.every(({ index }) => isOutputFilter(commands, index));
+  if (!tokens || tokens.some(({ word, isQuoted }) => isQuoted && namesSearch(word))) return true;
+  const commands = simpleCommands(tokens);
+  return commands.some(({ words }, index) => runsSearch(words) && !isOutputFilter(commands, index));
 }
 
 function isShellSearch(payload) {
