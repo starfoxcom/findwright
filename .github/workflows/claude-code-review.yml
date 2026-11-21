@@ -21,7 +21,12 @@
 # settings keeps the "Claude On-Demand" check current too.
 #
 # Requires: CLAUDE_CODE_OAUTH_TOKEN in repo secrets. Optional: ANTHROPIC_API_KEY,
-# an org API key whose monthly credits pay for the routine review first.
+# an org API key whose monthly credits pay for the routine review first, and
+# CLAUDE_CODE_OAUTH_TOKEN_2 to CLAUDE_CODE_OAUTH_TOKEN_5, more accounts' tokens
+# (`claude setup-token` on each) for the backup when the first account has no
+# room left. Each account has a secret of its own, named here one by one: a
+# value taken out of a combined secret is no longer hidden in the logs, and a
+# secret name built at run time sends every secret of the repo to the runner.
 #
 # PERMANENT LIMITATION — claude-code-review.yml edits get no AI review:
 #   The Anthropic Claude Code GitHub App validates that the workflow file on a PR's
@@ -482,7 +487,7 @@ jobs:
       # a review the gate can read.
       review: ${{ steps.answer.outputs.review }}
       request: ${{ steps.answer.outputs.request }}
-      reviewer: ${{ steps.credits-answer.outputs.ok == 'yes' && format('{0} {1} (API credits)', needs.init-gate.outputs.routine_model, needs.init-gate.outputs.routine_effort) || steps.main-answer.outputs.ok == 'yes' && format('{0} {1}', needs.init-gate.outputs.routine_model, needs.init-gate.outputs.routine_effort) || steps.backup-answer.outputs.ok == 'yes' && format('{0} {1} (backup)', needs.init-gate.outputs.routine_fallback_model, needs.init-gate.outputs.routine_fallback_effort) || 'none' }}
+      reviewer: ${{ steps.credits-answer.outputs.ok == 'yes' && format('{0} {1} (API credits)', needs.init-gate.outputs.routine_model, needs.init-gate.outputs.routine_effort) || steps.main-answer.outputs.ok == 'yes' && format('{0} {1}', needs.init-gate.outputs.routine_model, needs.init-gate.outputs.routine_effort) || steps.backup-answer.outputs.ok == 'yes' && format('{0} {1} (backup{2})', needs.init-gate.outputs.routine_fallback_model, needs.init-gate.outputs.routine_fallback_effort, steps.account.outputs.index != '' && steps.account.outputs.index != '1' && format(', account {0}', steps.account.outputs.index) || '') || 'none' }}
     env:
       # Every curl in this workflow starts with -q, and npm reads neither its
       # user config nor its global one (the first step points that at an
@@ -510,7 +515,7 @@ jobs:
         - **Categorized file lists** — architecture-critical files to READ first (including `.claude/` rules and skills, any `CLAUDE.md`, and the project's always-reviewed paths), then docs (scan only), then other code.
         - **Project review guide** — the project's own part of this prompt, from the base branch or, when the base predates the review gate, the default branch (absent when the project has none).
 
-        The review runs on the base branch's config, so in your working folder the top-level `.claude/`, `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json`, `.claude.json`, `.gitmodules`, `.ripgreprc` and `.husky/` hold the base branch's copies: read the PR's version of any of those with `git show HEAD:<path>`, never with Read.
+        The review runs on the base branch's config, so in your working folder the top-level `.claude/`, `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json`, `.claude.json`, `.gitmodules`, `.ripgreprc`, `AGENTS.md` and `.husky/` hold the base branch's copies: read the PR's version of any of those with `git show HEAD:<path>`, never with Read.
 
         Then read the PR diff once for the full context with local git: `git diff origin/${{ github.event.pull_request.base.ref }}...HEAD` (add `-- <path>` for one file). Not `gh pr diff`: it fails with HTTP 406 on PRs past 300 files, and the checkout you are in already has the full history. If the diff shows a file as binary (the pre-screen's `BINARY_IN_DIFF` names them), Read that file in full (for the base-config paths above, `git show HEAD:<path>` instead): a single NUL byte makes git hide a code file that way.
 
@@ -605,7 +610,7 @@ jobs:
 
         **Out of scope:** <list of intentional deferrals>
 
-        If the diff shows a file as binary, Read that file in full in the working folder (for the base-config paths below, `git show HEAD:<path>` instead): a NUL byte or the PR's own .gitattributes can make a diff hide a code file that way. The review runs on the base branch's config, so in your working folder the top-level `.claude/`, `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json`, `.claude.json`, `.gitmodules`, `.ripgreprc` and `.husky/` hold the base branch's copies: read the PR's version of any of those with `git show HEAD:<path>`, never with Read.
+        If the diff shows a file as binary, Read that file in full in the working folder (for the base-config paths below, `git show HEAD:<path>` instead): a NUL byte or the PR's own .gitattributes can make a diff hide a code file that way. The review runs on the base branch's config, so in your working folder the top-level `.claude/`, `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json`, `.claude.json`, `.gitmodules`, `.ripgreprc`, `AGENTS.md` and `.husky/` hold the base branch's copies: read the PR's version of any of those with `git show HEAD:<path>`, never with Read.
 
         **Verdict format — BINARY, no in-between.** Same rule as the routine tier:
         - 🟢 LGTM ONLY when fully clean — zero caveats, zero minors, zero nits.
@@ -927,7 +932,7 @@ jobs:
           # always reviews (review_gate.ALWAYS_REVIEWED and the project's
           # triage.always_review, in any case), the project's deep-review
           # trigger paths (escalate.paths) and every workflow.
-          ARCH = re.compile(r'^\.github/scripts/|^\.github/review-guide\.md$|(^|/)\.claude/|(^|/)CLAUDE(\.local)?\.md$'
+          ARCH = re.compile(r'^\.github/scripts/|^\.github/review-guide\.md$|(^|/)\.claude/|(^|/)(CLAUDE(\.local)?|AGENTS)\.md$'
                             # The CLI's own config, which every later review loads.
                             r'|(^|/)\.mcp\.json$|^\.claude\.json$|^\.husky/|^\.gitmodules$|^\.ripgreprc$', re.I)
           # The project's own checks (prescreen.dir) are part of the gate:
@@ -1354,7 +1359,7 @@ jobs:
           wt="$RUNNER_TEMP/credits-review"
           trap 'git worktree remove --force "$wt" >/dev/null 2>&1 || true' EXIT
           git worktree add --quiet --detach "$wt" HEAD
-          for p in .claude .mcp.json .claude.json .gitmodules .ripgreprc CLAUDE.md CLAUDE.local.md .husky; do
+          for p in .claude .mcp.json .claude.json .gitmodules .ripgreprc CLAUDE.md CLAUDE.local.md AGENTS.md .husky; do
             rm -rf "${wt:?}/$p"
             git -C "$wt" checkout "origin/$BASE_REF" -- "$p" 2>/dev/null || true
           done
@@ -1488,7 +1493,7 @@ jobs:
         # A hang counts as a failure, so the backup still runs.
         timeout-minutes: 30
         if: steps.credits-answer.outputs.ok != 'yes'
-        # Pinned to the v1.0.276 release commit. The bare `@v1` floats.
+        # Pinned to the v1.0.282 release commit. The bare `@v1` floats.
         # Update via
         #   gh api repos/anthropics/claude-code-action/git/ref/tags/v1 --jq '.object.type + " " + .object.sha'
         # and, when the type is `tag` (an annotated tag), peel it to its commit:
@@ -1496,7 +1501,7 @@ jobs:
         # Confirm the diff, then bump the SHA here. Both tiers carry the same pin,
         # but this file always ships in a PR of its own, so the pin in
         # `.github/workflows/claude.yml` moves in a separate PR.
-        uses: anthropics/claude-code-action@f3b070c88125d33dbae5653df5f143101d4ea9dc  # v1 (v1.0.276)
+        uses: anthropics/claude-code-action@5a856893345e332afa621934082d8c660c26d689  # v1 (v1.0.282)
         continue-on-error: true
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -1705,6 +1710,79 @@ jobs:
           echo "path=$dest" >> "$GITHUB_OUTPUT"
           echo "version=$installed" >> "$GITHUB_OUTPUT"
 
+      # More accounts: with CLAUDE_CODE_OAUTH_TOKEN_2 to _5 set, the backup runs
+      # on the first account, counting from the first, that answers a one-line
+      # request on the backup's model. The first account still answers when only
+      # the main model's cap was hit, so the backup stays where it ran before;
+      # a spent plan moves it to the next account. Nothing is checked unless the
+      # main review failed, so a working first account costs nothing, and no
+      # file the PR can write is read. Without those secrets the backup keeps
+      # the first account, as before; when no account answers, it tries the
+      # first one anyway.
+      - name: Pick the backup's account
+        id: account
+        if: steps.claude-review.outcome != 'skipped' && steps.main-answer.outputs.ok != 'yes' && steps.claude-cli-stable.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        env:
+          CLI: ${{ steps.claude-cli-stable.outputs.path }}
+          DISABLE_AUTOUPDATER: "1"
+          MODEL: ${{ needs.init-gate.outputs.routine_fallback_model }}
+          TOKEN_1: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          TOKEN_2: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_2 }}
+          TOKEN_3: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_3 }}
+          TOKEN_4: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_4 }}
+          TOKEN_5: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_5 }}
+        run: |
+          set -euo pipefail
+          if [ -z "$TOKEN_2$TOKEN_3$TOKEN_4$TOKEN_5" ]; then
+            echo "index=1" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # An empty folder, so the CLI finds no project config, and only the
+          # fields the CLI writes are read: the exit status, the error flag and
+          # the API's status. The token goes in through the environment, never
+          # a command line.
+          probe_dir=$(mktemp -d)
+          trap 'rm -rf "$probe_dir"' EXIT
+          picked=""
+          for i in 1 2 3 4 5; do
+            var="TOKEN_$i"
+            [ -n "${!var}" ] || continue
+            out="$probe_dir/probe-$i.json"
+            status=0
+            (cd "$probe_dir" && unset ANTHROPIC_API_KEY && export CLAUDE_CODE_OAUTH_TOKEN="${!var}" \
+              && timeout -k 10 120 "$CLI" -p "Reply with the single word OK." \
+                --setting-sources user --strict-mcp-config --permission-mode default \
+                --max-turns 1 --model "$MODEL" --effort low --output-format json) > "$out" 2>/dev/null || status=$?
+            if python3 -I - "$out" "$status" "$i" <<'PYEOF'
+          import json, sys
+          path, status, i = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+          try:
+              with open(path, encoding='utf-8') as f:
+                  r = json.load(f)
+          except (OSError, ValueError):
+              r = {}
+          if not isinstance(r, dict):
+              r = {}
+          if status == 0 and r and not r.get('is_error') and r.get('subtype', 'success') == 'success':
+              sys.exit(0)
+          print(f"::notice::Account {i} has no room for the backup (exit {status}, API status {r.get('api_error_status')})")
+          sys.exit(1)
+          PYEOF
+            then
+              picked=$i
+              break
+            fi
+          done
+          if [ -z "$picked" ]; then
+            echo "::warning::No account answered: the backup tries the first account"
+            picked=1
+          elif [ "$picked" != 1 ]; then
+            echo "::notice::The first account has no room left: the backup runs on account $picked"
+          fi
+          echo "index=$picked" >> "$GITHUB_OUTPUT"
+
       # Backup: a main review that returned no readable review (a failure,
       # usage limit or otherwise, or a run that ended without one) retries once on
       # the fallback model from the gate settings with the same prompt, so a
@@ -1715,9 +1793,12 @@ jobs:
         timeout-minutes: 30
         if: steps.claude-review.outcome != 'skipped' && steps.main-answer.outputs.ok != 'yes' && steps.claude-cli-stable.outcome == 'success'
         continue-on-error: true
-        uses: anthropics/claude-code-action@f3b070c88125d33dbae5653df5f143101d4ea9dc  # v1 (v1.0.276)
+        uses: anthropics/claude-code-action@5a856893345e332afa621934082d8c660c26d689  # v1 (v1.0.282)
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # The account the step above picked. Each name is written out (see
+          # the header); an index is set only when that account answered, so
+          # its secret is never empty.
+          claude_code_oauth_token: ${{ steps.account.outputs.index == '2' && secrets.CLAUDE_CODE_OAUTH_TOKEN_2 || steps.account.outputs.index == '3' && secrets.CLAUDE_CODE_OAUTH_TOKEN_3 || steps.account.outputs.index == '4' && secrets.CLAUDE_CODE_OAUTH_TOKEN_4 || steps.account.outputs.index == '5' && secrets.CLAUDE_CODE_OAUTH_TOKEN_5 || secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # The job's read-only token: with it the action skips its exchange
           # for the review app's token, which the job cannot mint anyway.
           github_token: ${{ github.token }}
@@ -2088,7 +2169,7 @@ jobs:
 
           A deep review is owed on this head (the reviewer asked for one, the diff is on the trigger list, or the PR already carries needs-deep-review). The review above lists its concerns in its `needs-deep-review requested` section when it has one; either way, review the whole diff adversarially.
 
-          If the diff shows a file as binary, Read that file in full in the working folder (for the base-config paths below, `git show HEAD:<path>` instead): a NUL byte or the PR's own .gitattributes can make a diff hide a code file that way. The review runs on the base branch's config, so in your working folder the top-level `.claude/`, `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json`, `.claude.json`, `.gitmodules`, `.ripgreprc` and `.husky/` hold the base branch's copies: read the PR's version of any of those with `git show HEAD:<path>`, never with Read.
+          If the diff shows a file as binary, Read that file in full in the working folder (for the base-config paths below, `git show HEAD:<path>` instead): a NUL byte or the PR's own .gitattributes can make a diff hide a code file that way. The review runs on the base branch's config, so in your working folder the top-level `.claude/`, `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json`, `.claude.json`, `.gitmodules`, `.ripgreprc`, `AGENTS.md` and `.husky/` hold the base branch's copies: read the PR's version of any of those with `git show HEAD:<path>`, never with Read.
 
           **Verdict format — BINARY, no in-between.** Same rule as the routine tier:
           - 🟢 LGTM ONLY when fully clean — zero caveats, zero minors, zero nits.
