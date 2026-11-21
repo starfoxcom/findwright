@@ -32,6 +32,7 @@ BRANCHES=()
 REQUIRED=("Review gate")
 MERGE_STYLE=merge
 APPROVALS=0
+ACCOUNTS=1
 DEFAULT_BRANCH=""
 GATE_CHECKS=one
 # Whether the default branch holds the gate's script. Until the first
@@ -53,6 +54,10 @@ Usage: setup-review-gate.sh [--check] [options]
   --merge-style STYLE  merge, squash or rebase (default: merge).
   --approvals N        Approvals a PR needs besides the gate, 0 to 9
                        (default: 0, for a single maintainer).
+  --accounts N         Claude accounts the reviews use, 1 to 5 (default: 1).
+                       Accounts 2 and up each need their own token secret,
+                       CLAUDE_CODE_OAUTH_TOKEN_2 and so on;
+                       set-review-tokens.sh sets them in every repository.
 EOF
 }
 
@@ -78,6 +83,7 @@ parse_args() {
       --require) REQUIRED+=("${2:?--require needs a check name}"); shift ;;
       --merge-style) MERGE_STYLE=${2:?--merge-style needs a value}; shift ;;
       --approvals) APPROVALS=${2:?--approvals needs a number}; shift ;;
+      --accounts) ACCOUNTS=${2:?--accounts needs a number}; shift ;;
       -h | --help) usage; exit 0 ;;
       *) usage >&2; die "unknown option: $1" ;;
     esac
@@ -95,6 +101,7 @@ validate_args() {
     *) die "--merge-style takes merge, squash or rebase" ;;
   esac
   [[ $APPROVALS =~ ^[0-9]$ ]] || die "--approvals takes a number from 0 to 9"
+  [[ $ACCOUNTS =~ ^[1-5]$ ]] || die "--accounts takes a number from 1 to 5"
   [[ -z $REPO || $REPO =~ $repo_re ]] || die "--repo takes OWNER/NAME"
   for name in ${BRANCHES[@]+"${BRANCHES[@]}"}; do
     [[ $name =~ $BRANCH_RE ]] || die "unsupported branch name: $name"
@@ -200,11 +207,34 @@ step_secrets() {
     missing "secret $TOKEN_SECRET (get it with 'claude setup-token', then" \
       "run: gh secret set $TOKEN_SECRET -R $REPO)"
   fi
+  step_account_secrets "$names"
   if grep -qxF "$KEY_SECRET" <<< "$names"; then
     ok "secret $KEY_SECRET (reviews try the API credits first)"
   else
     note "no $KEY_SECRET secret: reviews run on the subscription only (optional)"
   fi
+}
+
+# Accounts 2 to 5: the review workflows try them in order when the first
+# account has no room left. One set beyond --accounts is still used, so it is
+# reported, never removed.
+step_account_secrets() {
+  local i name names=$1
+  for i in 2 3 4 5; do
+    name="${TOKEN_SECRET}_$i"
+    if grep -qxF "$name" <<< "$names"; then
+      ok "secret $name (account $i)"
+    elif [ "$i" -gt "$ACCOUNTS" ]; then
+      continue
+    elif [ "$MODE" = setup ] && [ -t 0 ]; then
+      echo "  Paste the token that 'claude setup-token' prints, signed in to account $i:"
+      gh secret set "$name" -R "$REPO"
+      fixed "secret $name (account $i)"
+    else
+      missing "secret $name (account $i: 'claude setup-token' signed in to that account," \
+        "then run: gh secret set $name -R $REPO, or set-review-tokens.sh for every repository)"
+    fi
+  done
 }
 
 # A personal account gives gh no way to list installed apps, so the proof
