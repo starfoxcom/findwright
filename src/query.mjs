@@ -19,7 +19,7 @@ export class TimeUp extends Error {}
 const MAX_LINE_CHARS = 400;
 const LEAD_CHARS = 120;
 
-export const searchBudget =(ms = SEARCH_BUDGET_MS) => ({ until: Date.now() + ms });
+export const searchBudget = (ms = SEARCH_BUDGET_MS) => ({ until: Date.now() + ms });
 
 export function sessionPattern(source, ignoreCase = false) {
   const linear = ignoreCase ? null : linearRegExp(source);
@@ -183,8 +183,12 @@ export function search(db, { patterns, globs = [], ignoreCase = false, context =
   const rows = candidates
     ? db.prepare("SELECT path, text FROM body").all().filter((r) => candidates.has(r.path))
     : db.prepare("SELECT path, text FROM body").all();
-  const literals = patterns.flatMap(requiredLiterals);
-  const shorten = (line) => clip(line, anchorOf(line, literals, ignoreCase));
+  const where = {
+    exact: patterns.map((p) => linearRegExp(p, ignoreCase ? "i" : "")),
+    literals: patterns.flatMap(requiredLiterals),
+    ignoreCase,
+  };
+  const shorten = (line) => clip(line, anchorOf(line, where));
   const out = [];
   let hits = 0;
   const budget = searchBudget();
@@ -217,8 +221,11 @@ function hit(db, path, lines, i, { context, shorten }) {
   return { line: i + 1, text: shorten(lines[i]), symbol: named, context: around };
 }
 
-// Where the first of the patterns' literal runs sits in the line, or 0 when none is there.
-function anchorOf(line, literals, ignoreCase) {
+// Where the first match in the line starts. The linear engine finds it exactly and cannot stall on a
+// long line; a pattern it cannot run falls back to the first of the literal runs, then to 0.
+function anchorOf(line, { exact, literals, ignoreCase }) {
+  const matched = exact.map((re) => re?.exec(line)?.index ?? -1).filter((at) => at >= 0);
+  if (matched.length) return Math.min(...matched);
   const haystack = ignoreCase ? line.toLowerCase() : line;
   const found = literals
     .map((literal) => haystack.indexOf(ignoreCase ? literal.toLowerCase() : literal))

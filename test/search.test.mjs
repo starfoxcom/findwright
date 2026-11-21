@@ -90,6 +90,14 @@ test("a hit on a very long line returns a window around the match, and short lin
   assert.deepEqual(hit.context.map((c) => c.text), ["{", "}"]);
   const ignored = search(db, { patterns: ['"VERSION":'], ignoreCase: true }).files[0].hits[0];
   assert.ok(ignored.text.includes('"version": "7.3.0"'));
+  const placed = [
+    ["a pattern with no literal run", "\\d+\\.\\d+\\.\\d+"],
+    ["a pattern whose shortest literal sits earlier on the line", '"\\w+": "7\\.3'],
+  ];
+  for (const [name, pattern] of placed) {
+    const found = search(db, { patterns: [pattern] }).files[0].hits[0];
+    assert.ok(found.text.includes("7.3.0"), `${name}: ${found.text.slice(0, 40)}`);
+  }
   const plain = search(db, { patterns: ["version line"] }).files[0].hits[0];
   assert.equal(plain.text, "the version line");
 });
