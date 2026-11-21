@@ -15,7 +15,8 @@ import { failureToReport, sendDue } from "./counts.mjs";
 import { followNotice, isInstalledHelper, pluginPin, takeFollowResult } from "./follow.mjs";
 import { refreshGuidance } from "./guidance.mjs";
 
-const VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+const PACKAGE_FILE = new URL("../package.json", import.meta.url);
+const VERSION = JSON.parse(readFileSync(PACKAGE_FILE, "utf8")).version;
 
 // The repo the session runs in; outside a git repo every tool says so instead of indexing.
 const root = process.env.FINDWRIGHT_ROOT ?? gitRoot();
@@ -153,10 +154,26 @@ async function answer(message) {
     sendCountsIfDue();
     db ??= openIndex(root);
     refresh(db, root, readConfig(root));
-    return await TOOLS[name].run(args);
+    const result = await TOOLS[name].run(args);
+    const notice = staleNotice();
+    return notice ? { ...result, content: [...text(notice).content, ...result.content] } : result;
   }
   if (id === undefined) return undefined;
   throw new Error(`Unknown method ${method}`);
+}
+
+// A helper updated under a running server leaves this process on the code it started with
+// until the session reconnects, so every answer says so once the copy on disk differs.
+function staleNotice() {
+  let installed;
+  try {
+    installed = JSON.parse(readFileSync(PACKAGE_FILE, "utf8")).version;
+  } catch {
+    return undefined;
+  }
+  if (installed === VERSION) return undefined;
+  return `FindWright ${installed} is installed, but this session's server still runs ${VERSION}. `
+    + "Tell the user in one line to run /mcp and reconnect findwright, so the session uses the installed copy.";
 }
 
 let queue = Promise.resolve();
