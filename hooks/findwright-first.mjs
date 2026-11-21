@@ -12,8 +12,15 @@ const SHELL_TOOLS = ["Bash", "PowerShell"];
 const COMMAND_SPLITTERS = /(\|\||&&|\||;|\n|\$\(|`|xargs |-exec )/;
 const SEARCH_TOOLS = ["grep", "rg", "ag", "ack", "ripgrep", "findstr"];
 const SEARCH_PHRASES = ["git grep"];
-// Commands whose output is a file's text, so a grep piped after them searches that file.
-const FILE_READERS = ["cat", "type", "get-content", "gc", "head", "tail", "less", "more"];
+// Commands whose output is never a file's text (test runs, file lists, logs), so a search
+// piped after them filters that output. Any other command may print a file.
+const OUTPUT_SOURCES = [
+  "ls", "dir", "get-childitem", "gci", "find", "echo", "gh", "npm", "npx", "pnpm", "yarn",
+  "node", "pytest", "cargo", "go", "dotnet", "make", "docker", "ps", "get-process",
+];
+const GIT_OUTPUT = ["status", "log", "ls-files", "branch", "remote", "tag", "stash", "worktree"];
+// Stages that only reshape the output fed to them.
+const RESHAPERS = ["sort", "uniq", "head", "tail", "cut", "tr", "wc", "sed", "awk", ...SEARCH_TOOLS];
 // Flags that make a search walk folders instead of reading its input.
 const RECURSIVE_FLAGS = { grep: /^-[a-z]*r|^--(dereference-)?recursive$|^-d$/i, findstr: /^\/s$/i };
 const BLOCK_EXIT_CODE = 2;
@@ -75,14 +82,28 @@ function readsFiles(chunk) {
   return args.filter((arg) => !isOption(arg)).length > 1;
 }
 
-// A grep after a plain pipe reads the previous command's output, such as test results
-// or a file list, unless that command printed a file or the grep reads files itself.
-// git grep ignores its input.
-function isOutputFilter(chunk, splitter, upstream) {
-  if (splitter !== "|") return false;
+// The stages of the plain `|` pipeline that feeds the chunk at `index`, first stage first.
+function feedingStages(parts, index) {
+  const stages = [];
+  for (let at = index; parts[at - 1] === "|"; at -= 2) stages.unshift(parts[at - 2]);
+  return stages;
+}
+
+function isOutputSource(stage) {
+  const [command, subcommand] = stage.trim().toLowerCase().split(/\s+/);
+  return command === "git" ? GIT_OUTPUT.includes(subcommand) : OUTPUT_SOURCES.includes(command);
+}
+
+const isReshaper = (stage) => RESHAPERS.includes(firstWord(stage)) && !readsFiles(stage);
+
+// A search filters output, not code, when its pipeline starts with a command that never prints
+// a file's text, every stage between only reshapes that output, and the search reads only its
+// input. git grep ignores its input.
+function isOutputFilter(chunk, stages) {
+  if (stages.length === 0 || readsFiles(chunk)) return false;
   if (SEARCH_PHRASES.some((phrase) => chunk.startsWith(phrase))) return false;
-  if (readsFiles(chunk)) return false;
-  return !FILE_READERS.includes(firstWord(upstream));
+  const [source, ...between] = stages;
+  return isOutputSource(source) && between.every(isReshaper);
 }
 
 // Heuristic on purpose: a false positive only asks for a bypass marker, while a missed
@@ -92,7 +113,7 @@ function isGrepLikeShell(command) {
   for (let index = 0; index < parts.length; index += 2) {
     const chunk = parts[index].trimStart();
     if (!startsWithSearchTool(chunk)) continue;
-    if (!isOutputFilter(chunk, parts[index - 1], parts[index - 2])) return true;
+    if (!isOutputFilter(chunk, feedingStages(parts, index))) return true;
   }
   return false;
 }
