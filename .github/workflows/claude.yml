@@ -874,7 +874,7 @@ jobs:
           # subscription steps take over. Without the job's OIDC request
           # values, so nothing the reviewer starts can mint a token and post.
           (cd "$wt" && GH_TOKEN="$bot_token" env -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_ID_TOKEN_REQUEST_TOKEN \
-            timeout --kill-after=1m 30m "$CLI" -p "Brief file: $RUNNER_TEMP/deep-brief.md"$'\n\n'"$DEEP_REVIEW_PROMPT" \
+            timeout --kill-after=1m 30m "$CLI" -p "Brief file: $RUNNER_TEMP/deep-brief.md"$'\n\n'"$DEEP_REVIEW_PROMPT" < /dev/null \
             --setting-sources user --strict-mcp-config --permission-mode default \
             --allowedTools "Bash(gh pr view *),Bash(gh pr diff *),Bash(gh pr checks *),Bash(gh issue view *),Bash(gh run view *),Bash(gh run list *),Read$EXTRA_TOOLS" \
             --disallowedTools "Agent,Task,ScheduleWakeup,SendMessage,ListAgents,Edit,Write,MultiEdit,NotebookEdit,Bash(git add*),Bash(git commit*),Bash(git push*),Bash(git rm*),Bash(/*)" \
@@ -1176,13 +1176,16 @@ jobs:
       # More accounts, as in the routine workflow's "Pick the backup's account":
       # with CLAUDE_CODE_OAUTH_TOKEN_2 to _5 set, the fallback runs on the first
       # account, counting from the first, that answers a one-line request on
-      # the fallback model. Only the CLI's exit status, error flag and API
-      # status are read, never a file the PR can write. Without those secrets,
-      # or when no account answers, the fallback keeps the first account.
+      # the fallback model. A spent plan or a refused token moves it to the
+      # next account; any other failure keeps it on the account that failed.
+      # Only what the CLI writes is read, never a file the PR can write.
+      # Without those secrets, or when every account has no room or refuses
+      # its token, the fallback keeps the first account.
       - name: Pick the fallback's account
         id: account
         if: steps.claude-cli-stable.outcome == 'success'
         continue-on-error: true
+        timeout-minutes: 12
         shell: bash
         env:
           CLI: ${{ steps.claude-cli-stable.outputs.path }}
@@ -1199,8 +1202,12 @@ jobs:
             echo "index=1" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # An empty folder, so the CLI finds no project config. The token goes
-          # in through the environment, never a command line.
+          # Each check runs in an empty folder of its own that is also its home
+          # and config folder, so it reads no settings the runner keeps, and it
+          # holds only its own account's token: the others are unset before the
+          # CLI starts, and the token goes in through the environment, never a
+          # command line. Only what the CLI writes is read: the exit status,
+          # the error flag, the API's status and the result text.
           probe_dir=$(mktemp -d)
           trap 'rm -rf "$probe_dir"' EXIT
           picked=""
@@ -1208,13 +1215,19 @@ jobs:
             var="TOKEN_$i"
             [ -n "${!var}" ] || continue
             out="$probe_dir/probe-$i.json"
+            home="$probe_dir/home-$i"
+            mkdir -p "$home"
             status=0
-            (cd "$probe_dir" && unset ANTHROPIC_API_KEY && export CLAUDE_CODE_OAUTH_TOKEN="${!var}" \
-              && timeout -k 10 120 "$CLI" -p "Reply with the single word OK." \
+            (token="${!var}" && unset ANTHROPIC_API_KEY TOKEN_1 TOKEN_2 TOKEN_3 TOKEN_4 TOKEN_5 \
+              && cd "$home" && export HOME="$home" CLAUDE_CONFIG_DIR="$home/.claude" CLAUDE_CODE_OAUTH_TOKEN="$token" \
+              && timeout -k 10 120 "$CLI" -p "Reply with the single word OK." < /dev/null \
                 --setting-sources user --strict-mcp-config --permission-mode default \
                 --max-turns 1 --model "$MODEL" --effort low --output-format json) > "$out" 2>/dev/null || status=$?
-            if python3 -I - "$out" "$status" "$i" <<'PYEOF'
-          import json, sys
+            # 0: the account answered. 2: no room on its plan, or its token was
+            # refused, so the next account is tried. 1: any other failure.
+            verdict=0
+            python3 -I - "$out" "$status" "$i" <<'PYEOF' || verdict=$?
+          import json, re, sys
           path, status, i = sys.argv[1], int(sys.argv[2]), sys.argv[3]
           try:
               with open(path, encoding='utf-8') as f:
@@ -1225,19 +1238,30 @@ jobs:
               r = {}
           if status == 0 and r and not r.get('is_error') and r.get('subtype', 'success') == 'success':
               sys.exit(0)
-          print(f"::notice::Account {i} has no room for the fallback (exit {status}, API status {r.get('api_error_status')})")
+          api = r.get('api_error_status')
+          text = r.get('result') if isinstance(r.get('result'), str) else ''
+          # The same limit texts the deep review's failure class reads.
+          limit = r"rate_limit_error|usage limit|quota exceeded|resource_exhausted|(hit|reached) your [^.]{0,40}limit"
+          if api == 429 or re.search(limit, text, re.IGNORECASE):
+              print(f"::notice::Account {i} has no room left (exit {status}, API status {api})")
+              sys.exit(2)
+          if api in (401, 403):
+              print(f"::notice::Account {i} refused its token (API status {api})")
+              sys.exit(2)
+          print(f"::notice::Account {i} did not answer (exit {status}, API status {api}): the fallback stays on it")
           sys.exit(1)
           PYEOF
-            then
-              picked=$i
-              break
-            fi
+            [ "$verdict" = 2 ] && continue
+            picked=$i
+            break
           done
           if [ -z "$picked" ]; then
-            echo "::warning::No account answered: the fallback tries the first account"
+            echo "::warning::No account can take the fallback (each has no room or refused its token): the fallback tries the first account"
             picked=1
+          elif [ "$picked" != 1 ] && [ -z "$TOKEN_1" ]; then
+            echo "::notice::The first account's token is not set: the fallback runs on account $picked"
           elif [ "$picked" != 1 ]; then
-            echo "::notice::The first account has no room left: the fallback runs on account $picked"
+            echo "::notice::The fallback runs on account $picked"
           fi
           echo "index=$picked" >> "$GITHUB_OUTPUT"
 
@@ -1253,8 +1277,8 @@ jobs:
         continue-on-error: true
         uses: anthropics/claude-code-action@5a856893345e332afa621934082d8c660c26d689  # v1 (v1.0.282)
         env:
-          # The account the step above picked; an index is set only when that
-          # account answered, so its secret is never empty.
+          # The account the step above picked; an index from 2 up is set only
+          # for an account whose token is set, so its secret is never empty.
           CLAUDE_CODE_OAUTH_TOKEN: ${{ steps.account.outputs.index == '2' && secrets.CLAUDE_CODE_OAUTH_TOKEN_2 || steps.account.outputs.index == '3' && secrets.CLAUDE_CODE_OAUTH_TOKEN_3 || steps.account.outputs.index == '4' && secrets.CLAUDE_CODE_OAUTH_TOKEN_4 || steps.account.outputs.index == '5' && secrets.CLAUDE_CODE_OAUTH_TOKEN_5 || secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # The action puts the base branch's config in the checkout before the
           # reviewer starts; this tells it where the PR's own copies are.

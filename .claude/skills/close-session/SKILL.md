@@ -31,13 +31,14 @@ When the guidance FindWright installed for the agent names a step for the end of
 
 ## Pruning pass
 
-Rules, tests and memory only ever grow, and a long rule file is where a session reads past a rule. So at most once a month, offer to prune. The date of the last pass, offered or run, lives in this clone's git config, which its worktrees share and no commit carries: `git config --local bindwright.lastPruning` prints it, and `git config --local bindwright.lastPruning <YYYY-MM-DD>` sets it. When it prints nothing, set today's date and skip this step, so the first offer comes a month after the first close that runs it; when it is less than 30 days old, skip this step. Otherwise ask once: "It has been a month: look for rules, tests and memory entries nothing uses any more?" On a no, set today's date and go on.
+Rules, tests and memory only ever grow, and a long rule file is where a session reads past a rule. So at most once a month, offer to prune, here or at `/start-session`, whichever runs first. The date of the last pass, offered or run, lives in this clone's git config, which its worktrees share and no commit carries: `git config --local bindwright.lastPruning` prints it, and `git config --local bindwright.lastPruning <YYYY-MM-DD>` sets it. When it prints nothing, set today's date and skip this step, so the first offer comes a month after the first close that runs it; when it is less than 30 days old, skip this step. Otherwise ask once: "It has been a month: look for rules, tests and memory entries nothing uses any more?" On a no, set today's date and go on.
 
 On a yes, list the candidates, each with one line on why:
 
 - Rule text in `.claude/rules/` and `CLAUDE.md` that repeats another file, or names a file, command or setting that no longer exists.
 - Tests that are skipped for good, or that fail for the same reason as another test in their file (`.claude/rules/testing.md`, rule 2).
 - Memory entries in `~/.claude/projects/<project-slug>/memory/` that name a file or function that no longer exists, repeat another entry, or say what the repo's rules already say.
+- Memory entries whose `written:` date is more than 90 days old, to confirm and re-date or drop, and entries with no `written:` date, to date from their `source:` or drop.
 
 This is a report only: write nothing for it, in the repo, the tracker or anywhere else, and leave what to do with each candidate to the user. Then set today's date.
 
