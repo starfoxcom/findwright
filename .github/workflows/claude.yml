@@ -1267,7 +1267,8 @@ jobs:
 
       # Attempt 2b: the fallback model from the settings. Fires on a usage limit,
       # or when the same-model retry also left no verdict. It runs only on the
-      # CLI copy the step above picked. The Evaluate step below owns the
+      # CLI copy "Install the stable Claude Code for the fallback" picked, on the
+      # account the step above picked. The Evaluate step below owns the
       # outcome, so every attempt continues on error.
       - name: Run Claude (fallback model)
         id: claude_fallback
