@@ -95,13 +95,16 @@ function readQuoted(command, at) {
 // The command's words, operators and output redirections, read the way a POSIX shell reads
 // quotes; null when it holds what cannot be read word by word: command substitution, a subshell,
 // an unclosed quote, or an unquoted variable or glob, which can expand to file names. An input
-// redirection stays a word, so it counts as a file.
+// redirection stays a word, so it counts as a file. A word spelled with a quote or a backslash
+// says so, since such a command name is one the plain split cannot read.
 function tokenize(command) {
   const tokens = [];
   let word = null;
+  let isQuoted = false;
   const endWord = () => {
-    if (word !== null) tokens.push({ word });
+    if (word !== null) tokens.push({ word, isQuoted });
     word = null;
+    isQuoted = false;
   };
   for (let at = 0; at < command.length; at++) {
     const rest = command.slice(at);
@@ -112,6 +115,7 @@ function tokenize(command) {
     const redirect = quoted ? undefined : OUTPUT_REDIRECT.exec(rest)?.[0];
     if (quoted) {
       word = (word ?? "") + quoted.text;
+      isQuoted = true;
       at = quoted.end;
     } else if (operator || redirect) {
       if (redirect && /^\d+$/.test(word ?? "")) word = null;
@@ -122,7 +126,10 @@ function tokenize(command) {
       endWord();
     } else {
       word = (word ?? "") + (rest[0] === "\\" ? (rest[1] ?? "") : rest[0]);
-      if (rest[0] === "\\") at++;
+      if (rest[0] === "\\") {
+        isQuoted = true;
+        at++;
+      }
     }
   }
   endWord();
@@ -130,7 +137,8 @@ function tokenize(command) {
 }
 
 // Simple commands, each with its words and the operator before it; a redirection's target
-// is dropped, since output written to a file is no file read.
+// is dropped, since output written to a file is no file read. Null when a command's name is
+// quoted or escaped (`\grep`, `"gr"ep`).
 function simpleCommands(tokens) {
   const commands = [{ operator: null, words: [] }];
   let dropsNextWord = false;
@@ -138,6 +146,7 @@ function simpleCommands(tokens) {
     if (token.operator) commands.push({ operator: token.operator, words: [] });
     else if ("redirect" in token) dropsNextWord = token.redirect;
     else if (dropsNextWord) dropsNextWord = false;
+    else if (token.isQuoted && commands.at(-1).words.length === 0) return null;
     else commands.at(-1).words.push(token.word);
   }
   return commands;
@@ -194,8 +203,8 @@ function isGrepLikeShell(command) {
   const found = command.split(COMMAND_SPLITTERS).filter((part) => startsWithSearchTool(part.trimStart()));
   if (found.length === 0) return false;
   const tokens = tokenize(command);
-  if (!tokens) return true;
-  const commands = simpleCommands(tokens);
+  const commands = tokens && simpleCommands(tokens);
+  if (!commands) return true;
   const searches = commands
     .map((entry, index) => ({ words: entry.words, index }))
     .filter(({ words }) => startsWithSearchTool(words.join(" ")));

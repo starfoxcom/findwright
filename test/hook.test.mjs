@@ -66,6 +66,8 @@ const ROWS = [
   ["an unquoted glob, which can expand to files, is blocked", shell("ls | grep foo*"), true],
   ["a search inside a quoted command string is blocked",
     shell('npm test | bash -c "cat src/a.mjs | grep foo"'), true],
+  ["an escaped search name cannot stand in for one hidden in a quoted command string",
+    shell('ls | \\grep x; npm test | bash -c "cat a.mjs | grep foo"'), true],
   ["grep after head with a line count is allowed", shell("npm test | head -n 50 | grep fail"), false],
   ["grep after a reshaper that reads a file is blocked", shell("ls | sort src/a.mjs | grep foo"), true],
   ["grep after find printing files through -execdir is blocked",
