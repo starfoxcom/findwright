@@ -75,3 +75,21 @@ test("a glob starting with ! leaves out the files it matches, in search and symb
     assert.deepEqual(named, expected, `symbols: ${name}`);
   }
 });
+
+test("a hit on a very long line returns a window around the match, and short lines stay whole", () => {
+  const filler = '"key": "' + "x".repeat(170_000) + '", ';
+  const db = index({
+    "pristine.json": `{\n${filler}"version": "7.3.0", ${filler}\n}`,
+    "short.md": "the version line",
+  });
+  const [long] = search(db, { patterns: ['"version":'], context: 1 }).files;
+  const [hit] = long.hits;
+  assert.ok(hit.text.length <= 402, `returned ${hit.text.length} chars`);
+  assert.ok(hit.text.startsWith("…") && hit.text.endsWith("…"));
+  assert.ok(hit.text.includes('"version": "7.3.0"'));
+  assert.deepEqual(hit.context.map((c) => c.text), ["{", "}"]);
+  const ignored = search(db, { patterns: ['"VERSION":'], ignoreCase: true }).files[0].hits[0];
+  assert.ok(ignored.text.includes('"version": "7.3.0"'));
+  const plain = search(db, { patterns: ["version line"] }).files[0].hits[0];
+  assert.equal(plain.text, "the version line");
+});

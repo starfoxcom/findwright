@@ -10,7 +10,7 @@ The lookup sequence for **FindWright**'s tools. Follow it in order and stop at t
 ## Sequence
 
 1. `find` with a plain-English question, a name, or both: the files that answer it, best first.
-2. `search` with one or more regexes, optional `globs` and `context`: every matching line, with the symbol around it. It covers every file the project tracks, Markdown, config and templates included.
+2. `search` with one or more regexes, optional `globs` and `context`: every matching line, with the symbol around it; a line past 400 characters comes back as a window around the match, with "…" where it was cut. It covers every file the project tracks, Markdown, config and templates included.
 3. `symbols` to look a name up by kind (function, class, heading, key).
 4. `outline` with a path: its symbols and line ranges, to read only the part you need.
 5. `coverage` when a file seems missing: what the index reads and which files yield no symbol.

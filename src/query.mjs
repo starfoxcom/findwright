@@ -15,7 +15,11 @@ const SCAN = new vm.Script("(() => { const out = []; for (let i = 0; i < lines.l
 /** Thrown when a search's time budget runs out. */
 export class TimeUp extends Error {}
 
-export const searchBudget = (ms = SEARCH_BUDGET_MS) => ({ until: Date.now() + ms });
+// Characters of one line a search hit returns, and how many of them come before the match.
+const MAX_LINE_CHARS = 400;
+const LEAD_CHARS = 120;
+
+export const searchBudget =(ms = SEARCH_BUDGET_MS) => ({ until: Date.now() + ms });
 
 export function sessionPattern(source, ignoreCase = false) {
   const linear = ignoreCase ? null : linearRegExp(source);
@@ -179,6 +183,8 @@ export function search(db, { patterns, globs = [], ignoreCase = false, context =
   const rows = candidates
     ? db.prepare("SELECT path, text FROM body").all().filter((r) => candidates.has(r.path))
     : db.prepare("SELECT path, text FROM body").all();
+  const literals = patterns.flatMap(requiredLiterals);
+  const shorten = (line) => clip(line, anchorOf(line, literals, ignoreCase));
   const out = [];
   let hits = 0;
   const budget = searchBudget();
@@ -190,7 +196,7 @@ export function search(db, { patterns, globs = [], ignoreCase = false, context =
       if (all && perPattern.some((found) => found.length === 0)) continue;
       const matched = [...new Set(perPattern.flat())].sort((a, b) => a - b);
       if (!matched.length) continue;
-      out.push({ path, hits: matched.map((i) => hit(db, path, lines, i, context)) });
+      out.push({ path, hits: matched.map((i) => hit(db, path, lines, i, { context, shorten })) });
       hits += matched.length;
       if (hits >= limit) break;
     }
@@ -201,13 +207,31 @@ export function search(db, { patterns, globs = [], ignoreCase = false, context =
   return { files: out, truncated: hits >= limit };
 }
 
-function hit(db, path, lines, i, context) {
+function hit(db, path, lines, i, { context, shorten }) {
   const around = [];
   for (let j = Math.max(0, i - context); j <= Math.min(lines.length - 1, i + context); j++) {
-    if (j !== i) around.push({ line: j + 1, text: lines[j] });
+    if (j !== i) around.push({ line: j + 1, text: clip(lines[j]) });
   }
   const symbol = enclosing(db, path, i + 1);
-  return { line: i + 1, text: lines[i], symbol: symbol ? `${symbol.kind} ${symbol.name}` : null, context: around };
+  return { line: i + 1, text: shorten(lines[i]), symbol: symbol ? `${symbol.kind} ${symbol.name}` : null, context: around };
+}
+
+// Where the first of the patterns' literal runs sits in the line, or 0 when none is there.
+function anchorOf(line, literals, ignoreCase) {
+  const haystack = ignoreCase ? line.toLowerCase() : line;
+  const found = literals
+    .map((literal) => haystack.indexOf(ignoreCase ? literal.toLowerCase() : literal))
+    .filter((at) => at >= 0);
+  return found.length ? Math.min(...found) : 0;
+}
+
+// A line longer than MAX_LINE_CHARS comes back as a window starting just before `anchor`, with
+// "…" where text was cut, so one minified or one-line JSON file cannot overflow the caller's output.
+function clip(line, anchor = 0) {
+  if (line.length <= MAX_LINE_CHARS) return line;
+  const start = Math.max(0, Math.min(anchor - LEAD_CHARS, line.length - MAX_LINE_CHARS));
+  const end = start + MAX_LINE_CHARS;
+  return `${start > 0 ? "…" : ""}${line.slice(start, end)}${end < line.length ? "…" : ""}`;
 }
 
 // Symbols whose name matches `query` (a regex, or a substring when it is not one).
