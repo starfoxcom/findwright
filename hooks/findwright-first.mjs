@@ -8,8 +8,9 @@ import { dirname, join, resolve } from "node:path";
 const BYPASS_MARKER = "FINDWRIGHT_BYPASS:";
 const SHELL_TOOLS = ["Bash", "PowerShell"];
 // Where a shell starts a new command, so a search after a pipe or inside $(...) is seen.
-// The capture group keeps each splitter, so a chunk knows what came before it.
-const COMMAND_SPLITTERS = /(\|\||&&|\||;|\n|\$\(|`|xargs |-exec )/;
+// The capture group keeps each splitter, so a chunk knows what came before it. A lone `&` runs
+// a command in the background; the `&` of a redirection such as `2>&1` or `&>` splits nothing.
+const COMMAND_SPLITTERS = /(\|\||&&|(?<![<>&])&(?![&>])|\||;|\n|\$\(|`|xargs |-exec )/;
 const SEARCH_TOOLS = ["grep", "rg", "ag", "ack", "ripgrep", "findstr"];
 const SEARCH_PHRASES = ["git grep"];
 // Commands whose output is never a file's text (test runs, file lists, logs), so a search
@@ -21,12 +22,17 @@ const OUTPUT_SOURCES = {
   git: ["status", "log", "ls-files", "branch", "remote", "tag", "worktree"],
   cargo: ["test"], go: ["test"], dotnet: ["test"],
 };
-// Stages that reshape the output fed to them: these take options and counts only, so any other
-// word is a file they read instead; the pattern tools take one pattern or script.
+// Stages that reshape the output fed to them. They take options and counts only, so any other
+// word is a file they read instead. Scripted tools (sed, awk) can read files and are left out.
 const RESHAPERS = ["sort", "uniq", "head", "tail", "cut", "wc"];
-const PATTERN_TOOLS = ["sed", "awk", ...SEARCH_TOOLS];
-// Flags that make a search walk folders instead of reading its input.
-const RECURSIVE_FLAGS = { grep: /^-[a-z]*r|^--(dereference-)?recursive$|^-d$/i, findstr: /^\/s$/i };
+// Options that give the pattern, so every word left is a file: grep and rg -e/-f/--regexp/--file,
+// findstr /c: and /g:.
+const PATTERN_OPTION = /^-[a-zA-Z]*[ef]|^--(regexp|file)|^\/[cCgG]:/;
+// Flags that make a search walk folders, or read a list of files, instead of reading its input.
+const RECURSIVE_FLAGS = {
+  grep: /^-[a-z]*r|^--(dereference-)?recursive$|^-d$|^--directories/i,
+  findstr: /^\/(s|f:)/i,
+};
 const BLOCK_EXIT_CODE = 2;
 
 function findIndexFolder(start) {
@@ -71,27 +77,36 @@ function startsWithSearchTool(token) {
 }
 
 // A search reads files, not its input, when it walks folders or names a file after its
-// pattern. Quoted text, including a quote a `|` inside it cut short, and redirections are
-// not file names.
+// pattern: past the first word, or past none when an option gave the pattern or script.
+// Quoted text, including a quote a `|` inside it cut short, and redirections are not file names.
 function readsFiles(chunk) {
   const { name, args, operands } = parseStage(chunk);
   if (args.some((arg) => RECURSIVE_FLAGS[name]?.test(arg))) return true;
-  return operands.length > 1;
+  return operands.length > (args.some((arg) => PATTERN_OPTION.test(arg)) ? 0 : 1);
 }
 
-// A stage's command name, its words, and the words that are not options.
+// A stage's command name, its text with quotes and redirections taken out, its words, and the
+// words that are not options.
 function parseStage(stage) {
   const plain = stage.replace(/"[^"]*("|$)|'[^']*('|$)/g, "''").replace(/\s\d?>>?\s*\S+/g, "");
   const [tool, ...args] = plain.trim().split(/\s+/);
   const name = tool.toLowerCase();
   const isOption = (arg) => arg.startsWith("-") || (name === "findstr" && arg.startsWith("/"));
-  return { name, args, operands: args.filter((arg) => !isOption(arg)) };
+  // Every word after `--` is a pattern or a file, however it starts.
+  const end = args.includes("--") ? args.indexOf("--") : args.length;
+  const operands = [...args.slice(0, end).filter((arg) => !isOption(arg)), ...args.slice(end + 1)];
+  return { name, plain, args, operands };
 }
 
+// A stage inside a group or subshell may not be what feeds the pipe: `(cat a; echo) | grep`.
+const isGrouped = (stage) => /[(){}]/.test(parseStage(stage).plain);
+
+// sort and wc --files0-from read the files a list names.
 function isReshaper(stage) {
-  const { name, operands } = parseStage(stage);
+  const { name, args, operands } = parseStage(stage);
+  if (args.some((arg) => arg.startsWith("--files0-from"))) return false;
   if (RESHAPERS.includes(name)) return operands.every((word) => /^\d+$/.test(word));
-  return PATTERN_TOOLS.includes(name) && !readsFiles(stage);
+  return SEARCH_TOOLS.includes(name) && !readsFiles(stage);
 }
 
 // The stages of the plain `|` pipeline that feeds the chunk at `index`, first stage first.
@@ -107,13 +122,13 @@ function isOutputSource(stage) {
   return uses === true || uses.includes(subcommand);
 }
 
-
 // A search filters output, not code, when its pipeline starts with a command that never prints
 // a file's text, every stage between only reshapes that output, and the search reads only its
 // input. git grep ignores its input.
 function isOutputFilter(chunk, stages) {
   if (stages.length === 0 || readsFiles(chunk)) return false;
   if (SEARCH_PHRASES.some((phrase) => chunk.startsWith(phrase))) return false;
+  if (stages.some(isGrouped)) return false;
   const [source, ...between] = stages;
   return isOutputSource(source) && between.every(isReshaper);
 }
