@@ -213,7 +213,8 @@ function hit(db, path, lines, i, { context, shorten }) {
     if (j !== i) around.push({ line: j + 1, text: clip(lines[j]) });
   }
   const symbol = enclosing(db, path, i + 1);
-  return { line: i + 1, text: shorten(lines[i]), symbol: symbol ? `${symbol.kind} ${symbol.name}` : null, context: around };
+  const named = symbol ? `${symbol.kind} ${symbol.name}` : null;
+  return { line: i + 1, text: shorten(lines[i]), symbol: named, context: around };
 }
 
 // Where the first of the patterns' literal runs sits in the line, or 0 when none is there.
