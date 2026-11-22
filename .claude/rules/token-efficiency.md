@@ -44,7 +44,7 @@ When everything is green, merge per `git.md` § Merging. On a red check, read th
 
 ### Fast path for docs-only PRs
 
-Diffs of only Markdown, images and fonts outside the always-reviewed paths (the gate's own files, any `.claude/` folder, any `CLAUDE.md`, and `triage.always_review` in `.github/review-gate.yml`) pass the `Review gate` check without a review in about 30 seconds. Skip the monitor: wait about 90 seconds, check `gh pr view <pr> --json mergeable,mergeStateStatus`, then merge per `git.md` § Merging:
+Diffs of only Markdown, images and fonts outside the always-reviewed paths (the gate's own files, any `.claude/` folder, any `CLAUDE.md` or `AGENTS.md`, and `triage.always_review` in `.github/review-gate.yml`) pass the `Review gate` check without a review in about 30 seconds. Skip the monitor: wait about 90 seconds, check `gh pr view <pr> --json mergeable,mergeStateStatus`, then merge per `git.md` § Merging:
 
 - `MERGEABLE` and `CLEAN`: merge.
 - `BLOCKED` on a required approval: a reviewer other than the author approves it; until then, wait.
