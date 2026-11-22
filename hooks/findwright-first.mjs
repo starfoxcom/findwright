@@ -20,11 +20,16 @@ const SEARCH_PHRASES = ["git grep"];
 // How each shell reads a word, and the unquoted characters the reading accounts for. Any other
 // one (`<`, `#`, `$`, `!`, a glob or a bracket) can redirect input, end the command early or
 // expand to file names. PowerShell takes a backslash as a plain character, and spreads `a,b`
-// and `@name` into several arguments, so it reads neither `,` nor `@` as plain.
+// and `@name` into several arguments, so it reads neither `,` nor `@` as plain. It also reads
+// an unquoted word that starts with `-` and a letter as a parameter name, which it can split in
+// two (`-m9.\file` reaches a program as `-m9` and `.\file`), so such a word must be all
+// letters, digits, `_` and `-`, wherever it sits.
 const DIALECTS = {
   Bash: { isBackslashEscape: true, plain: /^[\w\-./=:,+@%]/ },
-  PowerShell: { isBackslashEscape: false, plain: /^[\w\-./=:+%\\]/ },
+  PowerShell: { isBackslashEscape: false, plain: /^[\w\-./=:+%\\]/, splitsParameters: true },
 };
+const PARAMETER_START = /^-[A-Za-z_]/;
+const PARAMETER_WORD = /^-[\w-]+$/;
 // The options git status and git log may take and still print no file's text or diff.
 const STATUS_OPTIONS = new RegExp("^(-(?=.)[sbz]*(u(no|normal|all)?)?|--(short|branch|porcelain(=v[12])?"
   + "|untracked-files(=(no|normal|all))?|ignored(=\\w+)?|(no-)?ahead-behind|show-stash|no-renames))$");
@@ -186,17 +191,22 @@ function readQuoted(command, at, dialect) {
 
 // The command's words, operators and output redirections, read the way the dialect's shell
 // reads quotes; null when it holds what cannot be read word by word: an unclosed quote, an
-// expansion in double quotes, a backslash before a line break, or any unquoted character
-// the dialect does not read as plain. A word spelled with a quote or a backslash says so, since
-// a quoted string can be a command another shell runs.
+// expansion in double quotes, a backslash before a line break, any unquoted character the
+// dialect does not read as plain, or a parameter word the dialect may split. A word spelled
+// with a quote or a backslash says so, since a quoted string can be a command another shell runs.
 function tokenize(command, dialect) {
   const tokens = [];
   let word = null;
   let isQuoted = false;
+  let startsPlain = false;
+  let isSplit = false;
   const endWord = () => {
+    const isParameter = dialect.splitsParameters && startsPlain && PARAMETER_START.test(word);
+    if (isParameter && (isQuoted || !PARAMETER_WORD.test(word))) isSplit = true;
     if (word !== null) tokens.push({ word, isQuoted });
     word = null;
     isQuoted = false;
+    startsPlain = false;
   };
   for (let at = 0; at < command.length; at++) {
     const rest = command.slice(at);
@@ -227,13 +237,14 @@ function tokenize(command, dialect) {
       isQuoted = true;
       at++;
     } else if (dialect.plain.test(rest)) {
+      if (word === null) startsPlain = true;
       word = (word ?? "") + rest[0];
     } else {
       return null;
     }
   }
   endWord();
-  return tokens;
+  return isSplit ? null : tokens;
 }
 
 // Simple commands, each with its words and the operator before it; a redirection's target
