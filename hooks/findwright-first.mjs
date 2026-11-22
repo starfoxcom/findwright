@@ -12,14 +12,19 @@ const SHELL_TOOLS = ["Bash", "PowerShell"];
 const COMMAND_SPLITTERS = /\|\||&&|\||&|;|\n|\$\(|`|xargs |-exec /;
 // Shell operators between simple commands, and an output redirection (`>`, `>>`, `&>`, `2>&1`).
 const OPERATOR = /^(\|\||&&|\|&|\||;|\n|&(?!>))/;
-const OUTPUT_REDIRECT = /^&?>>?(&[\d-]*)?/;
+const OUTPUT_REDIRECT = /^&?>[>|]?(&[\d-]*)?/;
 // `|&` pipes the error output too.
 const PIPES = ["|", "|&"];
 const SEARCH_TOOLS = ["grep", "rg", "ag", "ack", "ripgrep", "findstr"];
 const SEARCH_PHRASES = ["git grep"];
-// Unquoted characters the reading accounts for. Any other one (`<`, `#`, `$`, `!`, a glob or a
-// bracket) can redirect input, end the command early or expand to file names.
-const PLAIN_CHARACTER = /^[\w\-./=:,+@%]/;
+// How each shell reads a word, and the unquoted characters the reading accounts for. Any other
+// one (`<`, `#`, `$`, `!`, a glob or a bracket) can redirect input, end the command early or
+// expand to file names. PowerShell takes a backslash as a plain character, and spreads `a,b`
+// and `@name` into several arguments, so it reads neither `,` nor `@` as plain.
+const DIALECTS = {
+  Bash: { isBackslashEscape: true, plain: /^[\w\-./=:,+@%]/ },
+  PowerShell: { isBackslashEscape: false, plain: /^[\w\-./=:+%\\]/ },
+};
 // The options git status and git log may take and still print no file's text or diff.
 const STATUS_OPTIONS = new RegExp("^(-(?=.)[sbz]*(u(no|normal|all)?)?|--(short|branch|porcelain(=v[12])?"
   + "|untracked-files(=(no|normal|all))?|ignored(=\\w+)?|(no-)?ahead-behind|show-stash|no-renames))$");
@@ -45,16 +50,46 @@ const OUTPUT_SOURCES = {
   },
   cargo: { test: true }, go: { test: true }, dotnet: { test: true },
 };
-// Stages that reshape the output fed to them. They take options and counts only, so any other
-// word is a file they read instead. Scripted tools (sed, awk) can read files and are left out.
+// Stages that reshape the output fed to them, taking options only, so any other word is a file
+// they read. Scripted tools (sed, awk) can read files and are left out.
 const RESHAPERS = ["sort", "uniq", "head", "tail", "cut", "wc"];
-// Options that give the pattern, so every word left is a file: grep and rg -e/-f/--regexp/--file,
-// findstr /c: and /g:.
-const PATTERN_OPTION = /^-[a-zA-Z]*[ef]|^--(regexp|file)|^\/[cCgG]:/;
-// Flags that make a search walk folders, or read a list of files, instead of reading its input.
-const RECURSIVE_FLAGS = {
-  grep: /^-[a-z]*r|^--(dereference-)?recursive$|^-d$|^--directories/i,
-  findstr: /^\/(s|f:)/i,
+// The options a stage after the pipe may take and still read only its input: single-letter
+// flags, letters that take a value (glued, or the next word), long options, long options that
+// take a value (`=value`, or the next word), and a bare count (`-20`). Long options are matched
+// whole, since GNU tools also take any unambiguous prefix. Any other option may name a file,
+// walk folders or give the pattern (grep -r, -e and -f, ack -x, sort --files0-from), so the
+// command stays a search.
+const names = (list) => list.split(" ").filter(Boolean);
+const stageOptions = (flags, values, long, longValues = "", isCountFlag = false) => ({
+  flags, values, long: names(long), longValues: names(longValues), isCountFlag,
+});
+const GREP_LONG = "ignore-case invert-match count line-number only-matching word-regexp"
+  + " line-regexp extended-regexp fixed-strings perl-regexp basic-regexp quiet silent no-filename"
+  + " with-filename files-with-matches files-without-match null-data byte-offset text color colour";
+const CONTEXT_VALUES = "max-count after-context before-context context color colour";
+const RG = stageOptions("ivcnNowxFsSqHIlUaz", "mABCE", `${GREP_LONG} smart-case case-sensitive`
+  + " no-line-number no-heading heading column vimgrep multiline trim", `${CONTEXT_VALUES} encoding`);
+const LINES = stageOptions("qvz", "nc", "quiet silent verbose zero-terminated", "lines bytes", true);
+const STAGE_OPTIONS = {
+  grep: stageOptions("ivcnowxEFGPqshHlLzab", "mABC", GREP_LONG, CONTEXT_VALUES, true),
+  rg: RG,
+  ripgrep: RG,
+  ack: stageOptions("ivcwhHlLoQIs", "mABC", "ignore-case invert-match count word-regexp no-filename"
+    + " with-filename files-with-matches files-without-matches literal nocolor color", CONTEXT_VALUES),
+  ag: stageOptions("ivcwlLoQsS", "mABC", "ignore-case invert-match count word-regexp files-with-matches"
+    + " files-without-matches only-matching literal case-sensitive smart-case nocolor color",
+  "max-count after before context"),
+  findstr: stageOptions("ivnbelrx", "", ""),
+  sort: stageOptions("bdfghiMnRrsuVz", "kt", "ignore-leading-blanks dictionary-order ignore-case"
+    + " general-numeric-sort human-numeric-sort ignore-nonprinting month-sort numeric-sort"
+    + " random-sort reverse stable unique version-sort zero-terminated", "key field-separator"),
+  uniq: stageOptions("cdDiuz", "fsw", "count repeated all-repeated ignore-case unique zero-terminated",
+    "skip-fields skip-chars check-chars"),
+  head: LINES,
+  tail: { ...LINES, flags: "qvzf" },
+  cut: stageOptions("sz", "bcdf", "complement only-delimited zero-terminated",
+    "bytes characters delimiter fields output-delimiter"),
+  wc: stageOptions("clmwL", "", "bytes chars lines words max-line-length"),
 };
 const BLOCK_EXIT_CODE = 2;
 
@@ -100,25 +135,27 @@ function startsWithSearchTool(token) {
 }
 
 // The quoted text starting at `at` as the shell reads it, with where it ends; undefined when no
-// quote starts there, null when it never closes or runs a command substitution.
-function readQuoted(command, at) {
+// quote starts there, null when it never closes or expands inside double quotes (`$`, a
+// backtick), which can run a command or yield several words (`"$@"`).
+function readQuoted(command, at, dialect) {
   const quote = command[at];
   if (quote !== "'" && quote !== '"') return undefined;
+  const escapes = quote === '"' && dialect.isBackslashEscape;
   let end = at + 1;
-  while (end < command.length && command[end] !== quote) end += quote === '"' && command[end] === "\\" ? 2 : 1;
+  while (end < command.length && command[end] !== quote) end += escapes && command[end] === "\\" ? 2 : 1;
   if (end >= command.length) return null;
   const text = command.slice(at + 1, end);
   if (quote === "'") return { text, end };
-  if (/\$\(|`/.test(text)) return null;
-  return { text: text.replace(/\\(["\\$`])/g, "$1"), end };
+  if (/[$`]/.test(text)) return null;
+  return { text: escapes ? text.replace(/\\(["\\])/g, "$1") : text, end };
 }
 
-// The command's words, operators and output redirections, read the way a POSIX shell reads
-// quotes; null when it holds what cannot be read word by word: an unclosed quote, a command
-// substitution in double quotes, a backslash before a line break, or any unquoted character
-// outside PLAIN_CHARACTER. A word spelled with a quote or a backslash says so, since a quoted
-// string can be a command another shell runs.
-function tokenize(command) {
+// The command's words, operators and output redirections, read the way the dialect's shell
+// reads quotes; null when it holds what cannot be read word by word: an unclosed quote, an
+// expansion in double quotes, a backslash before a line break, or any unquoted character
+// the dialect does not read as plain. A word spelled with a quote or a backslash says so, since
+// a quoted string can be a command another shell runs.
+function tokenize(command, dialect) {
   const tokens = [];
   let word = null;
   let isQuoted = false;
@@ -129,7 +166,7 @@ function tokenize(command) {
   };
   for (let at = 0; at < command.length; at++) {
     const rest = command.slice(at);
-    const quoted = readQuoted(command, at);
+    const quoted = readQuoted(command, at, dialect);
     if (quoted === null) return null;
     const operator = OPERATOR.exec(rest)?.[0];
     const redirect = quoted ? undefined : OUTPUT_REDIRECT.exec(rest)?.[0];
@@ -138,18 +175,19 @@ function tokenize(command) {
       isQuoted = true;
       at = quoted.end;
     } else if (operator || redirect) {
-      if (redirect && /^\d+$/.test(word ?? "")) word = null;
+      // Only an unquoted number glued to `>` names a file descriptor; `"2">out` writes the word 2.
+      if (redirect && !isQuoted && /^\d+$/.test(word ?? "")) word = null;
       endWord();
       tokens.push(operator ? { operator } : { redirect: !redirect.includes(">&") });
       at += (operator ?? redirect).length - 1;
     } else if (/\s/.test(rest[0])) {
       endWord();
-    } else if (rest[0] === "\\") {
+    } else if (rest[0] === "\\" && dialect.isBackslashEscape) {
       if (rest.length < 2 || rest[1] === "\n") return null;
       word = (word ?? "") + rest[1];
       isQuoted = true;
       at++;
-    } else if (PLAIN_CHARACTER.test(rest)) {
+    } else if (dialect.plain.test(rest)) {
       word = (word ?? "") + rest[0];
     } else {
       return null;
@@ -160,13 +198,16 @@ function tokenize(command) {
 }
 
 // Simple commands, each with its words and the operator before it; a redirection's target
-// is dropped, since output written to a file is no file read.
+// is dropped, since output written to a file is no file read. A target never crosses an
+// operator.
 function simpleCommands(tokens) {
   const commands = [{ operator: null, words: [] }];
   let dropsNextWord = false;
   for (const token of tokens) {
-    if (token.operator) commands.push({ operator: token.operator, words: [] });
-    else if ("redirect" in token) dropsNextWord = token.redirect;
+    if (token.operator) {
+      commands.push({ operator: token.operator, words: [] });
+      dropsNextWord = false;
+    } else if ("redirect" in token) dropsNextWord = token.redirect;
     else if (dropsNextWord) dropsNextWord = false;
     else commands.at(-1).words.push(token.word);
   }
@@ -188,30 +229,54 @@ function runsSearch(words) {
     || (word === "git" && words[at + 1] === "grep"));
 }
 
-// A command's name, its arguments, and the arguments that are not options. Every word after
-// `--` is a pattern or a file, however it starts.
-function parseWords([tool = "", ...args]) {
+// Whether `option` is one the stage allows, and whether it takes the next word as its value;
+// null when the stage does not allow it.
+function readOption(options, option) {
+  if (option.startsWith("--")) {
+    const [name, value] = option.slice(2).split(/=(.*)/s);
+    if (value !== undefined) return options.longValues.includes(name) ? { takesNext: false } : null;
+    if (options.long.includes(name)) return { takesNext: false };
+    return options.longValues.includes(name) ? { takesNext: true } : null;
+  }
+  if (options.isCountFlag && /^-\d+$/.test(option)) return { takesNext: false };
+  for (let at = 1; at < option.length; at++) {
+    if (options.values.includes(option[at])) return { takesNext: at === option.length - 1 };
+    if (!options.flags.includes(option[at])) return null;
+  }
+  return { takesNext: false };
+}
+
+// A stage's name and the words it takes as patterns or files; null when it is not a stage the
+// hook knows, or takes an option its list does not allow. findstr's options start with `/`.
+function readStage([tool = "", ...args]) {
   const name = tool.toLowerCase();
-  const isOption = (arg) => arg.startsWith("-") || (name === "findstr" && arg.startsWith("/"));
-  const end = args.includes("--") ? args.indexOf("--") : args.length;
-  const operands = [...args.slice(0, end).filter((arg) => !isOption(arg)), ...args.slice(end + 1)];
-  return { name, args, operands };
+  if (!Object.hasOwn(STAGE_OPTIONS, name)) return null;
+  const operands = [];
+  for (let at = 0; at < args.length; at++) {
+    const arg = args[at];
+    if (arg === "--") return { name, operands: [...operands, ...args.slice(at + 1)] };
+    const slashOption = name === "findstr" && arg.startsWith("/");
+    if (!slashOption && !(arg.startsWith("-") && arg !== "-")) {
+      operands.push(arg);
+      continue;
+    }
+    const option = readOption(STAGE_OPTIONS[name], slashOption ? `-${arg.slice(1).toLowerCase()}` : arg);
+    if (!option || (slashOption && arg.length !== 2)) return null;
+    if (option.takesNext) at++;
+  }
+  return { name, operands };
 }
 
-// A search reads files, not its input, when it walks folders or names a file after its
-// pattern: past the first word, or past none when an option gave the pattern.
-function readsFiles(words) {
-  const { name, args, operands } = parseWords(words);
-  if (args.some((arg) => RECURSIVE_FLAGS[name]?.test(arg))) return true;
-  return operands.length > (args.some((arg) => PATTERN_OPTION.test(arg)) ? 0 : 1);
+// A search reads only its input when its one operand is the pattern.
+function isInputSearch(words) {
+  const read = readStage(words);
+  return read !== null && SEARCH_TOOLS.includes(read.name) && read.operands.length === 1;
 }
 
-// sort and wc --files0-from read the files a list names.
 function isReshaper(words) {
-  const { name, args, operands } = parseWords(words);
-  if (args.some((arg) => arg.startsWith("--files0-from"))) return false;
-  if (RESHAPERS.includes(name)) return operands.every((word) => /^\d+$/.test(word));
-  return SEARCH_TOOLS.includes(name) && !readsFiles(words);
+  const read = readStage(words);
+  if (read && RESHAPERS.includes(read.name)) return read.operands.length === 0;
+  return isInputSearch(words);
 }
 
 // A source passes when its command allows any use, or its subcommand is listed and what follows
@@ -235,7 +300,7 @@ function isOutputFilter(commands, index) {
   const stages = [];
   for (let at = index; PIPES.includes(commands[at].operator); at--) stages.unshift(commands[at - 1].words);
   const search = commands[index].words;
-  if (stages.length === 0 || !SEARCH_TOOLS.includes(search[0].toLowerCase()) || readsFiles(search)) return false;
+  if (stages.length === 0 || !isInputSearch(search)) return false;
   const [source, ...between] = stages;
   return isOutputSource(source) && between.every(isReshaper);
 }
@@ -244,9 +309,9 @@ function isOutputFilter(commands, index) {
 // search silently skips the index. So the shell reading alone decides: a command passes only
 // when it holds no quoted string that names a search, which another shell may run, and every
 // command in it that runs a search filters output.
-function isGrepLikeShell(command) {
+function isGrepLikeShell(command, dialect) {
   if (!namesSearch(command) && !SEARCH_WORD.test(command)) return false;
-  const tokens = tokenize(command);
+  const tokens = tokenize(command, dialect);
   if (!tokens || tokens.some(({ word, isQuoted }) => isQuoted && namesSearch(word))) return true;
   const commands = simpleCommands(tokens);
   return commands.some(({ words }, index) => runsSearch(words) && !isOutputFilter(commands, index));
@@ -256,7 +321,7 @@ function isShellSearch(payload) {
   const command = payload.tool_input?.command;
   if (typeof command !== "string") return false;
   if (hasBypassMarker(command)) return false;
-  return isGrepLikeShell(command);
+  return isGrepLikeShell(command, DIALECTS[payload.tool_name]);
 }
 
 function isSearch(payload) {
