@@ -5,6 +5,7 @@ Any turn that will take three or more steps starts with `TaskCreate`, before the
 - Mark a task `in_progress` the moment you start it and `completed` the moment it is done. Never work ahead of the list or batch status updates.
 - One task in progress at a time, unless the work is explicitly parallel.
 - A step discovered mid-run becomes a task immediately.
+- Before each commit, put what it does on the task it belongs to, and check that every open task's text and hold still say what is true now. The tasks mod holds a commit until the list has changed since the last one.
 - For work split across several PRs, create one task per PR up front and chain them with `TaskUpdate({ taskId, addBlockedBy: [...] })` so the list follows the merge order.
 - Autonomous runs still stop at visual checkpoints (`visual.md`) when a batch changes what people see.
 

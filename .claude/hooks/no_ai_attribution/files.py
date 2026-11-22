@@ -13,6 +13,8 @@ GIT_READS = {"grep", "log", "show", "whatchanged", "rev-list", "shortlog", "refl
              "status", "config", "clone", "init", "ls-files", "for-each-ref", "cat-file", "check-ignore"}
 GIT_FILE_FLAGS = {"-F", "--file", "--template"}
 GIT_WORD = re.compile(r"\bgit\b", re.I)  # `$GIT`, `$(command -v git)`
+# Drive P's `x`: `/p/x` in Git Bash, `/mnt/p/x` in WSL.
+GIT_BASH_DRIVE = re.compile(r"(?:/mnt)?/([A-Za-z])(?=/|$)")
 FORM_FLAGS = {"-F", "--field", "--form"}  # key=value is a field; key=@file reads a file
 DATA_FLAGS = {"-d", "--data", "--data-binary", "--data-raw"}  # only @file reads a file
 BODY_FLAGS = {"--file", "--body-file", "--notes-file", "--input", "--message-file", "--template",
@@ -174,6 +176,21 @@ def get_content_files(words):
     return files or positional[:1]
 
 
+def anchored(path):
+    """Whether a path names one place from any folder. On Windows a path rooted without a
+    drive (`/x`) is on the drive of the folder the command runs in."""
+    return os.path.isabs(path) and bool(os.name != "nt" or os.path.splitdrive(path)[0])
+
+
+def converted(path):
+    """The file a drive path names in the shell that reads it, on Windows: `/p/x` once Git Bash
+    converts it, or `/mnt/p/x` in a WSL `bash`, is `P:/x`. Git Bash leaves some arguments as
+    written (conversion turned off, some spellings, a PowerShell call), and those land on the
+    folder's own drive, so both are read."""
+    match = GIT_BASH_DRIVE.match(path) if os.name == "nt" else None
+    return [f"{match.group(1).upper()}:{path[match.end():] or '/'}"] if match else []
+
+
 def resolve(value, places):
     """(path, error) for each file a body flag's value may name, or an error saying why it
     cannot be told before the command runs. A relative file is read in each of `places`
@@ -183,14 +200,16 @@ def resolve(value, places):
         yield None, f"a body file named by text the shell builds at run time ({value.get('dynamic')})"
         return
     path = os.path.expanduser(value)
-    if os.path.isabs(path):
-        yield path, None
+    if anchored(path):
+        paths = [path]
     elif places is None:
         yield None, (f"a relative body file {value} after a folder change the command text cannot tell"
                      " (such as `cd -`, a target built at run time or a folder this computer cannot find)")
+        return
     else:
         paths = [os.path.join(place, path) for place in places]
-        yield from ((found, None) for found in [p for p in paths if os.path.isfile(p)] or paths[:1])
+    paths += converted(path)
+    yield from ((found, None) for found in [p for p in paths if os.path.isfile(p)] or paths[:1])
 
 
 def is_cmdlet(name):
@@ -296,8 +315,8 @@ def folder_places(commands, cwd):
     may run in a child shell or fail, so the shell may be in any of them. The changes are then
     applied again until no folder is added, since a loop or a function may run a `cd` again.
     None when a target cannot be placed: one built at run time, or one this computer cannot
-    find, such as a saved folder (`cd -`, `~-`), a Git Bash path (`/c/...`) or a folder made
-    later, or when the folders pass MAX_PLACES."""
+    find, such as a saved folder (`cd -`, `~-`) or a folder made later, or when the folders
+    pass MAX_PLACES."""
     targets = [target for words in commands for target in folder_targets(words)]
     if not all(isinstance(target, str) for target in targets):
         return None
@@ -305,7 +324,8 @@ def folder_places(commands, cwd):
     while True:
         count = len(places)
         for target in map(os.path.expanduser, targets):
-            reached = [target] if os.path.isabs(target) else [os.path.join(place, target) for place in places]
+            reached = [target] if anchored(target) else [os.path.join(place, target) for place in places]
+            reached += converted(target)
             found = [place for place in reached if os.path.isdir(place)]
             if first and not found:
                 return None
