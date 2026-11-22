@@ -799,18 +799,47 @@ jobs:
 
       # With ANTHROPIC_API_KEY set and no account token at all
       # (CLAUDE_CODE_OAUTH_TOKEN to _5), the key is the only payer, so the
-      # action attempts below run on it too. Only whether each secret is set
-      # is read here, never its value.
+      # action attempts below run on it too. With the key and only later
+      # accounts' tokens, the attempts on the first account run on it, and the
+      # backup on the account it picks. It also names the first account whose
+      # token is set, which the backup and its label take when "Pick the
+      # backup's account" leaves no index. Only whether each secret is set is
+      # read here, never its value.
       - name: Pick who pays for the review
         id: payer
         shell: bash
         env:
           HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+          HAS_FIRST: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
+          HAS_2: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_2 != '' }}
+          HAS_3: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_3 != '' }}
+          HAS_4: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_4 != '' }}
+          HAS_5: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN_5 != '' }}
           HAS_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.CLAUDE_CODE_OAUTH_TOKEN_2 != '' || secrets.CLAUDE_CODE_OAUTH_TOKEN_3 != '' || secrets.CLAUDE_CODE_OAUTH_TOKEN_4 != '' || secrets.CLAUDE_CODE_OAUTH_TOKEN_5 != '' }}
         run: |
           if [ "$HAS_KEY" = true ] && [ "$HAS_TOKEN" != true ]; then
-            echo "::notice::No account token secret: every attempt runs on the API key"
+            echo "::notice::No account token secret: every attempt runs on the API key. A key holding only a plan's monthly credits pays for the first run alone, since the review action is refused those credits."
             echo "key_only=yes" >> "$GITHUB_OUTPUT"
+          fi
+          # With no first account token the first action attempt has no
+          # account to run on, so it runs on the key; the backup keeps the
+          # account it picks.
+          if [ "$HAS_KEY" = true ] && [ "$HAS_FIRST" != true ]; then
+            echo "main_on_key=yes" >> "$GITHUB_OUTPUT"
+            if [ "$HAS_TOKEN" = true ]; then
+              echo "::notice::No first account token: the attempts on the first account run on the API key, and the backup on a later account. A key holding only a plan's monthly credits cannot pay for those attempts, since the review action is refused those credits."
+            fi
+          fi
+          if [ "$HAS_FIRST" = true ]; then
+            echo "first_index=1" >> "$GITHUB_OUTPUT"
+          elif [ "$HAS_2" = true ]; then
+            echo "first_index=2" >> "$GITHUB_OUTPUT"
+          elif [ "$HAS_3" = true ]; then
+            echo "first_index=3" >> "$GITHUB_OUTPUT"
+          elif [ "$HAS_4" = true ]; then
+            echo "first_index=4" >> "$GITHUB_OUTPUT"
+          elif [ "$HAS_5" = true ]; then
+            echo "first_index=5" >> "$GITHUB_OUTPUT"
           fi
 
       # First attempt: the plan's monthly API credits, as in the routine tier.
@@ -977,8 +1006,8 @@ jobs:
           # or when that step failed, and then the action sets up its own.
           path_to_bun_executable: ${{ steps.bun.outputs.path }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Empty unless the API key is the only payer ("Pick who pays").
-          anthropic_api_key: ${{ steps.payer.outputs.key_only == 'yes' && secrets.ANTHROPIC_API_KEY || '' }}
+          # Empty unless no first account token is set ("Pick who pays").
+          anthropic_api_key: ${{ steps.payer.outputs.main_on_key == 'yes' && secrets.ANTHROPIC_API_KEY || '' }}
           claude_args: '--setting-sources user,project --permission-mode default --allowedTools "Bash(gh pr view *),Bash(gh pr diff *),Bash(gh pr checks *),Bash(gh issue view *),Bash(gh run view *),Bash(gh run list *),Read${{ steps.gate.outputs.tools_suffix }}" --disallowedTools "Agent,Task,ScheduleWakeup,SendMessage,ListAgents,Edit,Write,MultiEdit,NotebookEdit,Bash(git add*),Bash(git commit*),Bash(git push*),Bash(git rm*),Bash(/*)" --max-turns ${{ steps.gate.outputs.deep_max_turns }} --model ${{ steps.gate.outputs.deep_model }} --effort ${{ steps.gate.outputs.deep_effort }} --json-schema ''${{ env.DEEP_SCHEMA }}'''
           show_full_output: false
           additional_permissions: |
@@ -1074,8 +1103,8 @@ jobs:
           # or when that step failed, and then the action sets up its own.
           path_to_bun_executable: ${{ steps.bun.outputs.path }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          # Empty unless the API key is the only payer ("Pick who pays").
-          anthropic_api_key: ${{ steps.payer.outputs.key_only == 'yes' && secrets.ANTHROPIC_API_KEY || '' }}
+          # Empty unless no first account token is set ("Pick who pays").
+          anthropic_api_key: ${{ steps.payer.outputs.main_on_key == 'yes' && secrets.ANTHROPIC_API_KEY || '' }}
           claude_args: '--setting-sources user,project --permission-mode default --allowedTools "Bash(gh pr view *),Bash(gh pr diff *),Bash(gh pr checks *),Bash(gh issue view *),Bash(gh run view *),Bash(gh run list *),Read${{ steps.gate.outputs.tools_suffix }}" --disallowedTools "Agent,Task,ScheduleWakeup,SendMessage,ListAgents,Edit,Write,MultiEdit,NotebookEdit,Bash(git add*),Bash(git commit*),Bash(git push*),Bash(git rm*),Bash(/*)" --max-turns ${{ steps.gate.outputs.deep_max_turns }} --model ${{ steps.gate.outputs.deep_model }} --effort ${{ steps.gate.outputs.deep_effort }} --json-schema ''${{ env.DEEP_SCHEMA }}'''
           show_full_output: false
           additional_permissions: |
@@ -1308,7 +1337,9 @@ jobs:
         env:
           # The account the step above picked; an index from 2 up is set only
           # for an account whose token is set, so its secret is never empty.
-          CLAUDE_CODE_OAUTH_TOKEN: ${{ steps.account.outputs.index == '2' && secrets.CLAUDE_CODE_OAUTH_TOKEN_2 || steps.account.outputs.index == '3' && secrets.CLAUDE_CODE_OAUTH_TOKEN_3 || steps.account.outputs.index == '4' && secrets.CLAUDE_CODE_OAUTH_TOKEN_4 || steps.account.outputs.index == '5' && secrets.CLAUDE_CODE_OAUTH_TOKEN_5 || secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Without an index (that step failed), the first account that has a
+          # token, as "Pick who pays" names it.
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ (steps.account.outputs.index || steps.payer.outputs.first_index) == '2' && secrets.CLAUDE_CODE_OAUTH_TOKEN_2 || (steps.account.outputs.index || steps.payer.outputs.first_index) == '3' && secrets.CLAUDE_CODE_OAUTH_TOKEN_3 || (steps.account.outputs.index || steps.payer.outputs.first_index) == '4' && secrets.CLAUDE_CODE_OAUTH_TOKEN_4 || (steps.account.outputs.index || steps.payer.outputs.first_index) == '5' && secrets.CLAUDE_CODE_OAUTH_TOKEN_5 || secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # The action puts the base branch's config in the checkout before the
           # reviewer starts; this tells it where the PR's own copies are.
           APPEND_SYSTEM_PROMPT: "In this checkout the top-level .claude/, CLAUDE.md, CLAUDE.local.md, .mcp.json, .claude.json, .gitmodules, .ripgreprc, AGENTS.md and .husky/ hold the base branch's copies, put there before you start: read the PR's version of any of them with `git show HEAD:<path>`, never with Read, also when the diff shows one as binary. CLAUDE.md and .claude/rules/ are read from the base on purpose: they hold the rules. ${{ steps.gate.outputs.guide_note }}"
@@ -1317,7 +1348,7 @@ jobs:
           # The Bun from "Bring a Bun for the review action". Empty off Linux
           # or when that step failed, and then the action sets up its own.
           path_to_bun_executable: ${{ steps.bun.outputs.path }}
-          claude_code_oauth_token: ${{ steps.account.outputs.index == '2' && secrets.CLAUDE_CODE_OAUTH_TOKEN_2 || steps.account.outputs.index == '3' && secrets.CLAUDE_CODE_OAUTH_TOKEN_3 || steps.account.outputs.index == '4' && secrets.CLAUDE_CODE_OAUTH_TOKEN_4 || steps.account.outputs.index == '5' && secrets.CLAUDE_CODE_OAUTH_TOKEN_5 || secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_code_oauth_token: ${{ (steps.account.outputs.index || steps.payer.outputs.first_index) == '2' && secrets.CLAUDE_CODE_OAUTH_TOKEN_2 || (steps.account.outputs.index || steps.payer.outputs.first_index) == '3' && secrets.CLAUDE_CODE_OAUTH_TOKEN_3 || (steps.account.outputs.index || steps.payer.outputs.first_index) == '4' && secrets.CLAUDE_CODE_OAUTH_TOKEN_4 || (steps.account.outputs.index || steps.payer.outputs.first_index) == '5' && secrets.CLAUDE_CODE_OAUTH_TOKEN_5 || secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Empty unless the API key is the only payer ("Pick who pays").
           anthropic_api_key: ${{ steps.payer.outputs.key_only == 'yes' && secrets.ANTHROPIC_API_KEY || '' }}
           claude_args: '--setting-sources user,project --permission-mode default --allowedTools "Bash(gh pr view *),Bash(gh pr diff *),Bash(gh pr checks *),Bash(gh issue view *),Bash(gh run view *),Bash(gh run list *),Read${{ steps.gate.outputs.tools_suffix }}" --disallowedTools "Agent,Task,ScheduleWakeup,SendMessage,ListAgents,Edit,Write,MultiEdit,NotebookEdit,Bash(git add*),Bash(git commit*),Bash(git push*),Bash(git rm*),Bash(/*)" --max-turns ${{ steps.gate.outputs.deep_max_turns }} --model ${{ steps.gate.outputs.deep_fallback_model }} --effort ${{ steps.gate.outputs.deep_fallback_effort }} --json-schema ''${{ env.DEEP_SCHEMA }}'''
@@ -1464,7 +1495,7 @@ jobs:
           # The model whose review was posted, for the check summaries: the job
           # name and a green first step cannot tell (every attempt continues on
           # error).
-          REVIEWER: ${{ steps.post.outcome != 'success' && 'none' || steps.claude_credits.outcome == 'success' && format('{0} {1} (API credits)', steps.gate.outputs.deep_model, steps.gate.outputs.deep_effort) || steps.posted-1.outputs.posted == 'yes' && format('{0} {1}{2}', steps.gate.outputs.deep_model, steps.gate.outputs.deep_effort, steps.payer.outputs.key_only == 'yes' && ' (API credits)' || '') || steps.posted-2.outputs.posted == 'yes' && format('{0} {1} (retry{2})', steps.gate.outputs.deep_model, steps.gate.outputs.deep_effort, steps.payer.outputs.key_only == 'yes' && ', API credits' || '') || steps.posted-3.outputs.posted == 'yes' && format('{0} {1} (fallback{2}{3})', steps.gate.outputs.deep_fallback_model, steps.gate.outputs.deep_fallback_effort, steps.account.outputs.index != '' && steps.account.outputs.index != '1' && format(', account {0}', steps.account.outputs.index) || '', steps.payer.outputs.key_only == 'yes' && ', API credits' || '') || 'none' }}
+          REVIEWER: ${{ steps.post.outcome != 'success' && 'none' || steps.claude_credits.outcome == 'success' && format('{0} {1} (API credits)', steps.gate.outputs.deep_model, steps.gate.outputs.deep_effort) || steps.posted-1.outputs.posted == 'yes' && format('{0} {1}{2}', steps.gate.outputs.deep_model, steps.gate.outputs.deep_effort, steps.payer.outputs.main_on_key == 'yes' && ' (API credits)' || '') || steps.posted-2.outputs.posted == 'yes' && format('{0} {1} (retry{2})', steps.gate.outputs.deep_model, steps.gate.outputs.deep_effort, steps.payer.outputs.main_on_key == 'yes' && ', API credits' || '') || steps.posted-3.outputs.posted == 'yes' && format('{0} {1} (fallback{2}{3})', steps.gate.outputs.deep_fallback_model, steps.gate.outputs.deep_fallback_effort, (steps.account.outputs.index || steps.payer.outputs.first_index) != '' && (steps.account.outputs.index || steps.payer.outputs.first_index) != '1' && format(', account {0}', (steps.account.outputs.index || steps.payer.outputs.first_index)) || '', steps.payer.outputs.key_only == 'yes' && ', API credits' || '') || 'none' }}
           ATTEMPTS: "API credits: ${{ steps.claude_credits.outcome || 'skipped' }}, first: ${{ steps.claude_attempt_1.outcome || 'skipped' }}, usage limit: ${{ steps.failure_class.outputs.usage_limit || 'no' }}, retry: ${{ steps.claude_retry.outcome || 'skipped' }}, fallback: ${{ steps.claude_fallback.outcome || 'skipped' }}, newest CLI: ${{ steps.claude-cli.outputs.version || 'not installed' }}, fallback CLI: ${{ steps.claude-cli-stable.outputs.version || 'none' }}"
         run: |
           set -o pipefail
