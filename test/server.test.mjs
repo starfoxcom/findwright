@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
@@ -125,6 +125,29 @@ test("a call with a bad argument names it and never opens the index", () => {
   assert.deepEqual(readdirSync(join(repo, ".findwright")), ["config.json"], "no index was built");
   const [nullOptional] = callTools(repo, [["symbols", { query: "x", kind: null, globs: null }]]);
   assert.equal(nullOptional.isError, undefined, "a null optional argument counts as left out");
+});
+
+test("a server whose helper was replaced under it says so in every answer", async () => {
+  const copy = mkdtempSync(join(tmpdir(), "findwright-helper-"));
+  cpSync(fileURLToPath(new URL("../src", import.meta.url)), join(copy, "src"), { recursive: true });
+  const packageFile = join(copy, "package.json");
+  writeFileSync(packageFile, JSON.stringify({ name: "findwright", version: "2.0.0", type: "module" }));
+  const child = spawn(process.execPath, [join(copy, "src", "server.mjs")],
+    { env: { ...env, FINDWRIGHT_ROOT: fittedRepo({ rules: [] }) } });
+  const lines = createInterface({ input: child.stdout });
+  const firstText = async (id) => {
+    const reply = once(lines, "line");
+    child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call",
+      params: { name: "coverage", arguments: {} } })}\n`);
+    return JSON.parse((await reply)[0]).result.content[0].text;
+  };
+  try {
+    assert.doesNotMatch(await firstText(1), /reconnect/, "the copy on disk is the one running");
+    writeFileSync(packageFile, JSON.stringify({ name: "findwright", version: "2.1.0", type: "module" }));
+    assert.match(await firstText(2), /FindWright 2\.1\.0 is installed, but this session's server still runs 2\.0\.0/);
+  } finally {
+    child.stdin.end();
+  }
 });
 
 test("a session started after a failed counts send is told once a day", () => {
