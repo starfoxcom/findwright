@@ -209,7 +209,7 @@ CONTINUED_LINE = re.compile(r"(?<!\\)((?:\\\\)*)\\\r?\n|(?<=[ \t])`\r?\n")
 SHELL_ESCAPES = re.compile(r"\\|\$['\"]")
 
 PATH_TOKEN = re.compile(r"(?<!:/)(?<![\w])(?:[A-Za-z]:|~)?(?:[\\/][\w.\-]+)+")
-ALL_PARSES_SECONDS = 9  # every parse of one command, nested strings included: the hook is stopped at 10 s
+ALL_PARSES_SECONDS = 27  # every parse of one command, nested strings included: the hook is stopped at 30 s
 BYPASS_REASONS = {
     "hooks": "git hook bypass (--no-verify / -n) is not allowed.",
     "setting": ("setting core.hooksPath or a hook. setting changes which hooks git runs;"
