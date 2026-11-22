@@ -5,7 +5,7 @@ description: Start a work session. Reads the project state and git state, then p
 
 # /start-session
 
-Planning only. Create no branches and change no files in this turn, apart from the session's purpose note in step 4 where it applies.
+Planning only. Create no branches and change no files in this turn, apart from the session's purpose note in step 4 where it applies and the pruning date in step 2, which lives in git config.
 
 ## 1. Read
 
@@ -31,6 +31,8 @@ Then run the extra start steps, if any.
 
 Last, Bindwright's own check. In `plugins/installed_plugins.json` in the Claude config folder (`$CLAUDE_CONFIG_DIR`, or `~/.claude`), take the `bindwright` install that applies here: the one whose `projectPath` is this repo root, otherwise the one with `scope` `managed` or `user`; never one whose `projectPath` names another folder. Skip the step when the most specific settings file that sets that plugin's `enabledPlugins` entry (the managed settings an administrator installs, then `.claude/settings.local.json`, then `.claude/settings.json`, then `settings.json` in the config folder) sets it to `false`: a plugin turned off in `/plugin` stays installed. Otherwise run `node "$HOME/.bindwright/helper/node_modules/bindwright/hooks/notice.mjs" --plugin "<installPath>"` from the repo root, with a timeout of two minutes. When the plugin has moved ahead of its helper, it first installs the helper version the plugin pins, which can take up to a minute and a half, and prints a line saying the helper moved, or, at most once a day, why it could not. Apart from that, at most once a day it prints a line when the plugin, its helper or this repo's Bindwright files are behind. Put any line it prints at the top of the report. It prints nothing otherwise. Run it outside the Bash sandbox when one is on: inside it the opt-in counts send cannot reach the network. A missing or unreadable file, plugin, helper or Node skips the step without a word, with one exception: when a `bindwright` install applies here and is not turned off, the helper is missing, and `bindwright/counts.json` in the Claude config folder holds `"share": true` with an entry for this repo whose `kind` is set, put one line at the top of the report instead: this computer turned the review counts on, but they are not being sent while Bindwright's helper is missing, and `/bindwright:setup` installs it again.
 
+After that, the monthly pruning offer, so a session that never closes still gets it: when `git config --local bindwright.lastPruning` prints a date 30 or more days old, put the question from `/close-session`'s Pruning pass (`.claude/skills/close-session/SKILL.md`) at the top of the report, and set today's date in this turn as that section says, since the date records the offer, not the answer. When the next prompt says yes, run that pass, a report only, before the plan starts; any other answer, or none, leaves it for next month. When it prints nothing, leave it for `/close-session` to start.
+
 ## 3. Report, in this order
 
 1. **Project status:** current focus, open work, blockers.
@@ -41,7 +43,7 @@ Last, Bindwright's own check. In `plugins/installed_plugins.json` in the Claude 
 
 ## 4. Stop
 
-When the session-title hook named a purpose file at the start of this session (Bindwright's global `session-title` extra), write this session's purpose to that file before ending the turn: what the plan works on, in 10 words at most and as few as will do, without the project's name. That is the one file this turn writes. From the next prompt, the one that approves the plan, the session's title reads `<Project> - <purpose>`. Rewrite the file when the user corrects the plan or the session's focus changes.
+When the session-title hook named a purpose file at the start of this session (Bindwright's global `session-title` extra), write this session's purpose to that file before ending the turn: what the plan works on, in 10 words at most and as few as will do, without the project's name. That is the one file this turn writes, beside the pruning date of step 2. From the next prompt, the one that approves the plan, the session's title reads `<Project> - <purpose>`. Rewrite the file when the user corrects the plan or the session's focus changes.
 
 End the turn after the report. Once the user approves or corrects the plan, create the tasks per `.claude/rules/task-tracking.md` and start.
 

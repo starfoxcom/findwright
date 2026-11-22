@@ -34,4 +34,4 @@ Rules that matter only at certain milestones live in `docs/lazy/` and do not loa
 
 ## Memory
 
-Project memory lives in `~/.claude/projects/<project-slug>/memory/`, indexed by `MEMORY.md`. Save what the repo cannot tell a future session (decisions, preferences, pointers to outside resources), never what the code or git history already records.
+Project memory lives in `~/.claude/projects/<project-slug>/memory/`, indexed by `MEMORY.md`. Save what the repo cannot tell a future session (decisions, preferences, pointers to outside resources), never what the code or git history already records. Each entry carries the date it was written (`written:`) and where it came from (`source:`), so the monthly pruning pass can find the stale ones.
