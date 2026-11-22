@@ -66,7 +66,7 @@ NEVER = re.compile(r"^\.github/workflows/claude-code-review\.yml$")
 # project: .github/scripts/, where a file Python loads before the standard
 # library could run in the gate; .github/review-guide.md, the project's part
 # of both review prompts; and a .claude/ folder at any depth and any
-# CLAUDE.md or CLAUDE.local.md, the instructions and skills both review tiers
+# CLAUDE.md, CLAUDE.local.md or AGENTS.md, the instructions and skills both review tiers
 # load (Claude Code reads a subfolder's when it reads files there). A project
 # adds its own paths with `triage.always_review` in the gate settings. Matched
 # in any case, as a case-insensitive checkout would place the file. Anything
@@ -74,7 +74,7 @@ NEVER = re.compile(r"^\.github/workflows/claude-code-review\.yml$")
 # script, and a .gitattributes or .lfsconfig.
 SKIPPABLE = re.compile(r"\.(md|png|jpe?g|gif|webp|ico|ttf|otf|woff2?)$", re.I)
 ALWAYS_REVIEWED = re.compile(r"^\.github/scripts/|^\.github/review-guide\.md$|(^|/)\.claude/"
-                             r"|(^|/)CLAUDE(\.local)?\.md$", re.I)
+                             r"|(^|/)(CLAUDE(\.local)?|AGENTS)\.md$", re.I)
 
 # The files API stops at 3,000 entries: a listing that long may be cut short.
 LISTING_CAP = 3000

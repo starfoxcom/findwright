@@ -13,6 +13,7 @@ Nothing secret ships. Treat every artifact that leaves your hands as fully reada
 
 - A new credential, account or token goes into the inventory: what it opens, where it lives, who can read it and how to rotate it. In a private repo that is `docs/security-posture.md`. In a public repo it is the private copy (ask the user where it lives), never the committed template.
 - Anything the app downloads or loads at run time (updates, plugins, mods, remote config, user files) crosses a trust boundary: verify a signature or checksum, and parse it as untrusted input.
+- A web page that loads a script from another party's server runs whatever that server sends, on every visit. Pin the script to an exact version with an integrity hash (`integrity="sha384-..."`), or copy it into the project and serve it yourself, and set a Content-Security-Policy that names the allowed sources. A script its vendor changes on purpose (a tag manager, A/B testing) cannot be pinned, so it stays off pages that handle sign-ins or payments.
 
 ## Testing your own code's security
 
