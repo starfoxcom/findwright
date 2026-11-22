@@ -87,7 +87,7 @@ TEXT_TOOLS = {"echo", "printf", "write-output", "write-host", "awk", "gawk", "ma
 # this budget, so the hook gives its own reason before that.
 HOOK_SECONDS = 27
 STARTED = time.monotonic()
-PARSE_SECONDS = 6
+PARSE_SECONDS = 20
 OUT_OF_TIME = (f"the version check did not finish within {HOOK_SECONDS} s. Run the command again "
                "once the computer is less busy.")
 UNREAD = ("Blocked: this command may make a release, and the version check could not read it. "

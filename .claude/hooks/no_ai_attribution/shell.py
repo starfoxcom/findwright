@@ -11,7 +11,7 @@ from . import routes_in  # the hook file's own, set before this module loads
 
 TEXT_TOOLS = {"awk", "gawk", "mawk", "grep", "egrep", "fgrep", "rg", "sed", "sort", "cut", "tr", "uniq",
               "head", "tail", "wc", "jq", "column", "paste", "join", "select-string", "sls", "findstr"}
-PARSE_SECONDS = 6  # one parse
+PARSE_SECONDS = 20  # one parse
 MAX_NESTED_SHELLS = 3  # `bash -c` inside `bash -c` ... read this many levels deep
 POSIX_SHELLS = {"bash", "sh", "dash", "zsh", "ksh", "mksh", "ash"}
 WRAPPERS = {"sudo", "doas", "env", "command", "builtin", "exec", "nohup", "nice", "time", "xargs"}
