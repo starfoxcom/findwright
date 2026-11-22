@@ -78,16 +78,24 @@ Write the body to a file and pass `--body-file <path>`. Inline bodies get trunca
 
 ```
 ## What
-<1-3 bullets>
+<what the change does, outcome first, in a few plain sentences>
 
 ## Why
-<1-2 lines>
+<the problem it solves, in a sentence or two>
 
 ## Notes (optional)
 <non-obvious decisions, performance impact, manual steps>
 ```
 
 No empty sections and no generic testing checklist. The body carries what the diff cannot show.
+
+Write it the way a colleague explains the change to someone who has not seen it:
+
+- Plain sentences joined with "so", "but", "since", one topic per paragraph. A list only for things a reader ticks off or picks from, such as steps or checks.
+- Say what the change does for the person using it before naming a file, function or flag, and name one only where the reader has to go there.
+- Numbers exact and inline: "from 12 s to 3 s", not "much faster".
+- Say what is still open or was left out as plainly as what works.
+- No hedging ("essentially", "basically"), no em dashes, no hype. The tone stays professional: no slang or swearing.
 
 Review tiers, the verdict rule and CI watching live in `review-tiers.md` and `token-efficiency.md`.
 

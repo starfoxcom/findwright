@@ -21,10 +21,12 @@
 # failure, as before.
 #
 # The review runs on the API credits first (ANTHROPIC_API_KEY, optional) and
-# on the subscription when that run leaves no verdict.
+# on the subscription when that run leaves no verdict. With the key alone and
+# no account token at all (CLAUDE_CODE_OAUTH_TOKEN to _5), every attempt runs
+# on the key.
 #
-# Requires: CLAUDE_CODE_OAUTH_TOKEN in repo secrets. Optional:
-# CLAUDE_CODE_OAUTH_TOKEN_2 to CLAUDE_CODE_OAUTH_TOKEN_5, more accounts' tokens
+# Requires: CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY in repo secrets.
+# Optional: CLAUDE_CODE_OAUTH_TOKEN_2 to CLAUDE_CODE_OAUTH_TOKEN_5, more accounts' tokens
 # for the fallback when the first account has no room left (see the routine
 # workflow's header for why each account has a secret of its own).
 
@@ -795,6 +797,22 @@ jobs:
           esac
           SH
 
+      # With ANTHROPIC_API_KEY set and no account token at all
+      # (CLAUDE_CODE_OAUTH_TOKEN to _5), the key is the only payer, so the
+      # action attempts below run on it too. Only whether each secret is set
+      # is read here, never its value.
+      - name: Pick who pays for the review
+        id: payer
+        shell: bash
+        env:
+          HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+          HAS_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.CLAUDE_CODE_OAUTH_TOKEN_2 != '' || secrets.CLAUDE_CODE_OAUTH_TOKEN_3 != '' || secrets.CLAUDE_CODE_OAUTH_TOKEN_4 != '' || secrets.CLAUDE_CODE_OAUTH_TOKEN_5 != '' }}
+        run: |
+          if [ "$HAS_KEY" = true ] && [ "$HAS_TOKEN" != true ]; then
+            echo "::notice::No account token secret: every attempt runs on the API key"
+            echo "key_only=yes" >> "$GITHUB_OUTPUT"
+          fi
+
       # First attempt: the plan's monthly API credits, as in the routine tier.
       # Like every attempt it posts nothing: it returns its review as
       # structured output, and only a review the gate's reader reads as 🟢
@@ -831,7 +849,7 @@ jobs:
             exit 1
           fi
           if [ -z "$CLI" ]; then
-            echo "::warning::Claude Code was not installed: the deep review runs on the subscription"
+            echo "::warning::Claude Code was not installed: the deep review runs on the action's attempts"
             exit 1
           fi
 
@@ -959,6 +977,8 @@ jobs:
           # or when that step failed, and then the action sets up its own.
           path_to_bun_executable: ${{ steps.bun.outputs.path }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Empty unless the API key is the only payer ("Pick who pays").
+          anthropic_api_key: ${{ steps.payer.outputs.key_only == 'yes' && secrets.ANTHROPIC_API_KEY || '' }}
           claude_args: '--setting-sources user,project --permission-mode default --allowedTools "Bash(gh pr view *),Bash(gh pr diff *),Bash(gh pr checks *),Bash(gh issue view *),Bash(gh run view *),Bash(gh run list *),Read${{ steps.gate.outputs.tools_suffix }}" --disallowedTools "Agent,Task,ScheduleWakeup,SendMessage,ListAgents,Edit,Write,MultiEdit,NotebookEdit,Bash(git add*),Bash(git commit*),Bash(git push*),Bash(git rm*),Bash(/*)" --max-turns ${{ steps.gate.outputs.deep_max_turns }} --model ${{ steps.gate.outputs.deep_model }} --effort ${{ steps.gate.outputs.deep_effort }} --json-schema ''${{ env.DEEP_SCHEMA }}'''
           show_full_output: false
           additional_permissions: |
@@ -1023,7 +1043,7 @@ jobs:
           RESULT=$(jq -r '[.[]? | select(.type == "result")] | last // empty
             | "status=\(.api_error_status // "") \(if .is_error == true then .result // "" else "" end)"' \
             "$RUNNER_TEMP/claude-execution-output.json" 2>/dev/null || true)
-          if printf '%s' "$RESULT" | grep -qiE '^status=429|rate_limit_error|usage limit|quota exceeded|resource_exhausted|(hit|reached) your [^.]{0,40}limit'; then
+          if printf '%s' "$RESULT" | grep -qiE '^status=429|rate_limit_error|usage limit|quota exceeded|resource_exhausted|(hit|reached) your [^.]{0,40}limit|(5-hour|weekly|daily|session|opus|sonnet) limit'; then
             echo "::warning::Usage limit detected in attempt 1 — skipping the same-model retry, falling back to the fallback model"
             echo "usage_limit=true" >> "$GITHUB_OUTPUT"
           else
@@ -1054,6 +1074,8 @@ jobs:
           # or when that step failed, and then the action sets up its own.
           path_to_bun_executable: ${{ steps.bun.outputs.path }}
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Empty unless the API key is the only payer ("Pick who pays").
+          anthropic_api_key: ${{ steps.payer.outputs.key_only == 'yes' && secrets.ANTHROPIC_API_KEY || '' }}
           claude_args: '--setting-sources user,project --permission-mode default --allowedTools "Bash(gh pr view *),Bash(gh pr diff *),Bash(gh pr checks *),Bash(gh issue view *),Bash(gh run view *),Bash(gh run list *),Read${{ steps.gate.outputs.tools_suffix }}" --disallowedTools "Agent,Task,ScheduleWakeup,SendMessage,ListAgents,Edit,Write,MultiEdit,NotebookEdit,Bash(git add*),Bash(git commit*),Bash(git push*),Bash(git rm*),Bash(/*)" --max-turns ${{ steps.gate.outputs.deep_max_turns }} --model ${{ steps.gate.outputs.deep_model }} --effort ${{ steps.gate.outputs.deep_effort }} --json-schema ''${{ env.DEEP_SCHEMA }}'''
           show_full_output: false
           additional_permissions: |
@@ -1179,8 +1201,9 @@ jobs:
       # the fallback model. A spent plan or a refused token moves it to the
       # next account; any other failure keeps it on the account that failed.
       # Only what the CLI writes is read, never a file the PR can write.
-      # Without those secrets, or when every account has no room or refuses
-      # its token, the fallback keeps the first account.
+      # Without those secrets the fallback keeps the first account; when every
+      # account has no room or refuses its token, it tries the first account
+      # that has a token.
       - name: Pick the fallback's account
         id: account
         if: steps.claude-cli-stable.outcome == 'success'
@@ -1208,7 +1231,9 @@ jobs:
           # CLI starts, and the token goes in through the environment, never a
           # command line. Only what the CLI writes is read: the exit status,
           # the error flag, the API's status and the result text.
-          probe_dir=$(mktemp -d)
+          # Under RUNNER_TEMP, which the runner empties after every job, so a
+          # step its timeout stops before the trap runs leaves nothing behind.
+          probe_dir=$(mktemp -d "$RUNNER_TEMP/probe.XXXXXX")
           trap 'rm -rf "$probe_dir"' EXIT
           picked=""
           for i in 1 2 3 4 5; do
@@ -1241,7 +1266,7 @@ jobs:
           api = r.get('api_error_status')
           text = r.get('result') if isinstance(r.get('result'), str) else ''
           # The same limit texts the deep review's failure class reads.
-          limit = r"rate_limit_error|usage limit|quota exceeded|resource_exhausted|(hit|reached) your [^.]{0,40}limit"
+          limit = r"rate_limit_error|usage limit|quota exceeded|resource_exhausted|(hit|reached) your [^.]{0,40}limit|(5-hour|weekly|daily|session|opus|sonnet) limit"
           if api == 429 or re.search(limit, text, re.IGNORECASE):
               print(f"::notice::Account {i} has no room left (exit {status}, API status {api})")
               sys.exit(2)
@@ -1256,8 +1281,11 @@ jobs:
             break
           done
           if [ -z "$picked" ]; then
-            echo "::warning::No account can take the fallback (each has no room or refused its token): the fallback tries the first account"
-            picked=1
+            for i in 1 2 3 4 5; do
+              var="TOKEN_$i"
+              if [ -n "${!var}" ]; then picked=$i; break; fi
+            done
+            echo "::warning::No account can take the fallback (each has no room or refused its token): the fallback tries account $picked, the first one with a token"
           elif [ "$picked" != 1 ] && [ -z "$TOKEN_1" ]; then
             echo "::notice::The first account's token is not set: the fallback runs on account $picked"
           elif [ "$picked" != 1 ]; then
@@ -1290,6 +1318,8 @@ jobs:
           # or when that step failed, and then the action sets up its own.
           path_to_bun_executable: ${{ steps.bun.outputs.path }}
           claude_code_oauth_token: ${{ steps.account.outputs.index == '2' && secrets.CLAUDE_CODE_OAUTH_TOKEN_2 || steps.account.outputs.index == '3' && secrets.CLAUDE_CODE_OAUTH_TOKEN_3 || steps.account.outputs.index == '4' && secrets.CLAUDE_CODE_OAUTH_TOKEN_4 || steps.account.outputs.index == '5' && secrets.CLAUDE_CODE_OAUTH_TOKEN_5 || secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Empty unless the API key is the only payer ("Pick who pays").
+          anthropic_api_key: ${{ steps.payer.outputs.key_only == 'yes' && secrets.ANTHROPIC_API_KEY || '' }}
           claude_args: '--setting-sources user,project --permission-mode default --allowedTools "Bash(gh pr view *),Bash(gh pr diff *),Bash(gh pr checks *),Bash(gh issue view *),Bash(gh run view *),Bash(gh run list *),Read${{ steps.gate.outputs.tools_suffix }}" --disallowedTools "Agent,Task,ScheduleWakeup,SendMessage,ListAgents,Edit,Write,MultiEdit,NotebookEdit,Bash(git add*),Bash(git commit*),Bash(git push*),Bash(git rm*),Bash(/*)" --max-turns ${{ steps.gate.outputs.deep_max_turns }} --model ${{ steps.gate.outputs.deep_fallback_model }} --effort ${{ steps.gate.outputs.deep_fallback_effort }} --json-schema ''${{ env.DEEP_SCHEMA }}'''
           show_full_output: false
           additional_permissions: |
@@ -1434,7 +1464,7 @@ jobs:
           # The model whose review was posted, for the check summaries: the job
           # name and a green first step cannot tell (every attempt continues on
           # error).
-          REVIEWER: ${{ steps.post.outcome != 'success' && 'none' || steps.claude_credits.outcome == 'success' && format('{0} {1} (API credits)', steps.gate.outputs.deep_model, steps.gate.outputs.deep_effort) || steps.posted-1.outputs.posted == 'yes' && format('{0} {1}', steps.gate.outputs.deep_model, steps.gate.outputs.deep_effort) || steps.posted-2.outputs.posted == 'yes' && format('{0} {1} (retry)', steps.gate.outputs.deep_model, steps.gate.outputs.deep_effort) || steps.posted-3.outputs.posted == 'yes' && format('{0} {1} (fallback{2})', steps.gate.outputs.deep_fallback_model, steps.gate.outputs.deep_fallback_effort, steps.account.outputs.index != '' && steps.account.outputs.index != '1' && format(', account {0}', steps.account.outputs.index) || '') || 'none' }}
+          REVIEWER: ${{ steps.post.outcome != 'success' && 'none' || steps.claude_credits.outcome == 'success' && format('{0} {1} (API credits)', steps.gate.outputs.deep_model, steps.gate.outputs.deep_effort) || steps.posted-1.outputs.posted == 'yes' && format('{0} {1}{2}', steps.gate.outputs.deep_model, steps.gate.outputs.deep_effort, steps.payer.outputs.key_only == 'yes' && ' (API credits)' || '') || steps.posted-2.outputs.posted == 'yes' && format('{0} {1} (retry{2})', steps.gate.outputs.deep_model, steps.gate.outputs.deep_effort, steps.payer.outputs.key_only == 'yes' && ', API credits' || '') || steps.posted-3.outputs.posted == 'yes' && format('{0} {1} (fallback{2}{3})', steps.gate.outputs.deep_fallback_model, steps.gate.outputs.deep_fallback_effort, steps.account.outputs.index != '' && steps.account.outputs.index != '1' && format(', account {0}', steps.account.outputs.index) || '', steps.payer.outputs.key_only == 'yes' && ', API credits' || '') || 'none' }}
           ATTEMPTS: "API credits: ${{ steps.claude_credits.outcome || 'skipped' }}, first: ${{ steps.claude_attempt_1.outcome || 'skipped' }}, usage limit: ${{ steps.failure_class.outputs.usage_limit || 'no' }}, retry: ${{ steps.claude_retry.outcome || 'skipped' }}, fallback: ${{ steps.claude_fallback.outcome || 'skipped' }}, newest CLI: ${{ steps.claude-cli.outputs.version || 'not installed' }}, fallback CLI: ${{ steps.claude-cli-stable.outputs.version || 'none' }}"
         run: |
           set -o pipefail

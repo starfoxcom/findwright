@@ -23,8 +23,10 @@ Each rule carries its mode. An `enforce` rule refuses the command. An `observe`
 rule only appends what it would have refused to the user's Bindwright folder
 (OBSERVED_LOG), which `/bindwright:doctor` reports, so a false refusal shows up
 before anyone is stopped. A new rule ships as `observe` and moves to `enforce`
-in a later release once its log shows none. The mode lives here, never in a
-file a session could write, so nothing at run time relaxes a rule.
+in a later release once its log shows none, unless the command it stops cannot
+be undone (a repo secret write): that one enforces from the start. The mode
+lives here, never in a file a session could write, so nothing at run time
+relaxes a rule.
 
 Exit contract: JSON permissionDecision=deny on stdout, exit 0. Silent exit 0
 otherwise, and for any input it cannot read.
@@ -393,6 +395,10 @@ RULES = [
      ENFORCE),
     ("`gh pr merge --admin`", both(Followed(r"\bgh\s+pr\s+merge\b", r"\n", r"\s--admin\b")),
      "it skips the required checks. Fix what blocks the merge.", ENFORCE),
+    ("a repo secret write (`gh secret set` or `delete`)",
+     both(r"\bgh\s+secret\s+(?:set|delete|remove)\b"),
+     "secrets are the maintainer's, and a test run can overwrite the real ones. Give the user the command.",
+     ENFORCE),
     ("`<rev>:.<path>` in Git Bash",
      lambda text, shell: GIT_BASH and shell == "bash" and REV_DOT_PATH.search(bare(text, shell)),
      "Git Bash rewrites it, so the file looks missing. Write `<rev>:./<path>` from the repo root.", ENFORCE),
