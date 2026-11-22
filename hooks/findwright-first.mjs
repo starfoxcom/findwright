@@ -213,8 +213,9 @@ function tokenize(command, dialect) {
       isQuoted = true;
       at = quoted.end;
     } else if (operator || redirect) {
-      // Only an unquoted number glued to `>` names a file descriptor; `"2">out` writes the word 2.
-      if (redirect && !isQuoted && /^\d+$/.test(word ?? "")) word = null;
+      // Only an unquoted number glued to `>` names a file descriptor; `"2">out` and `2&>out`
+      // pass the word 2.
+      if (redirect?.startsWith(">") && !isQuoted && /^\d+$/.test(word ?? "")) word = null;
       endWord();
       tokens.push(operator ? { operator } : { redirect: !redirect.includes(">&") });
       at += (operator ?? redirect).length - 1;
@@ -268,20 +269,24 @@ function runsSearch(words) {
 }
 
 // Whether `option` is one the stage allows, and whether it takes the next word as its value;
-// null when the stage does not allow it.
+// null when the stage does not allow it. A value inside the option word has a strict shape
+// (digits glued to a letter, a plain word after `=`): a shell can split a looser one in two,
+// as PowerShell splits `-m9.\file` into `-m9` and `.\file`.
 function readOption(options, option) {
   if (option.startsWith("--")) {
     const [name, value] = option.slice(2).split(/=(.*)/s);
     const takesValue = options.longValues.includes(name) || options.longGlued.includes(name);
-    if (value !== undefined) return takesValue ? { takesNext: false } : null;
+    if (value !== undefined) return takesValue && /^[\w-]+$/.test(value) ? { takesNext: false } : null;
     if (options.long.includes(name)) return { takesNext: false };
     return options.longValues.includes(name) ? { takesNext: true } : null;
   }
   if (options.isCountFlag && /^-\d+$/.test(option)) return { takesNext: false };
   for (let at = 1; at < option.length; at++) {
-    if (options.values.includes(option[at])) return { takesNext: at === option.length - 1 };
-    if (options.counts.includes(option[at])) {
-      return /^\d+$/.test(option.slice(at + 1)) ? { takesNext: false } : null;
+    const isValue = options.values.includes(option[at]);
+    if (isValue || options.counts.includes(option[at])) {
+      const glued = option.slice(at + 1);
+      if (isValue && glued === "") return { takesNext: true };
+      return /^\d+$/.test(glued) ? { takesNext: false } : null;
     }
     if (!options.flags.includes(option[at])) return null;
   }
