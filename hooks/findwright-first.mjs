@@ -17,20 +17,33 @@ const OUTPUT_REDIRECT = /^&?>>?(&[\d-]*)?/;
 const PIPES = ["|", "|&"];
 const SEARCH_TOOLS = ["grep", "rg", "ag", "ack", "ripgrep", "findstr"];
 const SEARCH_PHRASES = ["git grep"];
-// Commands whose output is never a file's text (test runs, file lists, logs), so a search
-// piped after them filters that output: `true` for any use, or the second words that keep it so.
-// Any other command may print a file (find through -exec, node -p, gh api, a make target).
+// Unquoted characters the reading accounts for. Any other one (`<`, `#`, `$`, `!`, a glob or a
+// bracket) can redirect input, end the command early or expand to file names.
+const PLAIN_CHARACTER = /^[\w\-./=:,+@%]/;
+// The options git status and git log may take and still print no file's text or diff.
+const STATUS_OPTIONS = new RegExp("^(-(?=.)[sbz]*(u(no|normal|all)?)?|--(short|branch|porcelain(=v[12])?"
+  + "|untracked-files(=(no|normal|all))?|ignored(=\\w+)?|(no-)?ahead-behind|show-stash|no-renames))$");
+const LOG_OPTIONS = new RegExp("^(-\\d+|-n\\d*|-s|-[iE]+|--(oneline|graph|all|branches|tags|first-parent"
+  + "|(no-)?merges|reverse|abbrev-commit|follow|no-patch|name-only|name-status|stat|shortstat|numstat"
+  + "|all-match|invert-grep|regexp-ignore-case|extended-regexp|(no-)?decorate(=\\w+)?)"
+  + "|--(max-count|skip|format|pretty|date|grep|author|committer|since|until|after|before)=.*)$");
+// Commands whose output is never a file's text (test runs, file lists, logs), so a search piped
+// after them filters that output. Each allows any use (`true`), or names its subcommands, each
+// with `true`, the actions it may take, or the pattern every option must match. Any other command
+// or option may print a file (find through -exec, node -p, gh api, git log -p, gh pr diff).
 const OUTPUT_SOURCES = {
   ls: true, dir: true, "get-childitem": true, gci: true, echo: true, ps: true, pytest: true,
-  node: ["--test"], npm: ["test", "ls", "outdated"], gh: ["run", "pr", "issue", "release", "workflow"],
-  git: ["status", "log", "ls-files", "branch", "remote", "tag", "worktree"],
-  cargo: ["test"], go: ["test"], dotnet: ["test"],
-};
-// Words that make an allowed source print a file's text or a diff after all: git log with a patch,
-// a line range or combined diffs, and gh pr diff, a workflow's YAML or a downloaded asset.
-const PRINTS_FILES = {
-  git: /^(-[^-]*[puL]|-c$|--(patch|cc|remerge-diff|diff-merges|unified))/,
-  gh: /^(diff|download|--yaml|-y)$/,
+  node: { "--test": /^--test(-[a-z-]+)?(=.*)?$/ },
+  npm: { test: true, ls: true, outdated: true },
+  gh: {
+    run: ["list", "view"], pr: ["list", "view", "checks", "status"], issue: ["list", "view", "status"],
+    release: ["list", "view"], workflow: ["list"],
+  },
+  git: {
+    status: STATUS_OPTIONS, log: LOG_OPTIONS,
+    "ls-files": true, branch: true, remote: true, tag: true, worktree: true,
+  },
+  cargo: { test: true }, go: { test: true }, dotnet: { test: true },
 };
 // Stages that reshape the output fed to them. They take options and counts only, so any other
 // word is a file they read instead. Scripted tools (sed, awk) can read files and are left out.
@@ -101,10 +114,10 @@ function readQuoted(command, at) {
 }
 
 // The command's words, operators and output redirections, read the way a POSIX shell reads
-// quotes; null when it holds what cannot be read word by word: command substitution, a subshell,
-// an unclosed quote, or an unquoted variable or glob, which can expand to file names. An input
-// redirection stays a word, so it counts as a file. A word spelled with a quote or a backslash
-// says so, since a quoted string can be a command another shell runs.
+// quotes; null when it holds what cannot be read word by word: an unclosed quote, a command
+// substitution in double quotes, a backslash before a line break, or any unquoted character
+// outside PLAIN_CHARACTER. A word spelled with a quote or a backslash says so, since a quoted
+// string can be a command another shell runs.
 function tokenize(command) {
   const tokens = [];
   let word = null;
@@ -116,7 +129,6 @@ function tokenize(command) {
   };
   for (let at = 0; at < command.length; at++) {
     const rest = command.slice(at);
-    if (/^[$`()*?[{]/.test(rest)) return null;
     const quoted = readQuoted(command, at);
     if (quoted === null) return null;
     const operator = OPERATOR.exec(rest)?.[0];
@@ -132,12 +144,15 @@ function tokenize(command) {
       at += (operator ?? redirect).length - 1;
     } else if (/\s/.test(rest[0])) {
       endWord();
+    } else if (rest[0] === "\\") {
+      if (rest.length < 2 || rest[1] === "\n") return null;
+      word = (word ?? "") + rest[1];
+      isQuoted = true;
+      at++;
+    } else if (PLAIN_CHARACTER.test(rest)) {
+      word = (word ?? "") + rest[0];
     } else {
-      word = (word ?? "") + (rest[0] === "\\" ? (rest[1] ?? "") : rest[0]);
-      if (rest[0] === "\\") {
-        isQuoted = true;
-        at++;
-      }
+      return null;
     }
   }
   endWord();
@@ -199,11 +214,18 @@ function isReshaper(words) {
   return SEARCH_TOOLS.includes(name) && !readsFiles(words);
 }
 
+// A source passes when its command allows any use, or its subcommand is listed and what follows
+// fits: an action the subcommand allows, or options, before any `--`, that its pattern accepts.
 function isOutputSource([command = "", subcommand = "", ...rest]) {
   const name = command.toLowerCase();
-  if ([subcommand, ...rest].some((word) => PRINTS_FILES[name]?.test(word))) return false;
-  const uses = Object.hasOwn(OUTPUT_SOURCES, name) ? OUTPUT_SOURCES[name] : [];
-  return uses === true || uses.includes(subcommand.toLowerCase());
+  const uses = Object.hasOwn(OUTPUT_SOURCES, name) ? OUTPUT_SOURCES[name] : {};
+  if (uses === true) return true;
+  const use = subcommand.toLowerCase();
+  const allowed = Object.hasOwn(uses, use) ? uses[use] : false;
+  if (Array.isArray(allowed)) return allowed.includes(rest[0]);
+  if (!(allowed instanceof RegExp)) return allowed;
+  const end = rest.includes("--") ? rest.indexOf("--") : rest.length;
+  return rest.slice(0, end).every((word) => !word.startsWith("-") || allowed.test(word));
 }
 
 // A search filters output, not code, when its plain `|` pipeline starts with a command that never
