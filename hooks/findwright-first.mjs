@@ -53,43 +53,77 @@ const OUTPUT_SOURCES = {
 // Stages that reshape the output fed to them, taking options only, so any other word is a file
 // they read. Scripted tools (sed, awk) can read files and are left out.
 const RESHAPERS = ["sort", "uniq", "head", "tail", "cut", "wc"];
-// The options a stage after the pipe may take and still read only its input: single-letter
-// flags, letters that take a value (glued, or the next word), long options, long options that
-// take a value (`=value`, or the next word), and a bare count (`-20`). Long options are matched
-// whole, since GNU tools also take any unambiguous prefix. Any other option may name a file,
-// walk folders or give the pattern (grep -r, -e and -f, ack -x, sort --files0-from), so the
-// command stays a search.
-const names = (list) => list.split(" ").filter(Boolean);
-const stageOptions = (flags, values, long, longValues = "", isCountFlag = false) => ({
-  flags, values, long: names(long), longValues: names(longValues), isCountFlag,
+// The options a stage after the pipe may take and still read only its input, per tool:
+// - flags: single letters that take no value.
+// - values: letters whose value every version of the tool requires, so a value not glued to
+//   the letter is the next word.
+// - counts: letters whose number is optional in some version (ack and ag -A/-B/-C, BSD grep
+//   -C), taken only with the digits glued on (`-C3`), since a bare one leaves the next word to
+//   the pattern.
+// - long, longValues: long options without a value, and those that require one (`=value` or
+//   the next word).
+// - longGlued: long options whose value is optional, taken only as `--name=value`.
+// - isCountFlag: a bare count (`-20`) is a line count.
+// Long options are matched whole, since GNU tools also take any unambiguous prefix. Any other
+// option may name a file, walk folders or give the pattern (grep -r, -e and -f, ack -x, sort
+// --files0-from), so the command stays a search.
+const names = (list = "") => list.split(" ").filter(Boolean);
+const stageOptions = ({
+  flags = "", values = "", counts = "", isCountFlag = false, long, longValues, longGlued,
+}) => ({
+  flags, values, counts, isCountFlag,
+  long: names(long), longValues: names(longValues), longGlued: names(longGlued),
 });
 const GREP_LONG = "ignore-case invert-match count line-number only-matching word-regexp"
   + " line-regexp extended-regexp fixed-strings perl-regexp basic-regexp quiet silent no-filename"
   + " with-filename files-with-matches files-without-match null-data byte-offset text color colour";
-const CONTEXT_VALUES = "max-count after-context before-context context color colour";
-const RG = stageOptions("ivcnNowxFsSqHIlUaz", "mABCE", `${GREP_LONG} smart-case case-sensitive`
-  + " no-line-number no-heading heading column vimgrep multiline trim", `${CONTEXT_VALUES} encoding`);
-const LINES = stageOptions("qvz", "nc", "quiet silent verbose zero-terminated", "lines bytes", true);
+const RG = stageOptions({
+  flags: "ivcnNowxFsSqHIlUaz", values: "mABCE",
+  long: `${GREP_LONG} smart-case case-sensitive no-line-number no-heading heading column vimgrep`
+    + " multiline trim",
+  longValues: "max-count after-context before-context context encoding colors", longGlued: "color",
+});
+const LINES = { values: "nc", isCountFlag: true, long: "quiet silent verbose zero-terminated",
+  longValues: "lines bytes" };
 const STAGE_OPTIONS = {
-  grep: stageOptions("ivcnowxEFGPqshHlLzab", "mABC", GREP_LONG, CONTEXT_VALUES, true),
+  grep: stageOptions({
+    flags: "ivcnowxEFGPqshHlLzab", values: "mAB", counts: "C", isCountFlag: true, long: GREP_LONG,
+    longValues: "max-count after-context before-context", longGlued: "context color colour",
+  }),
   rg: RG,
   ripgrep: RG,
-  ack: stageOptions("ivcwhHlLoQIs", "mABC", "ignore-case invert-match count word-regexp no-filename"
-    + " with-filename files-with-matches files-without-matches literal nocolor color", CONTEXT_VALUES),
-  ag: stageOptions("ivcwlLoQsS", "mABC", "ignore-case invert-match count word-regexp files-with-matches"
-    + " files-without-matches only-matching literal case-sensitive smart-case nocolor color",
-  "max-count after before context"),
-  findstr: stageOptions("ivnbelrx", "", ""),
-  sort: stageOptions("bdfghiMnRrsuVz", "kt", "ignore-leading-blanks dictionary-order ignore-case"
-    + " general-numeric-sort human-numeric-sort ignore-nonprinting month-sort numeric-sort"
-    + " random-sort reverse stable unique version-sort zero-terminated", "key field-separator"),
-  uniq: stageOptions("cdDiuz", "fsw", "count repeated all-repeated ignore-case unique zero-terminated",
-    "skip-fields skip-chars check-chars"),
-  head: LINES,
-  tail: { ...LINES, flags: "qvzf" },
-  cut: stageOptions("sz", "bcdf", "complement only-delimited zero-terminated",
-    "bytes characters delimiter fields output-delimiter"),
-  wc: stageOptions("clmwL", "", "bytes chars lines words max-line-length"),
+  ack: stageOptions({
+    flags: "ivcwhHlLoQIs", values: "m", counts: "ABC",
+    long: "ignore-case invert-match count word-regexp no-filename with-filename files-with-matches"
+      + " files-without-matches literal color colour nocolor nocolour",
+    longValues: "max-count", longGlued: "after-context before-context context",
+  }),
+  ag: stageOptions({
+    flags: "ivcwlLoQsS", values: "m", counts: "ABC",
+    long: "ignore-case invert-match count word-regexp files-with-matches files-without-matches"
+      + " only-matching literal case-sensitive smart-case color nocolor",
+    longValues: "max-count", longGlued: "after before context",
+  }),
+  findstr: stageOptions({ flags: "ivnbelrx" }),
+  sort: stageOptions({
+    flags: "bdfghiMnRrsuVz", values: "kt",
+    long: "ignore-leading-blanks dictionary-order ignore-case general-numeric-sort"
+      + " human-numeric-sort ignore-nonprinting month-sort numeric-sort random-sort reverse stable"
+      + " unique version-sort zero-terminated",
+    longValues: "key field-separator",
+  }),
+  uniq: stageOptions({
+    flags: "cdDiuz", values: "fsw",
+    long: "count repeated all-repeated ignore-case unique zero-terminated",
+    longValues: "skip-fields skip-chars check-chars",
+  }),
+  head: stageOptions({ ...LINES, flags: "qvz" }),
+  tail: stageOptions({ ...LINES, flags: "qvzf" }),
+  cut: stageOptions({
+    flags: "sz", values: "bcdf", long: "complement only-delimited zero-terminated",
+    longValues: "bytes characters delimiter fields output-delimiter",
+  }),
+  wc: stageOptions({ flags: "clmwL", long: "bytes chars lines words max-line-length" }),
 };
 const BLOCK_EXIT_CODE = 2;
 
@@ -171,6 +205,10 @@ function tokenize(command, dialect) {
     const operator = OPERATOR.exec(rest)?.[0];
     const redirect = quoted ? undefined : OUTPUT_REDIRECT.exec(rest)?.[0];
     if (quoted) {
+      // PowerShell before 7.3 passes a quote inside an argument to a program unescaped, so the
+      // program can split it into several arguments.
+      const joinsQuote = quoted.text.includes('"') || /["']/.test(command[at - 1] ?? "");
+      if (!dialect.isBackslashEscape && joinsQuote) return null;
       word = (word ?? "") + quoted.text;
       isQuoted = true;
       at = quoted.end;
@@ -234,13 +272,17 @@ function runsSearch(words) {
 function readOption(options, option) {
   if (option.startsWith("--")) {
     const [name, value] = option.slice(2).split(/=(.*)/s);
-    if (value !== undefined) return options.longValues.includes(name) ? { takesNext: false } : null;
+    const takesValue = options.longValues.includes(name) || options.longGlued.includes(name);
+    if (value !== undefined) return takesValue ? { takesNext: false } : null;
     if (options.long.includes(name)) return { takesNext: false };
     return options.longValues.includes(name) ? { takesNext: true } : null;
   }
   if (options.isCountFlag && /^-\d+$/.test(option)) return { takesNext: false };
   for (let at = 1; at < option.length; at++) {
     if (options.values.includes(option[at])) return { takesNext: at === option.length - 1 };
+    if (options.counts.includes(option[at])) {
+      return /^\d+$/.test(option.slice(at + 1)) ? { takesNext: false } : null;
+    }
     if (!options.flags.includes(option[at])) return null;
   }
   return { takesNext: false };
