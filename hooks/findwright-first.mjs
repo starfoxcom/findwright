@@ -37,10 +37,11 @@ const LOG_OPTIONS = new RegExp("^(-\\d+|-n\\d*|-s|-[iE]+|--(oneline|graph|all|br
   + "|(no-)?merges|reverse|abbrev-commit|follow|no-patch|name-only|name-status|stat|shortstat|numstat"
   + "|all-match|invert-grep|regexp-ignore-case|extended-regexp|(no-)?decorate(=\\w+)?)"
   + "|--(max-count|skip|format|pretty|date|grep|author|committer|since|until|after|before)=.*)$");
-// Commands whose output is never a file's text (test runs, file lists, logs), so a search piped
-// after them filters that output. Each allows any use (`true`), or names its subcommands, each
-// with `true`, the actions it may take, or the pattern every option must match. Any other command
-// or option may print a file (find through -exec, node -p, gh api, git log -p, gh pr diff).
+// Commands whose output is never a file's text (test runs, file lists, logs, ref updates), so a
+// search piped after them filters that output. Each allows any use (`true`), or names its
+// subcommands, each with `true`, the actions it may take, or the pattern every option must match.
+// Any other command or option may print a file (find through -exec, node -p, gh api, git log -p,
+// gh pr diff).
 const OUTPUT_SOURCES = {
   ls: true, dir: true, echo: true, ps: true, pytest: true,
   node: { "--test": /^--test(-[a-z-]+)?(=.*)?$/ },
@@ -52,6 +53,7 @@ const OUTPUT_SOURCES = {
   git: {
     status: STATUS_OPTIONS, log: LOG_OPTIONS,
     "ls-files": true, branch: true, remote: true, tag: true, worktree: true,
+    push: true, fetch: true, pull: true,
   },
   cargo: { test: true }, go: { test: true }, dotnet: { test: true },
 };
