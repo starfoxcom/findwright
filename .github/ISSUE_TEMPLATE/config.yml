@@ -1,5 +1,1 @@
 blank_issues_enabled: false
-contact_links:
-  - name: Question / discussion
-    url: https://github.com/starfoxcom/findwright/discussions
-    about: For open-ended questions, ideas, or design discussions. Use Issues for concrete bugs or feature requests.

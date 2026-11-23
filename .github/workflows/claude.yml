@@ -970,7 +970,7 @@ jobs:
         timeout-minutes: 30
         if: steps.pr-checkout.outcome == 'success'
         continue-on-error: true
-        # Pinned to the v1.0.282 release commit. The bare `@v1` floats.
+        # Pinned to the v1.0.286 release commit. The bare `@v1` floats.
         # Update via
         #   gh api repos/anthropics/claude-code-action/git/ref/tags/v1 --jq '.object.type + " " + .object.sha'
         # and, when the type is `tag` (an annotated tag), peel it to its commit:
@@ -978,7 +978,7 @@ jobs:
         # Confirm the diff, then bump the SHA here. Both tiers carry the same pin,
         # but `.github/workflows/claude-code-review.yml` always ships in a PR of
         # its own, so its pin moves in a separate PR.
-        uses: anthropics/claude-code-action@5a856893345e332afa621934082d8c660c26d689  # v1 (v1.0.282)
+        uses: anthropics/claude-code-action@acfe7992852970efb4fee683d63d628e3e52df67  # v1 (v1.0.286)
         # The token goes in both as a `with:` input and as an env var, the
         # upstream workaround for credential loss.
         # Model, effort and turn cap from the gate settings (deep.*; the
@@ -1099,7 +1099,7 @@ jobs:
         timeout-minutes: 30
         if: steps.posted-1.outputs.posted == 'no' && steps.failure_class.outputs.usage_limit != 'true'
         continue-on-error: true
-        uses: anthropics/claude-code-action@5a856893345e332afa621934082d8c660c26d689  # v1 (v1.0.282)
+        uses: anthropics/claude-code-action@acfe7992852970efb4fee683d63d628e3e52df67  # v1 (v1.0.286)
         env:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ steps.payer.outputs.main_on_key != 'yes' && (steps.payer.outputs.first_index == '2' && secrets.CLAUDE_CODE_OAUTH_TOKEN_2 || steps.payer.outputs.first_index == '3' && secrets.CLAUDE_CODE_OAUTH_TOKEN_3 || steps.payer.outputs.first_index == '4' && secrets.CLAUDE_CODE_OAUTH_TOKEN_4 || steps.payer.outputs.first_index == '5' && secrets.CLAUDE_CODE_OAUTH_TOKEN_5) || secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # The action puts the base branch's config in the checkout before the
@@ -1343,7 +1343,7 @@ jobs:
         timeout-minutes: 45
         if: steps.claude-cli-stable.outcome == 'success'
         continue-on-error: true
-        uses: anthropics/claude-code-action@5a856893345e332afa621934082d8c660c26d689  # v1 (v1.0.282)
+        uses: anthropics/claude-code-action@acfe7992852970efb4fee683d63d628e3e52df67  # v1 (v1.0.286)
         env:
           # The account the step above picked; an index from 2 up is set only
           # for an account whose token is set, so its secret is never empty.
