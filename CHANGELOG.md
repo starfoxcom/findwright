@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.2] - 2026-11-22
+
+### Fixed
+- The search hook lets `grep`, `rg`, `ag` and `ack` through in Bash when they only filter another command's output after a pipe, such as `npm test | grep fail` or `gh run view 5 --log-failed | grep error`. Each of these needed a bypass marker before. The pipeline has to start with a command whose output is never a file's text (a test run, `git status`, `git log`, `ls`, the list and view actions of `gh`), every stage between has to be one that only reshapes that output (`sort`, `uniq`, `head`, `tail`, `cut`, `wc`), and the search has to take its pattern alone, with only the options its list names. A command the hook cannot read word by word keeps the old answer, and PowerShell commands are not read yet ([#107](https://github.com/starfoxcom/findwright/issues/107)).
+- `search` returns at most 400 characters of a line. A longer hit line comes back as a window that starts just before the first match, and a longer context line as its first 400 characters, with "…" where text was cut. A hit in a huge one-line file returned the whole line, which passed the client's output limit and was refused ([#108](https://github.com/starfoxcom/findwright/issues/108)).
+- When the helper on disk is another version than the one a running search server loaded, every tool answer starts with a one-line notice asking the session to reconnect FindWright with `/mcp`. A session open for days kept searching with the code it started with, without knowing ([#114](https://github.com/starfoxcom/findwright/issues/114)).
+
 ## [2.3.1] - 2026-11-18
 
 ### Fixed
