@@ -16,6 +16,7 @@ The gate's settings live in `.github/review-gate.yml` (models, runner, the proje
 - 🟢 LGTM only when the review is fully clean: no caveats, no nits, no "non-blocking" findings.
 - 🔴 Blocking when any real finding exists, however it is framed. "LGTM with caveats" is 🔴.
 - Style preferences and speculative future-proofing are dropped, not listed as minor.
+- Findings in Bindwright's own template text, listed under "Upstream: Bindwright template text" as `.github/review-guide.md` says, are not this PR's: they go upstream and leave the verdict as it is. Only the files the pre-screen report itself lists count; a review without that report treats none as listed.
 
 A 🟢 that carries findings lets them merge and come back later as the same review.
 
@@ -45,6 +46,7 @@ A finding belongs to the PR when the PR causes it: a regression from the base br
 
 - Write this bar into every reviewer prompt from the first round, local or CI, before any finding arrives.
 - When a review reports, sort each finding against the bar before touching code. Fix only what passes it, plus the other copies of that same mistake (§ After a 🔴), with the smallest change, and add no features while fixing.
+- A round is green only when the PR merges at its head. One whose checks all passed but was followed by another push instead, for a conflict with its base or any other reason, counts red.
 - After 3 red rounds in a row, stop patching: look up at least five ways others solved the same problem, compare them against each other, take the simplest one that removes the whole class, then continue. One search is a guess. Each step back that leaves the PR red leaves one round fewer before the next: research again after 2 more red rounds, then after every red round from the 6th on.
 - The 10th red round in a row is the hard stop: close the PR without merging, then rebuild the change from its base branch in a new PR, with that round's findings fixed in the rebuild and a `Rebuilds #<old number>` line in its body. The new PR starts its own count.
 - A PR closed unmerged for good carries a label that says why: `dropped: no fix` when no fix was found, `dropped: not needed` when it has no reason left to exist. Create each label once with `gh label create`. The review counts read the line and the labels.
@@ -74,4 +76,4 @@ The gate runs the base branch's copy of `.github/scripts/review_gate.py` and `.g
 
 ## Local session's job
 
-Push, open the PR, watch the checks (see `token-efficiency.md`), and merge once every check has settled, the `Review gate` is 🟢 and every other required check passes. A PR whose base branch was changed, such as a stacked PR retargeted after its parent merged, starts no checks: push a commit or close and reopen it. If `needs-deep-review` appears but no deep review starts within a few minutes, report it instead of starting one yourself.
+Push, open the PR, watch the checks (see `token-efficiency.md`), and merge once every check has settled, the `Review gate` is 🟢 and every other required check passes. A PR whose base branch was changed, such as a stacked PR retargeted after its parent merged, starts no checks: push a commit, an empty one if nothing else changed. Push one the same way to run the review again after a fix that touches only the PR body. Never close and reopen the PR for it: the second run on the same head commit writes its result into the first run's gate check, and the merge then reports `Review gate` as expected. If `needs-deep-review` appears but no deep review starts within a few minutes, report it instead of starting one yourself.

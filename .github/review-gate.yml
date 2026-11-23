@@ -1,5 +1,8 @@
 # Settings for the review gate (.github/scripts/review_gate.py). Every value
-# starts at the gate's default; delete a line to keep the default.
+# starts at the gate's default except those named here. prescreen.dir is the
+# folder setup ships its own check into: delete that line and no pre-screen
+# check runs.
+# Delete any other line to keep the default.
 # Unknown keys and bad values fail the gate instead of being ignored.
 # The workflows read this file from the PR's base branch, so a PR cannot
 # change the settings its own review runs under.
@@ -48,12 +51,14 @@ fallback:
 # A check that runs the PR's code can fake its own report, and on a
 # self-hosted runner that is not wiped between jobs it can leave files or
 # processes behind for the review; keep such checks on hosted or one-job
-# runners. Empty: none.
+# runners. Empty: none. Setup ships `bindwright_templates.py` into
+# .github/review-checks, which lists the changed files that are Bindwright's
+# template text, unedited; a project that names another folder copies it there.
 # attribution: on scans the lines a PR adds for AI-attribution markers
 # (co-author lines, "generated with" footers, session links), and the
 # reviewer checks the commits and the PR body for them; off skips both.
 prescreen:
-  dir:
+  dir: .github/review-checks
   attribution: on
 
 # The project's own deep-review triggers, on top of the gate's: path globs
