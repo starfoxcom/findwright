@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.1] - 2026-11-22
+
+### Fixed
+- The search hook lets `grep`, `rg`, `ag` and `ack` through in Bash when they only filter the output of `git push`, `git fetch` or `git pull`, such as `git push -u origin feature/x 2>&1 | grep -v "^remote:"`. These commands print ref updates, remote messages and file names, never a file's text, but the hook treated a filter after them as a code search and blocked it ([#136](https://github.com/starfoxcom/findwright/issues/136)).
+
 ## [2.4.0] - 2026-11-22
 
 ### Added
