@@ -252,12 +252,8 @@ function namesSearch(text) {
   return text.split(COMMAND_SPLITTERS).some((part) => startsWithSearchTool(part.trimStart()));
 }
 
-// A search tool's name as a whole word anywhere, so one behind `sudo`, `timeout 5` or `sh -c '`
-// is read too; `--grep` and `grep.txt` are other words.
-const SEARCH_WORD = new RegExp(`(^|[^\\w-])(${SEARCH_TOOLS.join("|")})(?![\\w.-])`, "i");
-
 // A command runs a search when any of its words is a search tool, which also covers one run
-// through another command (`xargs grep`, `sudo grep`, `find -exec grep`).
+// through another command (`xargs grep`, `find -exec grep`).
 function runsSearch(words) {
   return words.some((word, at) => SEARCH_TOOLS.includes(word.toLowerCase())
     || (word === "git" && words[at + 1] === "grep"));
@@ -334,7 +330,7 @@ function isOutputSource([command = "", subcommand = "", ...rest]) {
   return rest.slice(0, end).every((word) => !word.startsWith("-") || allowed.test(word));
 }
 
-// A search filters output, not code, when its plain `|` pipeline starts with a command that never
+// A search filters output, not code, when its `|` or `|&` pipeline starts with a command that never
 // prints a file's text, every stage between only reshapes that output, and the search reads only
 // its input. git grep ignores its input.
 function isOutputFilter(commands, index) {
@@ -347,11 +343,13 @@ function isOutputFilter(commands, index) {
 }
 
 // Heuristic on purpose: a false positive only asks for a bypass marker, while a missed
-// search silently skips the index. So the shell reading alone decides: a command passes only
-// when it holds no quoted string that names a search, which another shell may run, and every
-// command in it that runs a search filters output.
+// search silently skips the index. A command is a search when a shell command in it starts with
+// a search tool. The shell reading only lets one of those through: when it reads every word, the
+// command holds no quoted string that names a search, which another shell may run, and every
+// command in it that runs a search filters output. A command it cannot read keeps that first
+// answer.
 function isGrepLikeShell(command, isRead) {
-  if (!namesSearch(command) && !SEARCH_WORD.test(command)) return false;
+  if (!namesSearch(command)) return false;
   const tokens = isRead ? tokenize(command) : null;
   if (!tokens || tokens.some(({ word, isQuoted }) => isQuoted && namesSearch(word))) return true;
   const commands = simpleCommands(tokens);
