@@ -207,6 +207,8 @@ step_secrets() {
     fi
     step_account_secrets "$names"
     return
+  elif grep -qE "^${TOKEN_SECRET}_[2-5]$" <<< "$names"; then
+    ok "no $TOKEN_SECRET, with a later account's token: every review runs on the first later account"
   elif [ "$MODE" = setup ] && [ -t 0 ]; then
     echo "  Paste the token that 'claude setup-token' prints:"
     gh secret set "$TOKEN_SECRET" -R "$REPO"
