@@ -101,6 +101,8 @@ const ROWS = [
   ["grep after git log with a short unified diff flag is blocked", shell("git log -U0 | grep foo"), true],
   ["grep after git status printing the staged diff is blocked", shell("git status -v | grep foo"), true],
   ["grep filtering a one-line commit list is allowed", shell("git log --oneline -n 20 | grep fix"), false],
+  ["a lone & in a commit message does not start a search", shell('git commit -m "docs: sed & grep tips"'),
+    false],
   ["a command the reading cannot follow that only mentions grep is allowed",
     shell('git commit -m "fix: let grep filter $OUTPUT"'), false],
   ["grep after a pipe that carries the error output too is allowed", shell("npm test |& grep fail"), false],

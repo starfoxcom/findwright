@@ -7,9 +7,11 @@ import { dirname, join, resolve } from "node:path";
 
 const BYPASS_MARKER = "FINDWRIGHT_BYPASS:";
 const SHELL_TOOLS = ["Bash", "PowerShell"];
-// Where a shell may start a command, read without regard to quotes: the quick check for whether a
-// command names a search at all, and for a search inside a quoted command string (`bash -c "..."`).
-const COMMAND_SPLITTERS = /\|\||&&|\||&|;|\n|\$\(|`|xargs |-exec /;
+// Where a shell may start a command, read without regard to quotes: the check that decides
+// whether a command is a search at all, which the shell reading may only relax.
+const COMMAND_SPLITTERS = ["|", "&&", "||", ";", "\n", "$(", "`", "xargs ", "-exec "];
+// A quoted command string another shell runs (`bash -c "..."`) can also start one after a lone `&`.
+const STRING_SPLITTERS = /\|\||&&|\||&|;|\n|\$\(|`|xargs |-exec /;
 // Shell operators between simple commands, and an output redirection (`>`, `>>`, `&>`, `2>&1`).
 const OPERATOR = /^(\|\||&&|\|&|\||;|\n|&(?!>))/;
 const OUTPUT_REDIRECT = /^&?>[>|]?(&[\d-]*)?/;
@@ -254,8 +256,16 @@ function simpleCommands(tokens) {
   return commands;
 }
 
+function splitOn(parts, splitter) {
+  return parts.flatMap((part) => part.split(splitter));
+}
+
+function startsSearch(command) {
+  return COMMAND_SPLITTERS.reduce(splitOn, [command]).some((part) => startsWithSearchTool(part.trimStart()));
+}
+
 function namesSearch(text) {
-  return text.split(COMMAND_SPLITTERS).some((part) => startsWithSearchTool(part.trimStart()));
+  return text.split(STRING_SPLITTERS).some((part) => startsWithSearchTool(part.trimStart()));
 }
 
 // A command runs a search when any of its words is a search tool, which also covers one run
@@ -355,7 +365,7 @@ function isOutputFilter(commands, index) {
 // command in it that runs a search filters output. A command it cannot read keeps that first
 // answer.
 function isGrepLikeShell(command, isRead) {
-  if (!namesSearch(command)) return false;
+  if (!startsSearch(command)) return false;
   const tokens = isRead ? tokenize(command) : null;
   if (!tokens || tokens.some(({ word, isQuoted }) => isQuoted && namesSearch(word))) return true;
   const commands = simpleCommands(tokens);
