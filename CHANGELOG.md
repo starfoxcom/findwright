@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-11-22
+
+### Added
+- The search hook catches a Bash search that runs through another command, which it let through before: behind a wrapper (`sudo grep -rn foo .`, `timeout 5 rg foo`, `nice`, `env`, `nohup`, `time`, `stdbuf`, `exec`, or a leading `NAME=value` setting), inside the string a shell runs with `-c`, through `eval`, and after a lone `&` or `|&`. A command that only names a search, such as `which rg`, `cargo install ripgrep` or a commit message that mentions grep, is still let through, and so is an output filter after `|&` ([#127](https://github.com/starfoxcom/findwright/issues/127)).
+
 ## [2.3.2] - 2026-11-22
 
 ### Fixed
