@@ -167,8 +167,9 @@ function startsWithSearchTool(token) {
 }
 
 // The quoted text starting at `at` as the shell reads it, with where it ends; undefined when no
-// quote starts there, null when it never closes or expands inside double quotes (`$`, a
-// backtick), which can run a command or yield several words (`"$@"`).
+// quote starts there, null when it never closes, expands inside double quotes (`$`, a
+// backtick), which can run a command or yield several words (`"$@"`), or joins two lines with a
+// backslash, which Bash removes.
 function readQuoted(command, at) {
   const quote = command[at];
   if (quote !== "'" && quote !== '"') return undefined;
@@ -178,16 +179,21 @@ function readQuoted(command, at) {
   if (end >= command.length) return null;
   const text = command.slice(at + 1, end);
   if (quote === "'") return { text, end };
-  if (/[$`]/.test(text)) return null;
+  if (/[$`]|\\\n/.test(text)) return null;
   return { text: text.replace(/\\(["\\])/g, "$1"), end };
 }
 
+// Characters a reader can take for a word break or miss while Bash keeps them in a word: control
+// characters and Unicode spaces, other than space, tab and newline.
+const UNREAD_CHARACTER = /(?![ \t\n])[\p{Cc}\p{Cf}\p{Z}]/u;
+
 // The command's words, operators and output redirections, read the way Bash reads quotes; null
 // when it holds what cannot be read word by word: an unclosed quote, an expansion in double
-// quotes, a backslash before a line break, or any unquoted character the reading does not
-// account for. A word spelled with a quote or a backslash says so, since a quoted string can be
-// a command another shell runs.
+// quotes, a backslash before a line break, an unread character anywhere, or any unquoted
+// character the reading does not account for. A word spelled with a quote or a backslash says
+// so, since a quoted string can be a command another shell runs.
 function tokenize(command) {
+  if (UNREAD_CHARACTER.test(command)) return null;
   const tokens = [];
   let word = null;
   let isQuoted = false;
@@ -214,7 +220,7 @@ function tokenize(command) {
       endWord();
       tokens.push(operator ? { operator } : { redirect: !redirect.includes(">&") });
       at += (operator ?? redirect).length - 1;
-    } else if (/\s/.test(rest[0])) {
+    } else if (rest[0] === " " || rest[0] === "\t") {
       endWord();
     } else if (rest[0] === "\\") {
       if (rest.length < 2 || rest[1] === "\n") return null;
