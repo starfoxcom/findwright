@@ -55,6 +55,8 @@ const ROWS = [
     shell('ls | grep "2">out src/a.mjs'), true],
   ["a number before &> is an argument, not a descriptor", shell("ls | grep foo 2&>out"), true],
   ["a number too large for a descriptor is an argument", shell("ls | grep foo 99999999999>out"), true],
+  [">& before a file name does not leave the file name as the source",
+    shell("3>&1 >& echo cat src/a.mjs >&3 | grep foo"), true],
   ["a form feed, which Bash keeps inside a word, does not split an option from a file",
     shell("ls | sort -t\f src/a.mjs | grep foo"), true],
   ["a backslash joining two lines inside double quotes does not hide a search",

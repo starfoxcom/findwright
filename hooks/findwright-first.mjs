@@ -12,9 +12,13 @@ const SHELL_TOOLS = ["Bash", "PowerShell"];
 const COMMAND_SPLITTERS = ["|", "&&", "||", ";", "\n", "$(", "`", "xargs ", "-exec "];
 // A quoted command string another shell runs (`bash -c "..."`) can also start one after a lone `&`.
 const STRING_SPLITTERS = /\|\||&&|\||&|;|\n|\$\(|`|xargs |-exec /;
-// Shell operators between simple commands, and an output redirection (`>`, `>>`, `&>`, `2>&1`).
+// Shell operators between simple commands, and an output redirection (`>`, `>>`, `>|`, `&>`,
+// `&>>`, `2>&1`).
 const OPERATOR = /^(\|\||&&|\|&|\||;|\n|&(?!>))/;
 const OUTPUT_REDIRECT = /^&?>[>|]?(&[\d-]*)?/;
+// `>&` copies a descriptor only before a number or `-` that ends the word. Before any other word
+// Bash sends both outputs to a file of that name, so the reading takes only the copy.
+const DUPLICATE = /^>&(\d+-?|-)(?![^ \t\n;&|])/;
 // `|&` pipes the error output too.
 const PIPES = ["|", "|&"];
 const SEARCH_TOOLS = ["grep", "rg", "ag", "ack", "ripgrep", "findstr"];
@@ -218,6 +222,7 @@ function tokenize(command) {
       // An unquoted digit glued to `>` names a file descriptor. Any other word stays one: Bash
       // passes `"2">out`, `2&>out` and a number too large for a descriptor as an argument, and a
       // longer descriptor only counts a word too many.
+      if (redirect?.includes(">&") && !DUPLICATE.test(rest)) return null;
       if (redirect?.startsWith(">") && !isQuoted && /^\d$/.test(word ?? "")) word = null;
       endWord();
       tokens.push(operator ? { operator } : { redirect: !redirect.includes(">&") });
