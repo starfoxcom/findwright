@@ -157,8 +157,9 @@ def render(engine, answers, year):
     if isinstance(year, int):
         command += ["--year", str(year)]
     try:
-        r = subprocess.run(command, input=json.dumps(answers).encode("utf-8"),
-                           capture_output=True, timeout=RENDER_SECONDS)
+        # Run from the unpacked wheel, so nothing in the PR's checkout is in the engine's working folder.
+        r = subprocess.run(command, input=json.dumps(answers).encode("utf-8"), capture_output=True,
+                           timeout=RENDER_SECONDS, cwd=os.path.dirname(engine))
         out = json.loads(r.stdout.decode("utf-8"))
     except (subprocess.TimeoutExpired, UnicodeDecodeError, ValueError):
         raise Skip("the recorded engine gave no render")
@@ -173,24 +174,34 @@ def render(engine, answers, year):
     return files
 
 
-def lines(text):
-    return text.replace("\r\n", "\n")
+def text_at(rev, path):
+    data = git_show(rev, path)
+    if data is None:
+        return None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
 
 
-def unedited(changed, rendered):
+def matches(text, render, base_text):
+    """Whether the head's text is the render, in the render's line endings or in the CRLF ones the
+    base copy already used on every line, so a PR that only adds carriage returns is never listed."""
+    if text == render:
+        return True
+    crlf = render.replace("\r\n", "\n").replace("\n", "\r\n")
+    base_is_crlf = base_text is not None and "\r\n" in base_text and "\n" not in base_text.replace("\r\n", "")
+    return base_is_crlf and text == crlf
+
+
+def unedited(changed, rendered, base):
     """The changed files whose head text equals the render."""
     found = []
     for path in changed:
         if path not in rendered:
             continue
-        data = git_show("HEAD", path)
-        if data is None:
-            continue
-        try:
-            text = data.decode("utf-8")
-        except UnicodeDecodeError:
-            continue
-        if lines(text) == lines(rendered[path]):
+        text = text_at("HEAD", path)
+        if text is not None and matches(text, rendered[path], text_at(base, path)):
             found.append(path)
     return found
 
@@ -212,7 +223,7 @@ def run(files_path):
     with tempfile.TemporaryDirectory() as folder:
         wheel = verified(fetch(release), digest)
         rendered = render(unpack(wheel, folder), answers, record.get("year"))
-    return release, unedited(changed_files(files_path), rendered)
+    return release, unedited(changed_files(files_path), rendered, base)
 
 
 def main(argv):
