@@ -7,10 +7,128 @@ import { dirname, join, resolve } from "node:path";
 
 const BYPASS_MARKER = "FINDWRIGHT_BYPASS:";
 const SHELL_TOOLS = ["Bash", "PowerShell"];
-// Where a shell starts a new command, so a search after a pipe or inside $(...) is seen.
+// Where a shell may start a command, read without regard to quotes: the check that decides
+// whether a command is a search at all, which the shell reading may only relax.
 const COMMAND_SPLITTERS = ["|", "&&", "||", ";", "\n", "$(", "`", "xargs ", "-exec "];
+// A quoted command string another shell runs (`bash -c "..."`) can also start one after a lone `&`.
+const STRING_SPLITTERS = /\|\||&&|\||&|;|\n|\$\(|`|xargs |-exec /;
+// Shell operators between simple commands, and an output redirection (`>`, `>>`, `>|`, `&>`,
+// `&>>`, `2>&1`).
+const OPERATOR = /^(\|\||&&|\|&|\||;|\n|&(?!>))/;
+const OUTPUT_REDIRECT = /^&?>[>|]?(&[\d-]*)?/;
+// `>&` copies a descriptor only before a number or `-` that ends the word. Before any other word
+// Bash sends both outputs to a file of that name, so the reading takes only the copy.
+const DUPLICATE = /^>&(\d+-?|-)(?![^ \t\n;&|])/;
+// `|&` pipes the error output too.
+const PIPES = ["|", "|&"];
 const SEARCH_TOOLS = ["grep", "rg", "ag", "ack", "ripgrep", "findstr"];
 const SEARCH_PHRASES = ["git grep"];
+// The unquoted characters the Bash reading accounts for. Any other one (`<`, `#`, `$`, `!`, a glob
+// or a bracket) can redirect input, end the command early or expand to file names.
+const PLAIN = /^[\w\-./=:,+@%]/;
+// Only Bash commands are read word by word. How PowerShell passes words to a program depends on
+// its version and its argument-passing mode, which the command text does not show, so every
+// PowerShell command that names a search stays a search.
+const READ_TOOLS = ["Bash"];
+// The options git status and git log may take and still print no file's text or diff.
+const STATUS_OPTIONS = new RegExp("^(-(?=.)[sbz]*(u(no|normal|all)?)?|--(short|branch|porcelain(=v[12])?"
+  + "|untracked-files(=(no|normal|all))?|ignored(=\\w+)?|(no-)?ahead-behind|show-stash|no-renames))$");
+const LOG_OPTIONS = new RegExp("^(-\\d+|-n\\d*|-s|-[iE]+|--(oneline|graph|all|branches|tags|first-parent"
+  + "|(no-)?merges|reverse|abbrev-commit|follow|no-patch|name-only|name-status|stat|shortstat|numstat"
+  + "|all-match|invert-grep|regexp-ignore-case|extended-regexp|(no-)?decorate(=\\w+)?)"
+  + "|--(max-count|skip|format|pretty|date|grep|author|committer|since|until|after|before)=.*)$");
+// Commands whose output is never a file's text (test runs, file lists, logs), so a search piped
+// after them filters that output. Each allows any use (`true`), or names its subcommands, each
+// with `true`, the actions it may take, or the pattern every option must match. Any other command
+// or option may print a file (find through -exec, node -p, gh api, git log -p, gh pr diff).
+const OUTPUT_SOURCES = {
+  ls: true, dir: true, echo: true, ps: true, pytest: true,
+  node: { "--test": /^--test(-[a-z-]+)?(=.*)?$/ },
+  npm: { test: true, ls: true, outdated: true },
+  gh: {
+    run: ["list", "view"], pr: ["list", "view", "checks", "status"], issue: ["list", "view", "status"],
+    release: ["list", "view"], workflow: ["list"],
+  },
+  git: {
+    status: STATUS_OPTIONS, log: LOG_OPTIONS,
+    "ls-files": true, branch: true, remote: true, tag: true, worktree: true,
+  },
+  cargo: { test: true }, go: { test: true }, dotnet: { test: true },
+};
+// Stages that reshape the output fed to them, taking options only, so any other word is a file
+// they read. Scripted tools (sed, awk) can read files and are left out.
+const RESHAPERS = ["sort", "uniq", "head", "tail", "cut", "wc"];
+// The options a stage after the pipe may take and still read only its input, per tool:
+// - flags: single letters that take no value.
+// - values: letters whose value every version of the tool requires, so a value not glued to
+//   the letter is the next word.
+// - counts: letters whose number is optional in some version (ack and ag -A/-B/-C, BSD grep
+//   -C), taken only with the digits glued on (`-C3`), since a bare one leaves the next word to
+//   the pattern.
+// - long, longValues: long options without a value, and those that require one (`=value` or
+//   the next word).
+// - longGlued: long options whose value is optional, taken only as `--name=value`.
+// - isCountFlag: a bare count (`-20`) is a line count.
+// Long options are matched whole, since GNU tools also take any unambiguous prefix. Any other
+// option may name a file, walk folders or give the pattern (grep -r, -e and -f, ack -x, sort
+// --files0-from), so the command stays a search.
+const names = (list = "") => list.split(" ").filter(Boolean);
+const stageOptions = ({
+  flags = "", values = "", counts = "", isCountFlag = false, long, longValues, longGlued,
+}) => ({
+  flags, values, counts, isCountFlag,
+  long: names(long), longValues: names(longValues), longGlued: names(longGlued),
+});
+const GREP_LONG = "ignore-case invert-match count line-number only-matching word-regexp"
+  + " line-regexp extended-regexp fixed-strings perl-regexp basic-regexp quiet silent no-filename"
+  + " with-filename files-with-matches files-without-match null-data byte-offset text color colour";
+const RG = stageOptions({
+  flags: "ivcnNowxFsSqHIlUaz", values: "mABCE",
+  long: `${GREP_LONG} smart-case case-sensitive no-line-number no-heading heading column vimgrep`
+    + " multiline trim",
+  longValues: "max-count after-context before-context context encoding colors", longGlued: "color",
+});
+const LINES = { values: "nc", isCountFlag: true, long: "quiet silent verbose zero-terminated",
+  longValues: "lines bytes" };
+const STAGE_OPTIONS = {
+  grep: stageOptions({
+    flags: "ivcnowxEFGPqshHlLzab", values: "mAB", counts: "C", isCountFlag: true, long: GREP_LONG,
+    longValues: "max-count after-context before-context", longGlued: "context color colour",
+  }),
+  rg: RG,
+  ripgrep: RG,
+  ack: stageOptions({
+    flags: "ivcwhHlLoQIs", values: "m", counts: "ABC",
+    long: "ignore-case invert-match count word-regexp no-filename with-filename files-with-matches"
+      + " files-without-matches literal color colour nocolor nocolour",
+    longValues: "max-count", longGlued: "after-context before-context context",
+  }),
+  ag: stageOptions({
+    flags: "ivcwlLoQsS", values: "m", counts: "ABC",
+    long: "ignore-case invert-match count word-regexp files-with-matches files-without-matches"
+      + " only-matching literal case-sensitive smart-case color nocolor",
+    longValues: "max-count", longGlued: "after before context",
+  }),
+  sort: stageOptions({
+    flags: "bdfghiMnRrsuVz", values: "kt",
+    long: "ignore-leading-blanks dictionary-order ignore-case general-numeric-sort"
+      + " human-numeric-sort ignore-nonprinting month-sort numeric-sort random-sort reverse stable"
+      + " unique version-sort zero-terminated",
+    longValues: "key field-separator",
+  }),
+  uniq: stageOptions({
+    flags: "cdDiuz", values: "fsw",
+    long: "count repeated all-repeated ignore-case unique zero-terminated",
+    longValues: "skip-fields skip-chars check-chars",
+  }),
+  head: stageOptions({ ...LINES, flags: "qvz" }),
+  tail: stageOptions({ ...LINES, flags: "qvzf" }),
+  cut: stageOptions({
+    flags: "sz", values: "bcdf", long: "complement only-delimited zero-terminated",
+    longValues: "bytes characters delimiter fields output-delimiter",
+  }),
+  wc: stageOptions({ flags: "clmwL", long: "bytes chars lines words max-line-length" }),
+};
 const BLOCK_EXIT_CODE = 2;
 
 function findIndexFolder(start) {
@@ -54,22 +172,216 @@ function startsWithSearchTool(token) {
   return isTool || isPhrase;
 }
 
+// The quoted text starting at `at` as the shell reads it, with where it ends; undefined when no
+// quote starts there, null when it never closes, expands inside double quotes (`$`, a
+// backtick), which can run a command or yield several words (`"$@"`), or joins two lines with a
+// backslash, which Bash removes.
+function readQuoted(command, at) {
+  const quote = command[at];
+  if (quote !== "'" && quote !== '"') return undefined;
+  const escapes = quote === '"';
+  let end = at + 1;
+  while (end < command.length && command[end] !== quote) end += escapes && command[end] === "\\" ? 2 : 1;
+  if (end >= command.length) return null;
+  const text = command.slice(at + 1, end);
+  if (quote === "'") return { text, end };
+  if (/[$`]|\\\n/.test(text)) return null;
+  return { text: text.replace(/\\(["\\])/g, "$1"), end };
+}
+
+// Characters a reader can take for a word break or miss while Bash keeps them in a word: control
+// characters and Unicode spaces, other than space, tab and newline.
+const UNREAD_CHARACTER = /(?![ \t\n])[\p{Cc}\p{Cf}\p{Z}]/u;
+
+// The command's words, operators and output redirections, read the way Bash reads quotes; null
+// when it holds what cannot be read word by word: an unclosed quote, an expansion in double
+// quotes, a backslash before a line break, an unread character anywhere, or any unquoted
+// character the reading does not account for. A word spelled with a quote or a backslash says
+// so, since a quoted string can be a command another shell runs.
+function tokenize(command) {
+  if (UNREAD_CHARACTER.test(command)) return null;
+  const tokens = [];
+  let word = null;
+  let isQuoted = false;
+  const endWord = () => {
+    if (word !== null) tokens.push({ word, isQuoted });
+    word = null;
+    isQuoted = false;
+  };
+  for (let at = 0; at < command.length; at++) {
+    const rest = command.slice(at);
+    const quoted = readQuoted(command, at);
+    if (quoted === null) return null;
+    const operator = OPERATOR.exec(rest)?.[0];
+    const redirect = quoted ? undefined : OUTPUT_REDIRECT.exec(rest)?.[0];
+    if (quoted) {
+      word = (word ?? "") + quoted.text;
+      isQuoted = true;
+      at = quoted.end;
+    } else if (operator || redirect) {
+      // An unquoted digit glued to `>` names a file descriptor. Any other word stays one: Bash
+      // passes `"2">out`, `2&>out` and a number too large for a descriptor as an argument, and a
+      // longer descriptor only counts a word too many.
+      if (redirect?.includes(">&") && !DUPLICATE.test(rest)) return null;
+      if (redirect?.startsWith(">") && !isQuoted && /^\d$/.test(word ?? "")) word = null;
+      endWord();
+      tokens.push(operator ? { operator } : { redirect: !redirect.includes(">&") });
+      at += (operator ?? redirect).length - 1;
+    } else if (rest[0] === " " || rest[0] === "\t") {
+      endWord();
+    } else if (rest[0] === "\\") {
+      if (rest.length < 2 || rest[1] === "\n") return null;
+      word = (word ?? "") + rest[1];
+      isQuoted = true;
+      at++;
+    } else if (PLAIN.test(rest)) {
+      word = (word ?? "") + rest[0];
+    } else {
+      return null;
+    }
+  }
+  endWord();
+  return tokens;
+}
+
+// Simple commands, each with its words and the operator before it; a redirection's target
+// is dropped, since output written to a file is no file read. A target never crosses an
+// operator.
+function simpleCommands(tokens) {
+  const commands = [{ operator: null, words: [] }];
+  let dropsNextWord = false;
+  for (const token of tokens) {
+    if (token.operator) {
+      commands.push({ operator: token.operator, words: [] });
+      dropsNextWord = false;
+    } else if ("redirect" in token) dropsNextWord = token.redirect;
+    else if (dropsNextWord) dropsNextWord = false;
+    else commands.at(-1).words.push(token.word);
+  }
+  return commands;
+}
+
 function splitOn(parts, splitter) {
   return parts.flatMap((part) => part.split(splitter));
 }
 
+function startsSearch(command) {
+  return COMMAND_SPLITTERS.reduce(splitOn, [command]).some((part) => startsWithSearchTool(part.trimStart()));
+}
+
+function namesSearch(text) {
+  return text.split(STRING_SPLITTERS).some((part) => startsWithSearchTool(part.trimStart()));
+}
+
+// A command runs a search when any of its words is a search tool, which also covers one run
+// through another command (`xargs grep`, `find -exec grep`).
+function runsSearch(words) {
+  return words.some((word, at) => SEARCH_TOOLS.includes(word.toLowerCase())
+    || (word === "git" && words[at + 1] === "grep"));
+}
+
+// Whether `option` is one the stage allows, and whether it takes the next word as its value;
+// null when the stage does not allow it. A value inside the option word has a strict shape
+// (digits glued to a letter, a plain word after `=`), since a tool may read a looser one as
+// more options, as ack reads `-Cx` as `-C` and `-x`.
+function readOption(options, option) {
+  if (option.startsWith("--")) {
+    const [name, value] = option.slice(2).split(/=(.*)/s);
+    const takesValue = options.longValues.includes(name) || options.longGlued.includes(name);
+    if (value !== undefined) return takesValue && /^[\w-]+$/.test(value) ? { takesNext: false } : null;
+    if (options.long.includes(name)) return { takesNext: false };
+    return options.longValues.includes(name) ? { takesNext: true } : null;
+  }
+  if (options.isCountFlag && /^-\d+$/.test(option)) return { takesNext: false };
+  for (let at = 1; at < option.length; at++) {
+    const isValue = options.values.includes(option[at]);
+    if (isValue || options.counts.includes(option[at])) {
+      const glued = option.slice(at + 1);
+      if (isValue && glued === "") return { takesNext: true };
+      return /^\d+$/.test(glued) ? { takesNext: false } : null;
+    }
+    if (!options.flags.includes(option[at])) return null;
+  }
+  return { takesNext: false };
+}
+
+// A stage's name and the words it takes as patterns or files; null when it is not a stage the
+// hook knows, or takes an option its list does not allow.
+function readStage([tool = "", ...args]) {
+  const name = tool.toLowerCase();
+  if (!Object.hasOwn(STAGE_OPTIONS, name)) return null;
+  const operands = [];
+  for (let at = 0; at < args.length; at++) {
+    const arg = args[at];
+    if (arg === "--") return { name, operands: [...operands, ...args.slice(at + 1)] };
+    if (!(arg.startsWith("-") && arg !== "-")) {
+      operands.push(arg);
+      continue;
+    }
+    const option = readOption(STAGE_OPTIONS[name], arg);
+    if (!option) return null;
+    if (option.takesNext) at++;
+  }
+  return { name, operands };
+}
+
+// A search reads only its input when its one operand is the pattern.
+function isInputSearch(words) {
+  const read = readStage(words);
+  return read !== null && SEARCH_TOOLS.includes(read.name) && read.operands.length === 1;
+}
+
+function isReshaper(words) {
+  const read = readStage(words);
+  if (read && RESHAPERS.includes(read.name)) return read.operands.length === 0;
+  return isInputSearch(words);
+}
+
+// A source passes when its command allows any use, or its subcommand is listed and what follows
+// fits: an action the subcommand allows, or options, before any `--`, that its pattern accepts.
+function isOutputSource([command = "", subcommand = "", ...rest]) {
+  const name = command.toLowerCase();
+  const uses = Object.hasOwn(OUTPUT_SOURCES, name) ? OUTPUT_SOURCES[name] : {};
+  if (uses === true) return true;
+  const use = subcommand.toLowerCase();
+  const allowed = Object.hasOwn(uses, use) ? uses[use] : false;
+  if (Array.isArray(allowed)) return allowed.includes(rest[0]);
+  if (!(allowed instanceof RegExp)) return allowed;
+  const end = rest.includes("--") ? rest.indexOf("--") : rest.length;
+  return rest.slice(0, end).every((word) => !word.startsWith("-") || allowed.test(word));
+}
+
+// A search filters output, not code, when its `|` or `|&` pipeline starts with a command that never
+// prints a file's text, every stage between only reshapes that output, and the search reads only
+// its input. git grep ignores its input.
+function isOutputFilter(commands, index) {
+  const stages = [];
+  for (let at = index; PIPES.includes(commands[at].operator); at--) stages.unshift(commands[at - 1].words);
+  const search = commands[index].words;
+  if (stages.length === 0 || !isInputSearch(search)) return false;
+  const [source, ...between] = stages;
+  return isOutputSource(source) && between.every(isReshaper);
+}
+
 // Heuristic on purpose: a false positive only asks for a bypass marker, while a missed
-// search silently skips the index.
-function isGrepLikeShell(command) {
-  const chunks = COMMAND_SPLITTERS.reduce(splitOn, [command]);
-  return chunks.some((chunk) => startsWithSearchTool(chunk.trimStart()));
+// search silently skips the index. A command is a search when a shell command in it starts with
+// a search tool. The shell reading only lets one of those through: when it reads every word, the
+// command holds no quoted string that names a search, which another shell may run, and every
+// command in it that runs a search filters output. A command it cannot read keeps that first
+// answer.
+function isGrepLikeShell(command, isRead) {
+  if (!startsSearch(command)) return false;
+  const tokens = isRead ? tokenize(command) : null;
+  if (!tokens || tokens.some(({ word, isQuoted }) => isQuoted && namesSearch(word))) return true;
+  const commands = simpleCommands(tokens);
+  return commands.some(({ words }, index) => runsSearch(words) && !isOutputFilter(commands, index));
 }
 
 function isShellSearch(payload) {
   const command = payload.tool_input?.command;
   if (typeof command !== "string") return false;
   if (hasBypassMarker(command)) return false;
-  return isGrepLikeShell(command);
+  return isGrepLikeShell(command, READ_TOOLS.includes(payload.tool_name));
 }
 
 function isSearch(payload) {
