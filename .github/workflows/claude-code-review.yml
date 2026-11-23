@@ -1548,7 +1548,7 @@ jobs:
         # A hang counts as a failure, so the backup still runs.
         timeout-minutes: 30
         if: steps.credits-answer.outputs.ok != 'yes'
-        # Pinned to the v1.0.282 release commit. The bare `@v1` floats.
+        # Pinned to the v1.0.286 release commit. The bare `@v1` floats.
         # Update via
         #   gh api repos/anthropics/claude-code-action/git/ref/tags/v1 --jq '.object.type + " " + .object.sha'
         # and, when the type is `tag` (an annotated tag), peel it to its commit:
@@ -1556,7 +1556,7 @@ jobs:
         # Confirm the diff, then bump the SHA here. Both tiers carry the same pin,
         # but this file always ships in a PR of its own, so the pin in
         # `.github/workflows/claude.yml` moves in a separate PR.
-        uses: anthropics/claude-code-action@5a856893345e332afa621934082d8c660c26d689  # v1 (v1.0.282)
+        uses: anthropics/claude-code-action@acfe7992852970efb4fee683d63d628e3e52df67  # v1 (v1.0.286)
         continue-on-error: true
         with:
           # The first account whose token is set, unless the key pays for this
@@ -1881,7 +1881,7 @@ jobs:
         timeout-minutes: 30
         if: steps.claude-review.outcome != 'skipped' && steps.main-answer.outputs.ok != 'yes' && steps.claude-cli-stable.outcome == 'success'
         continue-on-error: true
-        uses: anthropics/claude-code-action@5a856893345e332afa621934082d8c660c26d689  # v1 (v1.0.282)
+        uses: anthropics/claude-code-action@acfe7992852970efb4fee683d63d628e3e52df67  # v1 (v1.0.286)
         with:
           # The account the step above picked. Each name is written out (see
           # the header); an index from 2 up is set only for an account whose
