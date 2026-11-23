@@ -20,13 +20,15 @@
 # "Evaluate review outcome" job reports either way, and `checks: two` in the
 # settings keeps the "Claude On-Demand" check current too.
 #
-# Requires: CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY in repo secrets. With
-# both, the key's monthly credits pay for the routine review first and the
+# Requires: CLAUDE_CODE_OAUTH_TOKEN, ANTHROPIC_API_KEY or one of the later
+# tokens below in repo secrets. With the first token and the key, the key's
+# monthly credits pay for the routine review first and the
 # subscription takes over when that run leaves no review; with the key alone,
 # every attempt runs on the key. Optional: CLAUDE_CODE_OAUTH_TOKEN_2 to
 # CLAUDE_CODE_OAUTH_TOKEN_5, more accounts' tokens
 # (`claude setup-token` on each) for the backup when the first account has no
-# room left; with the key and only these, the main review runs on the key.
+# room left; with the key and only these, the main review runs on the key,
+# and with only these, on the first of them.
 # Each account has a secret of its own, named here one by one: a
 # value taken out of a combined secret is no longer hidden in the logs, and a
 # secret name built at run time sends every secret of the repo to the runner.
@@ -490,7 +492,7 @@ jobs:
       # a review the gate can read.
       review: ${{ steps.answer.outputs.review }}
       request: ${{ steps.answer.outputs.request }}
-      reviewer: ${{ steps.credits-answer.outputs.ok == 'yes' && format('{0} {1} (API credits)', needs.init-gate.outputs.routine_model, needs.init-gate.outputs.routine_effort) || steps.main-answer.outputs.ok == 'yes' && format('{0} {1}{2}', needs.init-gate.outputs.routine_model, needs.init-gate.outputs.routine_effort, steps.payer.outputs.main_on_key == 'yes' && ' (API credits)' || '') || steps.backup-answer.outputs.ok == 'yes' && format('{0} {1} (backup{2}{3})', needs.init-gate.outputs.routine_fallback_model, needs.init-gate.outputs.routine_fallback_effort, (steps.account.outputs.index || steps.payer.outputs.first_index) != '' && (steps.account.outputs.index || steps.payer.outputs.first_index) != '1' && format(', account {0}', (steps.account.outputs.index || steps.payer.outputs.first_index)) || '', steps.payer.outputs.key_only == 'yes' && ', API credits' || '') || 'none' }}
+      reviewer: ${{ steps.credits-answer.outputs.ok == 'yes' && format('{0} {1} (API credits)', needs.init-gate.outputs.routine_model, needs.init-gate.outputs.routine_effort) || steps.main-answer.outputs.ok == 'yes' && format('{0} {1}{2}', needs.init-gate.outputs.routine_model, needs.init-gate.outputs.routine_effort, steps.payer.outputs.main_on_key == 'yes' && ' (API credits)' || steps.payer.outputs.first_index != '' && steps.payer.outputs.first_index != '1' && format(' (account {0})', steps.payer.outputs.first_index) || '') || steps.backup-answer.outputs.ok == 'yes' && format('{0} {1} (backup{2}{3})', needs.init-gate.outputs.routine_fallback_model, needs.init-gate.outputs.routine_fallback_effort, (steps.account.outputs.index || steps.payer.outputs.first_index) != '' && (steps.account.outputs.index || steps.payer.outputs.first_index) != '1' && format(', account {0}', (steps.account.outputs.index || steps.payer.outputs.first_index)) || '', steps.payer.outputs.key_only == 'yes' && ', API credits' || '') || 'none' }}
     env:
       # Every curl in this workflow starts with -q, and npm reads neither its
       # user config nor its global one (the first step points that at an
@@ -1324,9 +1326,10 @@ jobs:
       # action attempts below run on it too. With the key and only later
       # accounts' tokens, the attempts on the first account run on it, and the
       # backup on the account it picks. It also names the first account whose
-      # token is set, which the backup and its label take when "Pick the
-      # backup's account" leaves no index. Only whether each secret is set is
-      # read here, never its value.
+      # token is set, which the main review takes when the key does not pay
+      # for it, and the backup and its label take when "Pick the backup's
+      # account" leaves no index. Only whether each secret is set is read
+      # here, never its value.
       - name: Pick who pays for the review
         id: payer
         shell: bash
@@ -1351,6 +1354,9 @@ jobs:
             if [ "$HAS_TOKEN" = true ]; then
               echo "::notice::No first account token: the attempts on the first account run on the API key, and the backup on a later account. A key holding only a plan's monthly credits cannot pay for those attempts, since the review action is refused those credits."
             fi
+          fi
+          if [ "$HAS_KEY" != true ] && [ "$HAS_FIRST" != true ] && [ "$HAS_TOKEN" = true ]; then
+            echo "::notice::No first account token and no API key: the main review runs on the first later account whose token is set."
           fi
           if [ "$HAS_FIRST" = true ]; then
             echo "first_index=1" >> "$GITHUB_OUTPUT"
@@ -1553,7 +1559,9 @@ jobs:
         uses: anthropics/claude-code-action@5a856893345e332afa621934082d8c660c26d689  # v1 (v1.0.282)
         continue-on-error: true
         with:
-          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # The first account whose token is set, unless the key pays for this
+          # attempt ("Pick who pays").
+          claude_code_oauth_token: ${{ steps.payer.outputs.main_on_key != 'yes' && (steps.payer.outputs.first_index == '2' && secrets.CLAUDE_CODE_OAUTH_TOKEN_2 || steps.payer.outputs.first_index == '3' && secrets.CLAUDE_CODE_OAUTH_TOKEN_3 || steps.payer.outputs.first_index == '4' && secrets.CLAUDE_CODE_OAUTH_TOKEN_4 || steps.payer.outputs.first_index == '5' && secrets.CLAUDE_CODE_OAUTH_TOKEN_5) || secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # Empty unless no first account token is set ("Pick who pays").
           anthropic_api_key: ${{ steps.payer.outputs.main_on_key == 'yes' && secrets.ANTHROPIC_API_KEY || '' }}
           # The job's read-only token: with it the action skips its exchange
