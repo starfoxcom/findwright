@@ -16,7 +16,7 @@ The gate's settings live in `.github/review-gate.yml` (models, runner, the proje
 - 🟢 LGTM only when the review is fully clean: no caveats, no nits, no "non-blocking" findings.
 - 🔴 Blocking when any real finding exists, however it is framed. "LGTM with caveats" is 🔴.
 - Style preferences and speculative future-proofing are dropped, not listed as minor.
-- Findings in Bindwright's own template text, listed under "Upstream: Bindwright template text" as `.github/review-guide.md` says, are not this PR's: they go upstream and leave the verdict as it is.
+- Findings in Bindwright's own template text, listed under "Upstream: Bindwright template text" as `.github/review-guide.md` says, are not this PR's: they go upstream and leave the verdict as it is. Only the files the pre-screen report itself lists count; a review without that report treats none as listed.
 
 A 🟢 that carries findings lets them merge and come back later as the same review.
 
