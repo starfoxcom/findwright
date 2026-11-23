@@ -17,19 +17,13 @@ const OUTPUT_REDIRECT = /^&?>[>|]?(&[\d-]*)?/;
 const PIPES = ["|", "|&"];
 const SEARCH_TOOLS = ["grep", "rg", "ag", "ack", "ripgrep", "findstr"];
 const SEARCH_PHRASES = ["git grep"];
-// How each shell reads a word, and the unquoted characters the reading accounts for. Any other
-// one (`<`, `#`, `$`, `!`, a glob or a bracket) can redirect input, end the command early or
-// expand to file names. PowerShell takes a backslash as a plain character, and spreads `a,b`
-// and `@name` into several arguments, so it reads neither `,` nor `@` as plain. It also reads
-// an unquoted word that starts with `-` and a letter as a parameter name, which it can split in
-// two (`-m9.\file` reaches a program as `-m9` and `.\file`), so such a word must be all
-// letters, digits, `_` and `-`, wherever it sits.
-const DIALECTS = {
-  Bash: { isBackslashEscape: true, plain: /^[\w\-./=:,+@%]/ },
-  PowerShell: { isBackslashEscape: false, plain: /^[\w\-./=:+%\\]/, splitsParameters: true },
-};
-const PARAMETER_START = /^-[A-Za-z_]/;
-const PARAMETER_WORD = /^-[\w-]+$/;
+// The unquoted characters the Bash reading accounts for. Any other one (`<`, `#`, `$`, `!`, a glob
+// or a bracket) can redirect input, end the command early or expand to file names.
+const PLAIN = /^[\w\-./=:,+@%]/;
+// Only Bash commands are read word by word. How PowerShell passes words to a program depends on
+// its version and its argument-passing mode, which the command text does not show, so every
+// PowerShell command that names a search stays a search.
+const READ_TOOLS = ["Bash"];
 // The options git status and git log may take and still print no file's text or diff.
 const STATUS_OPTIONS = new RegExp("^(-(?=.)[sbz]*(u(no|normal|all)?)?|--(short|branch|porcelain(=v[12])?"
   + "|untracked-files(=(no|normal|all))?|ignored(=\\w+)?|(no-)?ahead-behind|show-stash|no-renames))$");
@@ -42,7 +36,7 @@ const LOG_OPTIONS = new RegExp("^(-\\d+|-n\\d*|-s|-[iE]+|--(oneline|graph|all|br
 // with `true`, the actions it may take, or the pattern every option must match. Any other command
 // or option may print a file (find through -exec, node -p, gh api, git log -p, gh pr diff).
 const OUTPUT_SOURCES = {
-  ls: true, dir: true, "get-childitem": true, gci: true, echo: true, ps: true, pytest: true,
+  ls: true, dir: true, echo: true, ps: true, pytest: true,
   node: { "--test": /^--test(-[a-z-]+)?(=.*)?$/ },
   npm: { test: true, ls: true, outdated: true },
   gh: {
@@ -109,7 +103,6 @@ const STAGE_OPTIONS = {
       + " only-matching literal case-sensitive smart-case color nocolor",
     longValues: "max-count", longGlued: "after before context",
   }),
-  findstr: stageOptions({ flags: "ivnbelrx" }),
   sort: stageOptions({
     flags: "bdfghiMnRrsuVz", values: "kt",
     long: "ignore-leading-blanks dictionary-order ignore-case general-numeric-sort"
@@ -176,75 +169,66 @@ function startsWithSearchTool(token) {
 // The quoted text starting at `at` as the shell reads it, with where it ends; undefined when no
 // quote starts there, null when it never closes or expands inside double quotes (`$`, a
 // backtick), which can run a command or yield several words (`"$@"`).
-function readQuoted(command, at, dialect) {
+function readQuoted(command, at) {
   const quote = command[at];
   if (quote !== "'" && quote !== '"') return undefined;
-  const escapes = quote === '"' && dialect.isBackslashEscape;
+  const escapes = quote === '"';
   let end = at + 1;
   while (end < command.length && command[end] !== quote) end += escapes && command[end] === "\\" ? 2 : 1;
   if (end >= command.length) return null;
   const text = command.slice(at + 1, end);
   if (quote === "'") return { text, end };
   if (/[$`]/.test(text)) return null;
-  return { text: escapes ? text.replace(/\\(["\\])/g, "$1") : text, end };
+  return { text: text.replace(/\\(["\\])/g, "$1"), end };
 }
 
-// The command's words, operators and output redirections, read the way the dialect's shell
-// reads quotes; null when it holds what cannot be read word by word: an unclosed quote, an
-// expansion in double quotes, a backslash before a line break, any unquoted character the
-// dialect does not read as plain, or a parameter word the dialect may split. A word spelled
-// with a quote or a backslash says so, since a quoted string can be a command another shell runs.
-function tokenize(command, dialect) {
+// The command's words, operators and output redirections, read the way Bash reads quotes; null
+// when it holds what cannot be read word by word: an unclosed quote, an expansion in double
+// quotes, a backslash before a line break, or any unquoted character the reading does not
+// account for. A word spelled with a quote or a backslash says so, since a quoted string can be
+// a command another shell runs.
+function tokenize(command) {
   const tokens = [];
   let word = null;
   let isQuoted = false;
-  let startsPlain = false;
-  let isSplit = false;
   const endWord = () => {
-    const isParameter = dialect.splitsParameters && startsPlain && PARAMETER_START.test(word);
-    if (isParameter && (isQuoted || !PARAMETER_WORD.test(word))) isSplit = true;
     if (word !== null) tokens.push({ word, isQuoted });
     word = null;
     isQuoted = false;
-    startsPlain = false;
   };
   for (let at = 0; at < command.length; at++) {
     const rest = command.slice(at);
-    const quoted = readQuoted(command, at, dialect);
+    const quoted = readQuoted(command, at);
     if (quoted === null) return null;
     const operator = OPERATOR.exec(rest)?.[0];
     const redirect = quoted ? undefined : OUTPUT_REDIRECT.exec(rest)?.[0];
     if (quoted) {
-      // PowerShell before 7.3 passes a quote inside an argument to a program unescaped, so the
-      // program can split it into several arguments.
-      const joinsQuote = quoted.text.includes('"') || /["']/.test(command[at - 1] ?? "");
-      if (!dialect.isBackslashEscape && joinsQuote) return null;
       word = (word ?? "") + quoted.text;
       isQuoted = true;
       at = quoted.end;
     } else if (operator || redirect) {
-      // Only an unquoted number glued to `>` names a file descriptor; `"2">out` and `2&>out`
-      // pass the word 2.
-      if (redirect?.startsWith(">") && !isQuoted && /^\d+$/.test(word ?? "")) word = null;
+      // An unquoted digit glued to `>` names a file descriptor. Any other word stays one: Bash
+      // passes `"2">out`, `2&>out` and a number too large for a descriptor as an argument, and a
+      // longer descriptor only counts a word too many.
+      if (redirect?.startsWith(">") && !isQuoted && /^\d$/.test(word ?? "")) word = null;
       endWord();
       tokens.push(operator ? { operator } : { redirect: !redirect.includes(">&") });
       at += (operator ?? redirect).length - 1;
     } else if (/\s/.test(rest[0])) {
       endWord();
-    } else if (rest[0] === "\\" && dialect.isBackslashEscape) {
+    } else if (rest[0] === "\\") {
       if (rest.length < 2 || rest[1] === "\n") return null;
       word = (word ?? "") + rest[1];
       isQuoted = true;
       at++;
-    } else if (dialect.plain.test(rest)) {
-      if (word === null) startsPlain = true;
+    } else if (PLAIN.test(rest)) {
       word = (word ?? "") + rest[0];
     } else {
       return null;
     }
   }
   endWord();
-  return isSplit ? null : tokens;
+  return tokens;
 }
 
 // Simple commands, each with its words and the operator before it; a redirection's target
@@ -281,8 +265,8 @@ function runsSearch(words) {
 
 // Whether `option` is one the stage allows, and whether it takes the next word as its value;
 // null when the stage does not allow it. A value inside the option word has a strict shape
-// (digits glued to a letter, a plain word after `=`): a shell can split a looser one in two,
-// as PowerShell splits `-m9.\file` into `-m9` and `.\file`.
+// (digits glued to a letter, a plain word after `=`), since a tool may read a looser one as
+// more options, as ack reads `-Cx` as `-C` and `-x`.
 function readOption(options, option) {
   if (option.startsWith("--")) {
     const [name, value] = option.slice(2).split(/=(.*)/s);
@@ -305,7 +289,7 @@ function readOption(options, option) {
 }
 
 // A stage's name and the words it takes as patterns or files; null when it is not a stage the
-// hook knows, or takes an option its list does not allow. findstr's options start with `/`.
+// hook knows, or takes an option its list does not allow.
 function readStage([tool = "", ...args]) {
   const name = tool.toLowerCase();
   if (!Object.hasOwn(STAGE_OPTIONS, name)) return null;
@@ -313,13 +297,12 @@ function readStage([tool = "", ...args]) {
   for (let at = 0; at < args.length; at++) {
     const arg = args[at];
     if (arg === "--") return { name, operands: [...operands, ...args.slice(at + 1)] };
-    const slashOption = name === "findstr" && arg.startsWith("/");
-    if (!slashOption && !(arg.startsWith("-") && arg !== "-")) {
+    if (!(arg.startsWith("-") && arg !== "-")) {
       operands.push(arg);
       continue;
     }
-    const option = readOption(STAGE_OPTIONS[name], slashOption ? `-${arg.slice(1).toLowerCase()}` : arg);
-    if (!option || (slashOption && arg.length !== 2)) return null;
+    const option = readOption(STAGE_OPTIONS[name], arg);
+    if (!option) return null;
     if (option.takesNext) at++;
   }
   return { name, operands };
@@ -367,9 +350,9 @@ function isOutputFilter(commands, index) {
 // search silently skips the index. So the shell reading alone decides: a command passes only
 // when it holds no quoted string that names a search, which another shell may run, and every
 // command in it that runs a search filters output.
-function isGrepLikeShell(command, dialect) {
+function isGrepLikeShell(command, isRead) {
   if (!namesSearch(command) && !SEARCH_WORD.test(command)) return false;
-  const tokens = tokenize(command, dialect);
+  const tokens = isRead ? tokenize(command) : null;
   if (!tokens || tokens.some(({ word, isQuoted }) => isQuoted && namesSearch(word))) return true;
   const commands = simpleCommands(tokens);
   return commands.some(({ words }, index) => runsSearch(words) && !isOutputFilter(commands, index));
@@ -379,7 +362,7 @@ function isShellSearch(payload) {
   const command = payload.tool_input?.command;
   if (typeof command !== "string") return false;
   if (hasBypassMarker(command)) return false;
-  return isGrepLikeShell(command, DIALECTS[payload.tool_name]);
+  return isGrepLikeShell(command, READ_TOOLS.includes(payload.tool_name));
 }
 
 function isSearch(payload) {
