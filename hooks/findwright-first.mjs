@@ -273,6 +273,9 @@ function namesSearch(text) {
   return text.split(STRING_SPLITTERS).some((part) => startsWithSearchTool(part.trimStart()));
 }
 
+// Whether a command could name a search tool at all, before the reading spends time on it.
+const MAYBE_SEARCH = new RegExp(SEARCH_TOOLS.join("|"), "i");
+
 // A command runs a search when any of its words is a search tool, which also covers one run
 // through another command (`xargs grep`, `find -exec grep`).
 function runsSearch(words) {
@@ -363,18 +366,57 @@ function isOutputFilter(commands, index) {
   return isOutputSource(source) && between.every(isReshaper);
 }
 
+// Commands that run the command after their own words, each with its options that take the next
+// word as their value. Leading `NAME=value` words are settings, and timeout's first other word is
+// its duration.
+const WRAPPERS = {
+  sudo: ["-u", "-g", "-h", "-p", "-C", "-D", "-R", "-T", "-U", "-r", "-t"], nice: ["-n"],
+  timeout: ["-s", "-k"], env: ["-u", "-C", "-S"], nohup: [], time: ["-f", "-o"], stdbuf: [],
+  exec: ["-a"],
+};
+const SHELLS = ["sh", "bash", "zsh", "dash", "ksh"];
+
+// The command a simple command runs once its settings and wrappers are taken off.
+function unwrap(words) {
+  let at = 0;
+  while (/^\w+=/.test(words[at] ?? "")) at++;
+  while (Object.hasOwn(WRAPPERS, words[at])) {
+    const [wrapper, values] = [words[at], WRAPPERS[words[at]]];
+    at++;
+    while (at < words.length && (words[at].startsWith("-") || /^\w+=/.test(words[at]))) {
+      if (words[at] === "--") { at++; break; }
+      at += values.includes(words[at]) ? 2 : 1;
+    }
+    if (wrapper === "timeout") at++;
+  }
+  return words.slice(at);
+}
+
+// A search behind a wrapper (`sudo grep`, `timeout 5 rg`), in the string a shell runs with `-c`,
+// or in what `eval` runs.
+function runsWrappedSearch(words) {
+  const [name = "", ...rest] = unwrap(words);
+  if (runsSearch([name, rest[0] ?? ""].slice(0, name === "git" ? 2 : 1))) return true;
+  if (name === "eval") return namesSearch(rest.join(" "));
+  const script = rest.findIndex((word) => /^-[a-z]*c$/.test(word));
+  return SHELLS.includes(name) && script >= 0 && namesSearch(rest[script + 1] ?? "");
+}
+
 // Heuristic on purpose: a false positive only asks for a bypass marker, while a missed
 // search silently skips the index. A command is a search when a shell command in it starts with
 // a search tool. The shell reading only lets one of those through: when it reads every word, the
 // command holds no quoted string that names a search, which another shell may run, and every
 // command in it that runs a search filters output. A command it cannot read keeps that first
-// answer.
+// answer. A command the reading can follow is also a search when one of its commands runs one
+// behind a wrapper, through a shell's `-c` or `eval`, or after a lone `&`.
 function isGrepLikeShell(command, isRead) {
-  if (!startsSearch(command)) return false;
-  const tokens = isRead ? tokenize(command) : null;
-  if (!tokens || tokens.some(({ word, isQuoted }) => isQuoted && namesSearch(word))) return true;
+  const tokens = isRead && MAYBE_SEARCH.test(command) ? tokenize(command) : null;
+  const isFirstAnswer = startsSearch(command);
+  if (!tokens) return isFirstAnswer;
+  if (isFirstAnswer && tokens.some(({ word, isQuoted }) => isQuoted && namesSearch(word))) return true;
+  const runs = isFirstAnswer ? runsSearch : runsWrappedSearch;
   const commands = simpleCommands(tokens);
-  return commands.some(({ words }, index) => runsSearch(words) && !isOutputFilter(commands, index));
+  return commands.some(({ words }, index) => runs(words) && !isOutputFilter(commands, index));
 }
 
 function isShellSearch(payload) {
