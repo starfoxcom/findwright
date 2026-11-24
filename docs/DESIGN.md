@@ -18,26 +18,27 @@ The code-research tool Bindwright installed before FindWright parses a fixed lis
   - `include`: git-ignored files the work reads (generated typings).
   - `exclude`: files to leave out.
   - `rules`: regexes whose `name` group names a symbol of a project kind (i18n text keys, template placeholders, toggles, SQL tables, environment variables). A rule can also say where its block ends (a brace, a JSON value, indentation, the next heading, or a closing pattern), nest its symbols into paths, share lines with other rules in a group, and match only inside or outside regions such as front matter and code fences, with their range and path.
-- **The adapting loop.** At project setup the session runs `coverage`, reads which file types and files yield no symbol, and adds rules until every file it cares about has structure. The searches that still go to plain grep get logged, so a later session extends the config.
+- **The adapting loop.** At project setup the session runs `coverage`, reads which file types and files yield no symbol, and adds rules until every file it cares about has structure. At each session's close, `findwright hits` scores its searches against the files the session opened next, and when three sessions in a row fall short of the goal, `findwright assess` names the causes and the config changes that fix them.
 
 ## Tools (MCP, stdio)
 
+- `find`: a plain-English question, a name, or both. Ranks every file by rare-word matches in names, paths and text, plus meaning from a static code embedding model (a 32 MB download, no inference runtime), and returns the best files first.
 - `search`: regexes (several at once, OR or `all`), globs, context lines, case flag, limit. Output reads like `grep -n`, grouped by file, and each hit names its enclosing symbol.
 - `symbols`: by name (regex or substring), kind and glob; exact names first.
 - `outline`: one file's symbols with line ranges.
 - `coverage`: files per type and the files with no symbol.
 
-Still to build: `context` (a ranked map for a task, after aider's repo map: references between files ranked with PageRank) and `references` (word-boundary text references, plus parsed ones where a grammar exists).
+## Where it runs
 
-## Measured on this repo (2026-11-11)
+- **As a plugin with a helper.** `docs/PLUGIN.md` covers the shape: the plugin's skills install the helper into `~/.findwright/helper` and register `src/server.mjs` once for the user. It needs Node 22.16 or later, or Node 24 and up, for `node:sqlite` with full-text search.
+- **The search hook** (`hooks/findwright-first.mjs`) sends Grep, Glob and recursive shell searches to `search` in repos that have an index. Since `search` takes regex, it can stop nearly every plain code search instead of only symbol lookups.
+
+## Measured on the Bindwright repo (2026-11-11)
 
 - Coverage: 450 of 468 files with symbols. The 18 left are licenses, ignore lists, `VERSION` and two shell launchers; full-text search still covers them.
-- 25 real fallback searches replayed: every one returns exactly the lines `git grep -P` returns on tracked files. 12 of the 25 need regex, which the current tool's search cannot run.
-- Speed: 25 searches in about 240 ms in one process (about 10 ms each), against about 800 ms for 25 `git grep` processes. The database is 19 MB (the current tool's: 32 MB).
+- 25 real fallback searches replayed: every one returns exactly the lines `git grep -P` returns on tracked files. 12 of the 25 need regex, which the tool it replaced cannot run.
+- Speed: 25 searches in about 240 ms in one process (about 10 ms each), against about 800 ms for 25 `git grep` processes. The database is 19 MB (the replaced tool's: 32 MB).
 
-## Open decisions
+## Not built: graph tools
 
-1. **Replace the current tool's role in setup.** The code-search choice would offer this index (recommended), `none` and `custom`. It needs Node 22.13 or later for `node:sqlite` without a flag; older Node falls back to `none`.
-2. **Graph tools.** The current tool also answers callers, impact, dead code and complexity metrics. Version 1 here covers search, symbols and outlines. References and callers need parsing. Tested 2026-11-11 with `web-tree-sitter` 0.25.10 and the prebuilt grammars of `tree-sitter-wasms` 0.1.13 (36 languages, Dart and C# included): this repo's 256 JS, TS, TSX and Python files parse in about 0.6 s with no native build, giving 2,709 definitions and 29,313 call sites, enough to answer "who calls X" by name. The runtime is 5.7 MB and each grammar 0.3 to 3 MB, so setup would fetch only the grammars for the languages the repo has (JS, TS, TSX and Python together: 5.7 MB). Until that lands, the current tool can stay installed beside it for those questions.
-3. **The search hook.** A hook like the current `*-first.py` routes Grep and recursive shell searches to `search`. Since `search` takes regex, the hook can block nearly every plain code search instead of only symbol lookups.
-4. **Where it ships.** In the helper package, run as `node "<helper>/src/server.mjs"`, registered per project in `.mcp.json` by setup.
+The tool FindWright replaced also answered callers, impact, dead code and complexity metrics; FindWright answers none of them. References and callers need parsing. Tested 2026-11-11 with `web-tree-sitter` 0.25.10 and the prebuilt grammars of `tree-sitter-wasms` 0.1.13 (36 languages, Dart and C# included): the Bindwright repo's 256 JS, TS, TSX and Python files parse in about 0.6 s with no native build, giving 2,709 definitions and 29,313 call sites, enough to answer "who calls X" by name. The runtime is 5.7 MB and each grammar 0.3 to 3 MB, so setup would fetch only the grammars for the languages the repo has (JS, TS, TSX and Python together: 5.7 MB).
