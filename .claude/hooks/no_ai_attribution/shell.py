@@ -15,8 +15,9 @@ PARSE_SECONDS = 20  # one parse
 MAX_NESTED_SHELLS = 3  # `bash -c` inside `bash -c` ... read this many levels deep
 POSIX_SHELLS = {"bash", "sh", "dash", "zsh", "ksh", "mksh", "ash"}
 WRAPPERS = {"sudo", "doas", "env", "command", "builtin", "exec", "nohup", "nice", "time", "xargs"}
-NO_NODE = ("this computer has no Node 18 or later, which the guard's parser needs to read the"
-           " command. Install Node, then run /bindwright:update.")
+NO_NODE = ("no Node 18 or later is on PATH outside this project's folders, and the guard's parser"
+           " needs one to read the command (a node the project ships is never run). Install Node,"
+           " or put one from outside the project on PATH, then run /bindwright:update.")
 NO_HELPER = "Bindwright's helper, which holds the guard's parser, is missing. Run /bindwright:update to install it."
 OLD_HELPER = "Bindwright's helper is older than this guard. Run /bindwright:update to update it."
 UNREAD = ("the guard's parser could not read this command (an array built at run time, PowerShell's"
@@ -40,17 +41,76 @@ def parser_script():
     return next((script for script in scripts if os.path.isfile(script)), None)
 
 
-def node_program(cwd):
-    """The `node` on PATH, or None when the only one is the session folder's own. On Windows a
-    bare name is looked up in the current folder first, so a repo could ship its own
-    `node.exe`: that search is switched off, and a match that is relative (a `.` on PATH) or
-    sits in the session folder is refused."""
-    os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
-    found = shutil.which("node")
-    if not found or not os.path.isabs(found):
+def real_path(path):
+    return os.path.normcase(os.path.realpath(path))
+
+
+def resolved(entry):
+    """`entry` resolved, or None when it cannot be, as Windows reports for a share that refuses the
+    sign-in; such a folder is never searched."""
+    try:
+        return real_path(entry)
+    except OSError:
         return None
-    here = {os.path.normcase(os.path.realpath(folder)) for folder in (cwd, os.getcwd())}
-    return None if os.path.normcase(os.path.realpath(os.path.dirname(found))) in here else found
+
+
+def is_within(folder, top):
+    """Whether `folder` is `top` or below it; two paths on different drives never are."""
+    try:
+        return os.path.commonpath([folder, top]) == top
+    except ValueError:
+        return False
+
+
+def repo_folder(start, follow_links=True):
+    """The top folder of the outermost repo holding `start`, resolved, where a repo, or the one a
+    submodule sits in, could ship its own programs. A repo at the home folder or above it holds
+    the user's own installs and does not count, unless the home folder is unknown. Outside a
+    repo it is `start` itself, or None when `start` is the home folder or above it. With
+    `follow_links` false, the folders walked are the ones `start` was reached through. The walk
+    keeps each folder's own spelling, so a folder Windows marks case-sensitive still finds its
+    `.git`; only the folder given back is case-folded, for comparing."""
+    home = os.path.expanduser("~")
+    home = real_path(home) if os.path.isabs(home) else None
+    folder = os.path.realpath(start) if follow_links else os.path.abspath(start)
+    top, first = None, True
+    while True:
+        real = real_path(folder)
+        counts = not (home and is_within(home, real))
+        if counts and (first or os.path.exists(os.path.join(folder, ".git"))):
+            top = real
+        parent, first = os.path.dirname(folder), False
+        if parent == folder:
+            return top
+        folder = parent
+
+
+def trusted_folders(session):
+    """The absolute PATH folders a repo cannot have shipped a program in, or None when the folders
+    cannot be read, as when the current folder was deleted. A PATH folder that is relative (a `.`),
+    is the session folder or the current folder, or sits in a folder repo_folder gives for the
+    session folder, as reached or with its links followed, is skipped, and Windows's search of the
+    current folder first is switched off.
+    Every program a guard runs is found here, always from the session folder, never from a repo
+    root found later, so every guard trusts the same folders."""
+    os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
+    try:
+        here = {real_path(place) for place in (session, os.getcwd())}
+        repos = {repo_folder(session), repo_folder(session, follow_links=False)} - {None}
+    except OSError:
+        return None
+    folders = {entry: resolved(entry) for entry in os.environ.get("PATH", "").split(os.pathsep)
+               if os.path.isabs(entry)}
+    return [entry for entry, real in folders.items()
+            if real and real not in here and not any(is_within(real, repo) for repo in repos)]
+
+
+def node_program(cwd):
+    """`node` as an absolute path from the trusted folders of the session folder `cwd`, so a repo's
+    own `node` never runs, or None when none of them holds one."""
+    folders = trusted_folders(cwd)
+    found = folders and shutil.which("node", path=os.pathsep.join(folders))
+    return found if found and os.path.isabs(found) else None
 
 
 def node_too_old(node, deadline):

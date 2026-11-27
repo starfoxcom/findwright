@@ -22,6 +22,7 @@ Mistakes this project has made more than once. Each item names a trigger the dif
 | Trigger in the diff | Check | Source |
 |---|---|---|
 | A file that the project keeps a generated copy of changes | The copy is regenerated in the same commit | (the PRs where it broke) |
+| A new kind of write to an outside service (a POST, PUT, PATCH or DELETE call, or an SDK call that creates or changes something) | Its tests run against a fake that refuses what the service refuses, and the PR's Notes carry a `Live check:` line from one real call | `testing.md` § Test the real code |
 
 ## Bindwright template text
 

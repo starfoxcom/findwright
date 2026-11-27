@@ -46,29 +46,10 @@ Run `git branch --show-current` before editing. Switch or branch first, then edi
 ## Merging
 
 - Every PR merges with a merge commit: `gh pr merge <pr> --merge --delete-branch`. Keep each commit buildable, and read history with `git log --first-parent`.
-- Release PRs (`develop` into `main`) and cascade PRs (`main` into `develop`) always use `--merge`. Squashing them makes the two branches diverge and turns the next release into a conflict.
+- Release PRs (`develop` into `main`), hotfix PRs (into `main`) and cascade PRs (`main` into `develop`) always use `--merge`. Squashing them makes the two branches diverge and turns the next release into a conflict.
 - After merging: `--delete-branch` removes the remote branch, but the local one only when it is checked out. Run `git branch -D <name>` if it remains, then confirm with `git branch`.
 - Then, when Bindwright's helper is installed (`~/.bindwright/helper/node_modules/bindwright`, which setup installs), run `node "$HOME/.bindwright/helper/node_modules/bindwright/hooks/counts.mjs" send <repo root>` in the background. It sends nothing unless this computer turned on the anonymous review counts, and at most once in 24 hours, so a merge never waits on it.
 - Re-run a failed CI workflow as a whole (or push again). Re-running only the failed job can leave a required check stuck.
-
-### Cascade after every merge into `main`
-
-GitHub does not copy `main` back into `develop`. After a hotfix or release merges:
-
-```bash
-git fetch origin
-git checkout -b chore/cascade-<name> origin/develop
-git merge --no-ff origin/main -m "chore: cascade <name> into develop"
-git push -u origin chore/cascade-<name>
-gh pr create --base develop --title "chore: cascade <name> into develop" --body-file <file>
-```
-
-The hotfix or release is done only when the cascade PR is merged and its branch deleted.
-
-### Workflow file changes
-
-Review workflows triggered by comments or schedules run the copy on the GitHub default branch, and the review app refuses its token to a run whose copy of the review workflow differs from that copy, so its review is never posted.
-Because `main` is the default branch, a change to `.github/workflows/` lands on `main` first as a `hotfix/<name>` PR, then cascades to `develop`. A workflow change made on a feature branch fails the review check.
 
 ---
 
@@ -101,17 +82,12 @@ Review tiers, the verdict rule and CI watching live in `review-tiers.md` and `to
 
 ---
 
-## Versioning
+## Releases
 
-Size each release by what its users must do:
-
-- **Major:** they must act, or something they use stops working: a command, option or API removed or renamed with no old name kept, a file or save format that old data cannot load, a raised minimum OS, runtime or tool version.
-- **Minor:** new features, or changed defaults that keep everything working.
-- **Patch:** fixes only.
-
-When a release tool sets the version and the tag, feed it the way its configuration reads and never bump or tag by hand. Otherwise bump every file that carries the version together, and tag the release commit in the style the existing tags use. With a changelog, each change a user must act on goes under `### Breaking`. A project that does not version its releases skips this section.
-
-`.github/scripts/version_check.py <version>` reads the commits since the last release and refuses a version smaller than they need, or a changelog section that does not match it. Run it before each `git tag <version>`, `gh release create <version>` and `gh pr create` from a `release/<version>` branch; where the guard hooks live in the repo, a hook runs it on those commands by itself. Pick the version and the sections it names; never tag around it.
+`releases.md` holds how releases are numbered and tagged. It loads when a session reads a changelog or a file that carries the version (`VERSION`, `package.json`, `pyproject.toml` and the like); read it before cutting a release or bumping a version.
+It also holds the cascade: after a release or hotfix merges into `main`, a cascade PR carries it back into `develop`, and the work is done only when that PR merges. Read it before cutting a hotfix too.
+A change to `.github/workflows/` starts on a `hotfix/<name>` branch from `main`, never from `develop`; `releases.md` says why.
+So does a change to the issue forms in `.github/ISSUE_TEMPLATE/`.
 
 ## Dead code does not ship
 
