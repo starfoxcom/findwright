@@ -473,10 +473,12 @@ def is_within(folder, top):
 def repo_folder(root):
     """The top folder of the outermost repo holding `root`, where a repo, or the one a submodule sits
     in, could ship its own programs. A repo at the home folder or above it holds the user's own
-    installs and does not count, unless the home folder is unknown."""
+    installs and does not count, unless the home folder is unknown. Outside a repo it is `root`
+    itself, or None when `root` is the home folder or above it."""
     home = os.path.expanduser("~")
     home = real_path(home) if os.path.isabs(home) else None
-    folder, top = real_path(root), real_path(root)
+    folder = real_path(root)
+    top = None if home and is_within(home, folder) else folder
     while True:
         if os.path.exists(os.path.join(folder, ".git")) and not (home and is_within(home, folder)):
             top = folder
@@ -499,7 +501,8 @@ def trusted_folders(root):
     repo = repo_folder(root)
     folders = {entry: resolved(entry) for entry in os.environ.get("PATH", "").split(os.pathsep)
                if os.path.isabs(entry)}
-    return [entry for entry, real in folders.items() if real and real not in here and not is_within(real, repo)]
+    return [entry for entry, real in folders.items()
+            if real and real not in here and not (repo and is_within(real, repo))]
 
 
 def trusted_program(root, name):
