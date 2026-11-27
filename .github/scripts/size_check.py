@@ -178,8 +178,8 @@ def functions(path):
     if lizard.get_reader_for(path) is None:
         return False
     full = os.path.join(ROOT, path)
-    if path.endswith((".ts", ".tsx", ".mts", ".cts")):
-        found = typescript_functions(lizard, full)
+    if path.endswith(LANGUAGE_EXTENSIONS["JavaScript / TypeScript"]):
+        found = javascript_functions(lizard, full)
     else:
         found = lizard.analyze_file(full).function_list
     return [(f.name, f.end_line - f.start_line + 1, f.cyclomatic_complexity, param_count(path, f)) for f in found]
@@ -189,6 +189,11 @@ OPENERS, CLOSERS = "([{", ")]}"
 # A slash after one of these, or at the start of a line, opens a regex literal.
 # Not after "}" or "<": in JSX those come before the slash of a closing tag.
 REGEX_AFTER = "(,=:[!&|?{;+-*%~^"
+# Reserved words an expression follows, so a slash after one opens a regex literal;
+# "=>" is the arrow before an arrow function's body. A word after "." or "#" is a property
+# name, and of, yield and await are left out, since plain code may use them as names.
+REGEX_AFTER_WORD = re.compile(r"(?:^|[^\w$.#])(?:return|typeof|instanceof|in|new|delete|void"
+                              r"|throw|case|do|else)$|=>$")
 # Modes that end with their line: strings, and regex literals ("/", "/[" in a class).
 LINE_MODES = ("'", '"', "/", "/[")
 
@@ -203,10 +208,19 @@ def _scan_code(line, at):
         return at + 2, "block"
     if line[at] in "'\"`":
         return at + 1, line[at]
-    before = line[:at].rstrip()
-    if line[at] == "/" and (not before or before[-1] in REGEX_AFTER or before.endswith("return")):
-        return at + 1, "/"
-    return at + 1, None
+    return at + 1, "/" if line[at] == "/" and _opens_regex(line, at) else None
+
+
+def _opens_regex(line, at):
+    """Whether the slash at `at` opens a regex literal, read from the code just
+    before it, so each slash costs the same however long the line is."""
+    end = at
+    while end and line[end - 1].isspace():
+        end -= 1
+    if not end or line[end - 1] in REGEX_AFTER:
+        return True
+    # Eleven characters hold the longest listed word and the one before it.
+    return bool(REGEX_AFTER_WORD.search(line[max(0, end - 11):end]))
 
 
 def _scan_literal(line, at, mode):
@@ -245,13 +259,24 @@ def _scan_line(line, state):
     state[:] = [depth, "code" if mode in LINE_MODES else mode, templates]
 
 
+def _is_comment(line):
+    """Whether a line holds only a comment, or opens one that runs onto the next line."""
+    if line.startswith("//"):
+        return True
+    end = line.find("*/", 2)
+    return line.startswith("/*") and (end < 0 or not line[end + 2:].strip())
+
+
 def top_level_starts(text):
-    """Lines that begin a top-level statement: column 0, not a closing
-    bracket, at bracket depth 0 and outside strings, templates and comments.
+    """Lines that begin a top-level statement: column 0, not a closing bracket,
+    at bracket depth 0 and outside strings, templates and comments. A "{" there
+    opens the body of the line before it, as in a brace-on-its-own-line style,
+    and a comment belongs to the code around it, so neither starts a statement.
     None when the brackets do not add up, so the file is read whole."""
     state, starts = [0, "code", []], []
     for i, line in enumerate(text.splitlines(keepends=True)):
-        if state[:2] == [0, "code"] and line[:1] not in ("", " ", "\t", "\r", "\n", *CLOSERS):
+        at_top = state[:2] == [0, "code"] and line[:1] not in ("", " ", "\t", "\r", "\n", "{", *CLOSERS)
+        if at_top and not _is_comment(line):
             starts.append(i)
         _scan_line(line, state)
         if state[0] < 0:
@@ -268,16 +293,24 @@ def top_level_chunks(text):
     return ["\n" * a + "".join(lines[a:b]) for a, b in zip(bounds, bounds[1:]) if b > a]
 
 
-def typescript_functions(lizard, full):
-    # lizard loses its place in TypeScript after some type shapes, such as an
-    # object type inside a generic (Promise<{ a: string }>), and folds the
-    # functions after it into one. Reading each top-level statement on its own
-    # keeps a misread inside that statement.
+def javascript_functions(lizard, full):
+    # lizard can lose its place and fold the functions after it into one: in
+    # TypeScript after some type shapes (Promise<{ a: string }>), in JavaScript
+    # after a bracket inside a regex literal (return /[{]/). A fold shows as a
+    # function that reaches the first line of a later top-level statement, where
+    # lizard also ends an arrow function written without a semicolon. Either way
+    # each statement is then read on its own, which keeps a misread inside it.
+    # TypeScript is always read that way.
     # As lizard reads a file: a byte that is not UTF-8 never stops the check, and a BOM is dropped.
     with open(full, encoding="utf-8-sig", errors="replace") as f:
         text = f.read()
-    return [fn for chunk in top_level_chunks(text)
-            for fn in lizard.analyze_file.analyze_source_code(full, chunk).function_list]
+    read = lizard.analyze_file.analyze_source_code
+    starts = top_level_starts(text) or []
+    if not full.endswith((".ts", ".tsx", ".mts", ".cts")):
+        found = read(full, text).function_list
+        if not any(f.start_line < s + 1 <= f.end_line for f in found for s in starts):
+            return found
+    return [fn for chunk in top_level_chunks(text) for fn in read(full, chunk).function_list]
 
 
 def param_count(path, f):

@@ -104,7 +104,7 @@ def parse_args(argv):
 def git_program():
     """git as an absolute path, found once from the folder the check started in, in the first PATH
     folder a repo cannot have shipped it in. A PATH folder that is relative, is that folder, or
-    sits anywhere in its repo is skipped, so a repo's own `git` never runs; Windows's search of
+    sits in the folder repo_folder gives for it is skipped, so a repo's own `git` never runs; Windows's search of
     the current folder first is switched off."""
     os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
     here, repo = real_path(os.getcwd()), repo_folder(os.getcwd())
@@ -118,13 +118,15 @@ def git_program():
     return found
 
 
-def repo_folder(path):
-    """The top folder of the outermost repo holding `path`, where a repo, or the one a submodule
-    sits in, could ship its own programs; None outside a repo. A repo at the home folder or above
-    it holds the user's own installs and does not count, unless the home folder is unknown."""
+def repo_folder(start):
+    """The top folder of the outermost repo holding `start`, where a repo, or the one a
+    submodule sits in, could ship its own programs. A repo at the home folder or above it holds
+    the user's own installs and does not count, unless the home folder is unknown. Outside a
+    repo it is `start` itself, or None when `start` is the home folder or above it."""
     home = os.path.expanduser("~")
     home = real_path(home) if os.path.isabs(home) else None
-    folder, top = real_path(path), None
+    folder = real_path(start)
+    top = None if home and is_within(home, folder) else folder
     while True:
         if os.path.exists(os.path.join(folder, ".git")) and not (home and is_within(home, folder)):
             top = folder
