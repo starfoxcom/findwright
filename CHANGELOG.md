@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - The session hit rate leaves out a search whose next opened file is outside the repo, such as a plugin's skill under `~/.claude/plugins/cache` or a scratch script, so it counts as neither a hit nor a miss. On Windows a file on another drive than the repo counted as a miss, since its path relative to the repo stays absolute, and `assess` then suggested an include glob for the whole drive, such as `C:/**`. `assess` now also skips misses recorded outside the repo before this fix, so it never suggests a glob that reaches outside the repo ([#152](https://github.com/starfoxcom/findwright/issues/152)).
+- The search hook lets a Grep or Glob call through when the place it searches is outside the indexed repo, such as a Grep with a `path` under `~/.claude/plugins/cache` or a Glob with an absolute pattern into another folder, even when the session runs inside the repo. FindWright's index cannot search there, and the Grep and Glob tools have no bypass marker, so such a call had no way through. A call that names no place, or one inside the repo, is still sent to FindWright ([#151](https://github.com/starfoxcom/findwright/issues/151)).
 
 ## [2.4.1] - 2026-11-22
 
