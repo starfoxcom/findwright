@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- The search hook lets a Bash `grep`, `rg`, `ag` or `ack` through whenever it only filters piped output, whatever command produced it, such as `python tools/report.py | grep ok`, `npm run build 2>&1 | grep -i error`, `gh api repos/o/r/pulls | grep title` or `find . -name '*.mjs' | grep hook`. It let a filter through only after a short list of commands before, so most of them needed a bypass marker. A pipeline still counts as a code search when a stage before the search can print a file's text: `cat` and the other text tools that take files, `sed`, `awk`, `xargs`, `git show`, `git diff`, `git log -p`, `gh pr diff`, `find -exec`, and shells or interpreters running inline code. A `$` that cannot expand inside a double-quoted pattern, such as the end anchor in `grep -v "^remote: *$"`, no longer stops the hook from reading the command ([#149](https://github.com/starfoxcom/findwright/issues/149)).
+
 ## [2.4.1] - 2026-11-22
 
 ### Fixed
