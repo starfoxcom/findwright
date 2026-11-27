@@ -6,6 +6,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { find } from "./find.mjs";
+import { fileIncludes, linesOf } from "./lines.mjs";
 import { absoluteOr, claudeConfigDir } from "./paths.mjs";
 import { checkOwnFolder, configChangedAt, UNREADABLE } from "./store.mjs";
 import { estimateSaving, helperTranscripts, mergeGroups, searchGroups } from "./savings.mjs";
@@ -40,10 +41,9 @@ export function newestTranscript(root) {
 function calls(transcript, { helper = false } = {}) {
   const seq = [];
   const results = new Map();
-  const text = readFileSync(transcript, "utf8");
-  // Most transcripts never call FindWright; one text check skips parsing them.
-  if (!text.includes("mcp__findwright__")) return seq;
-  for (const line of text.split("\n")) {
+  // Most transcripts never call FindWright; one scan of the bytes skips parsing them.
+  if (!fileIncludes(transcript, "mcp__findwright__")) return seq;
+  for (const line of linesOf(transcript)) {
     if (!line.includes('"tool_use"') && !line.includes('"tool_result"')) continue;
     let row;
     try { row = JSON.parse(line); } catch { continue; }
