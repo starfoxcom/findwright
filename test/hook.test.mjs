@@ -139,6 +139,8 @@ const ROWS = [
   ["grep filtering a build run through a package manager is allowed",
     shell("npm run build 2>&1 | grep -i error"), false],
   ["a quoted end anchor in the pattern is allowed", shell('git push 2>&1 | grep -v "^remote: *$"'), false],
+  ["a quoted zsh expansion, which can split into grep options, is blocked",
+    shell("o='-rn TODO src'; ls | grep \"$=o\""), true],
   ["node --test naming the test files is allowed", shell("node --test test/x.test.mjs | grep fail"), false],
   ["an interpreter option before the program file is blocked",
     shell("node --require ./a.cjs tools/x.mjs | grep foo"), true],

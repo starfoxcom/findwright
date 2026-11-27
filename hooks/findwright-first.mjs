@@ -232,10 +232,11 @@ function startsWithSearchTool(token) {
 }
 
 // The quoted text starting at `at` as the shell reads it, with where it ends; undefined when no
-// quote starts there, null when it never closes, expands inside double quotes (a `$` before a
-// name, a digit, a brace, a parenthesis, a bracket or a special parameter, or a backtick), which
-// can run a command or yield several words (`"$@"`), or joins two lines with a backslash, which
-// Bash removes. Any other `$`, such as a regex's end anchor (`"^remote: *$"`), stays literal.
+// quote starts there, null when it never closes, may expand inside double quotes (a backtick, or
+// a `$` anywhere but last, since each shell adds its own expansions, such as zsh's `"$=name"`),
+// which can run a command or yield several words (`"$@"`), or joins two lines with a backslash,
+// which Bash removes. A `$` right before the closing quote, such as a regex's end anchor
+// (`"^remote: *$"`), stays literal in every shell.
 function readQuoted(command, at) {
   const quote = command[at];
   if (quote !== "'" && quote !== '"') return undefined;
@@ -245,7 +246,7 @@ function readQuoted(command, at) {
   if (end >= command.length) return null;
   const text = command.slice(at + 1, end);
   if (quote === "'") return { text, end };
-  if (/`|\$[\w{([@*#?!$-]|\\\n/.test(text)) return null;
+  if (/`|\$(?!$)|\\\n/.test(text)) return null;
   return { text: text.replace(/\\(["\\])/g, "$1"), end };
 }
 
