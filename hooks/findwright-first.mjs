@@ -54,10 +54,11 @@ const optionsMatch = (pattern) => (rest) => {
 // its own output.
 const runsFile = (extension) => ([script = ""]) => extension.test(script) && /^[\w./\\]/.test(script);
 const PYTHON_FILE = runsFile(/\.py$/i);
-// A package script named plainly after `run`.
-const RUNS_PACKAGE_SCRIPT = actions(["run"]);
-const packageScript = (rest) => RUNS_PACKAGE_SCRIPT(rest) && /^[\w:.-]+$/.test(rest[1] ?? "")
-  && !rest[1].startsWith("-");
+// A package script named plainly after `run`, with no option word before a `--`: npm reads such
+// words as its own settings (`--node-options` preloads a module), and only what follows `--`
+// reaches the script.
+const runsPackageScript = ([name = "", ...rest]) => /^\w[\w:.-]*$/.test(name)
+  && optionsMatch(/(?!)/)(rest);
 const GIT_SUBCOMMANDS = subcommands({
   status: optionsMatch(STATUS_OPTIONS), log: optionsMatch(LOG_OPTIONS),
   ...Object.fromEntries("ls-files branch remote tag worktree push fetch pull".split(" ")
@@ -78,26 +79,26 @@ function gitUse(rest) {
 const NODE_FILE = runsFile(/\.[cm]?js$/i);
 const NODE_TEST_RUN = subcommands({ "--test": optionsMatch(/^--test(-[a-z-]+)?(=.*)?$/) });
 // Commands whose output is never a file's text, so a search piped after them filters that output:
-// listings, test runs, a program file run by its interpreter, a package script, and the read-only
-// uses of git, gh and claude. A test run or a script can print lines of code in its own messages;
-// that is the program's output, not a file the session reads through it. Any other command or use
-// may print a file (cat, sed, find through -exec, node -e, git show, git log -p, gh pr diff), so a
-// search after it stays a search.
+// listings, test runs, a program file run by its interpreter, a package script, and the git, gh
+// and claude uses that print no file's text. A test run or a script can print lines of code in
+// its own messages; that is the program's output, not a file the session reads through it. Any
+// other command, use or option may print a file (cat, sed, find -exec, node -e, git show,
+// git log -p, gh pr diff), so a search after it stays a search.
 const OUTPUT_SOURCES = {
   ls: always, dir: always, echo: always, ps: always, pytest: always,
-  find: (rest) => !rest.some((word) => /^-(exec|execdir|ok|okdir)$/.test(word)),
   node: (rest) => NODE_FILE(rest) || NODE_TEST_RUN(rest),
   python: PYTHON_FILE, python3: PYTHON_FILE, py: PYTHON_FILE,
-  npm: (rest) => packageScript(rest) || actions(["test", "ls", "outdated"])(rest),
-  pnpm: packageScript,
-  cargo: actions(["test"]), go: actions(["test"]), dotnet: actions(["test"]),
+  npm: subcommands({ run: runsPackageScript, test: always, ls: always, outdated: always }),
+  pnpm: subcommands({ run: runsPackageScript }),
+  cargo: subcommands({ test: always }), go: subcommands({ test: always }),
+  dotnet: subcommands({ test: always }),
   git: gitUse,
   gh: subcommands({
     run: actions(["list", "view"]), pr: actions(["list", "view", "checks", "status"]),
     issue: actions(["list", "view", "status"]), release: actions(["list", "view"]),
     workflow: actions(["list"]),
   }),
-  claude: actions(["plugin", "mcp"]),
+  claude: subcommands({ plugin: actions(["list"]), mcp: actions(["list", "get"]) }),
 };
 // Stages that reshape the output fed to them, taking options only, so any other word is a file
 // they read. Scripted tools (sed, awk) can read files and are left out.
@@ -230,9 +231,9 @@ function startsWithSearchTool(token) {
 
 // The quoted text starting at `at` as the shell reads it, with where it ends; undefined when no
 // quote starts there, null when it never closes, expands inside double quotes (a `$` before a
-// name, a digit, a brace, a parenthesis or a special parameter, or a backtick), which can run a
-// command or yield several words (`"$@"`), or joins two lines with a backslash, which Bash
-// removes. Any other `$`, such as a regex's end anchor (`"^remote: *$"`), stays literal.
+// name, a digit, a brace, a parenthesis, a bracket or a special parameter, or a backtick), which
+// can run a command or yield several words (`"$@"`), or joins two lines with a backslash, which
+// Bash removes. Any other `$`, such as a regex's end anchor (`"^remote: *$"`), stays literal.
 function readQuoted(command, at) {
   const quote = command[at];
   if (quote !== "'" && quote !== '"') return undefined;
