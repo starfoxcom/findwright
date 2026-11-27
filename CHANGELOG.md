@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.3] - 2026-11-27
+
+### Fixed
+- `hits` scores a session transcript larger than about 512 MB. It read the whole transcript into one string, which stopped with `ERR_STRING_TOO_LONG` past the longest string Node can hold, so a long session got no hit rate, no saving and no recorded figure. It now reads the transcript a chunk at a time, in about the same memory for any size ([#162](https://github.com/starfoxcom/findwright/issues/162)).
+
+## [2.4.2] - 2026-11-26
+
+### Fixed
+- The search hook lets more Bash output filters through without a bypass marker. A `$` right before the closing quote of a double-quoted pattern, such as the end anchor in `git push 2>&1 | grep -v "^remote: *$"`, no longer stops the hook from reading the command, which then counted as a search. The commands whose output a `grep`, `rg`, `ag` or `ack` may filter now also cover `python`, `python3` or `py` running a `.py` file and `node` running a `.js`, `.mjs` or `.cjs` file, with nothing between the interpreter and the file (`python tools/report.py`, `node tools/x.mjs`); `npm run` and `pnpm run` with a plain script name and no option before a `--` (`npm run build`); `claude plugin list`, `claude mcp list` and `claude mcp get`; and `git` with `-C <folder>`, `--no-pager` or `-P` before one of its listed uses (`git -C . --no-pager status -s`). Any other command or spelling keeps the old answer, so a filter after `cat`, `sed`, `git show`, `git log -p`, inline code such as `python -c`, an option before the program file such as `node --require`, an npm option after the script name such as `--node-options`, `git -c`, or a command the hook does not know is still a code search ([#149](https://github.com/starfoxcom/findwright/issues/149)).
+- The session hit rate skips a file opened outside the repo, such as a plugin's skill under `~/.claude/plugins/cache` or a scratch script, and scores the search against the next file opened inside the repo. A search counts as neither a hit nor a miss when no file inside the repo opens within the next eight tool calls and before the next search. On Windows a file on another drive than the repo counted as a miss, since its path relative to the repo stays absolute, and `assess` then suggested an include glob for the whole drive, such as `C:/**`. `assess` now also skips misses recorded outside the repo before this fix, so it never suggests a glob that reaches outside the repo ([#152](https://github.com/starfoxcom/findwright/issues/152)).
+- The search hook lets a Grep or Glob call through when the place it searches is outside the indexed repo, such as a Grep with a `path` under `~/.claude/plugins/cache` or a Glob with an absolute pattern into another folder, even when the session runs inside the repo. FindWright's index cannot search there, and the Grep and Glob tools have no bypass marker, so such a call had no way through. A call that names no place, one inside the repo, or one that holds the repo, such as its parent folder or a drive root, is still sent to FindWright ([#151](https://github.com/starfoxcom/findwright/issues/151)).
+
 ## [2.4.1] - 2026-11-22
 
 ### Fixed

@@ -5,8 +5,9 @@
 // and priced at each turn's own model. Only those turns count, not what their output adds to later
 // turns, so the estimate errs low.
 
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { linesOf } from "./lines.mjs";
 import { costOf, priceOf, tokensOf } from "./prices.mjs";
 
 const TOKEN_CLASSES = ["input", "write5m", "write1h", "read", "output"];
@@ -36,7 +37,7 @@ function responseTokens(usage) {
  */
 export function responses(transcript, { helper = false } = {}) {
   const byId = new Map();
-  for (const line of readFileSync(transcript, "utf8").split("\n")) {
+  for (const line of linesOf(transcript)) {
     if (!line.includes('"assistant"')) continue;
     let row;
     try { row = JSON.parse(line); } catch { continue; }

@@ -4,8 +4,9 @@
 // misses back and says why they missed and what config change would help.
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { find } from "./find.mjs";
+import { fileIncludes, linesOf } from "./lines.mjs";
 import { absoluteOr, claudeConfigDir } from "./paths.mjs";
 import { checkOwnFolder, configChangedAt, UNREADABLE } from "./store.mjs";
 import { estimateSaving, helperTranscripts, mergeGroups, searchGroups } from "./savings.mjs";
@@ -40,10 +41,9 @@ export function newestTranscript(root) {
 function calls(transcript, { helper = false } = {}) {
   const seq = [];
   const results = new Map();
-  const text = readFileSync(transcript, "utf8");
-  // Most transcripts never call FindWright; one text check skips parsing them.
-  if (!text.includes("mcp__findwright__")) return seq;
-  for (const line of text.split("\n")) {
+  // Most transcripts never call FindWright; one scan of the bytes skips parsing them.
+  if (!fileIncludes(transcript, "mcp__findwright__")) return seq;
+  for (const line of linesOf(transcript)) {
     if (!line.includes('"tool_use"') && !line.includes('"tool_result"')) continue;
     let row;
     try { row = JSON.parse(line); } catch { continue; }
@@ -65,9 +65,13 @@ function calls(transcript, { helper = false } = {}) {
   return seq.map((c) => ({ ...c, result: results.get(c.id) ?? "" }));
 }
 
+// A path relative to the repo that stays inside it: outside one starts with `..`, or is still
+// absolute when it sits on another drive.
+const isInsideRepo = (rel) => !rel.startsWith("..") && !isAbsolute(rel);
+
 const relativeTo = (root, path) => {
   const rel = relative(resolve(root), resolve(root, path)).replaceAll("\\", "/");
-  return rel.startsWith("..") ? null : rel;
+  return isInsideRepo(rel) ? rel : null;
 };
 
 // The project files an answer names: each line that starts with a path.
@@ -239,10 +243,11 @@ const extensionOf = (path) => (path.match(/\.[^./]+$/)?.[0] ?? path.replace(/^.*
 
 /**
  * The misses of the recorded sessions, sorted by cause, with the config changes
- * that would address them. Nothing is changed: the person decides.
+ * that would address them. Nothing is changed: the person decides. A miss recorded for a file
+ * outside the repo is left out, since the repo's index can never hold it.
  */
 export function assess(db, root, model = null) {
-  const misses = history(root).flatMap((h) => h.misses);
+  const misses = history(root).flatMap((h) => h.misses).filter((m) => isInsideRepo(String(m.wanted ?? "")));
   const causes = misses.map((m) => ({ ...m, ...diagnose(db, m, model) }));
   const count = (reason) => causes.filter((c) => c.reason === reason);
   const suggestions = [];

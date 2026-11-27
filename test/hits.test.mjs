@@ -4,7 +4,8 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { recordSession, sinceFit, transcriptsOf } from "../src/hits.mjs";
+import { assess, recordSession, scoredSearches, sinceFit, transcriptsOf } from "../src/hits.mjs";
+import { openIndex } from "../src/store.mjs";
 
 const short = (n, fields) => ({ session: `s${n}`, scored: 10, hits: 5, misses: [], ...fields });
 
@@ -52,6 +53,45 @@ test("only sessions recorded since the config last changed count, by their time 
     short(5, {}),
   ]).map((session) => session.session);
   assert.deepEqual(kept, ["s1", "s3"]);
+  rmSync(root, { recursive: true, force: true });
+});
+
+// A file outside the repo: on another drive on Windows, where a relative path stays absolute.
+function outsideFile(root) {
+  if (process.platform !== "win32") return "/plugins/cache/skill/SKILL.md";
+  return `${root[0].toUpperCase() === "Z" ? "Y" : "Z"}:/plugins/cache/skill/SKILL.md`;
+}
+
+const toolUse = (id, name, input) => JSON.stringify({
+  type: "assistant", timestamp: "2026-11-26T12:00:00.000Z",
+  message: { id: `r-${id}`, content: [{ type: "tool_use", id, name, input }] },
+});
+const toolResult = (id, text) => JSON.stringify({
+  type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, content: text }] },
+});
+
+test("a file opened outside the repo is skipped and the next one inside is scored", () => {
+  const root = repoFittedAt(new Date());
+  const transcript = join(root, "session.jsonl");
+  writeFileSync(transcript, [
+    toolUse("1", "mcp__findwright__find", { query: "hit scoring" }),
+    toolResult("1", "src/hits.mjs\n"),
+    toolUse("2", "Read", { file_path: outsideFile(root) }),
+    toolUse("3", "Read", { file_path: join(root, "src", "hits.mjs") }),
+  ].join("\n"));
+  const scored = scoredSearches(transcript, root).map(({ hit, wanted }) => ({ hit, wanted }));
+  assert.deepEqual(scored, [{ hit: true, wanted: "src/hits.mjs" }]);
+  rmSync(root, { recursive: true, force: true });
+});
+
+test("assess suggests no include glob for misses recorded outside the repo", () => {
+  const root = repoFittedAt(new Date());
+  const misses = [outsideFile(root), "../scratch/probe.mjs"].map((wanted) => ({ query: "q", wanted }));
+  writeFileSync(join(root, ".findwright", "hits.jsonl"), `${JSON.stringify(short(1, { misses }))}\n`);
+  const db = openIndex(root);
+  const report = assess(db, root);
+  db.close();
+  assert.deepEqual({ misses: report.misses, suggestions: report.suggestions }, { misses: 0, suggestions: [] });
   rmSync(root, { recursive: true, force: true });
 });
 
