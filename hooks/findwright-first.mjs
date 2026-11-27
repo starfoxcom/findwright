@@ -50,6 +50,18 @@ const optionOutside = (pattern) => (rest) => {
   return rest.slice(0, end).some((word) => word.startsWith("-") && !pattern.test(word));
 };
 const anyWord = (pattern) => (rest) => rest.some((word) => pattern.test(word));
+const GIT_SUBCOMMANDS = subcommands({
+  show: always, diff: always, "cat-file": always, blame: always, "format-patch": always,
+  archive: always, status: optionOutside(STATUS_OPTIONS), log: optionOutside(LOG_OPTIONS),
+});
+// git's own options, which come before its subcommand; these take the next word as their value.
+const GIT_VALUE_OPTIONS = "-C -c --git-dir --work-tree --namespace --config-env --super-prefix"
+  .split(" ");
+const afterGitOptions = (rest) => {
+  let at = 0;
+  while (rest[at]?.startsWith("-")) at += GIT_VALUE_OPTIONS.includes(rest[at]) ? 2 : 1;
+  return rest.slice(at);
+};
 const SHELL_SCRIPT = anyWord(/^-[a-z]*c$/);
 const PYTHON_SCRIPT = anyWord(/^-[a-zA-Z]*c$/);
 // Commands that can print a file's text, so a search piped after them may be reading code: file
@@ -59,13 +71,10 @@ const PYTHON_SCRIPT = anyWord(/^-[a-zA-Z]*c$/);
 // code as the index holds it.
 const FILE_PRINTERS = {
   ...Object.fromEntries(("cat tac nl rev fold fmt pr paste join comm column expand unexpand iconv"
-    + " diff sdiff zcat bzcat xzcat less more bat batcat strings xxd od hexdump sed awk gawk mawk"
-    + " perl xargs eval").split(" ").map((name) => [name, always])),
+    + " diff sdiff zcat bzcat xzcat less more most view bat batcat strings xxd od hexdump base64 shuf"
+    + " dd jq yq sed awk gawk mawk perl xargs parallel eval").split(" ").map((name) => [name, always])),
   find: anyWord(/^-(exec|execdir|ok|okdir)$/),
-  git: subcommands({
-    show: always, diff: always, "cat-file": always, blame: always, "format-patch": always,
-    archive: always, status: optionOutside(STATUS_OPTIONS), log: optionOutside(LOG_OPTIONS),
-  }),
+  git: (rest) => GIT_SUBCOMMANDS(afterGitOptions(rest)),
   gh: subcommands({ pr: actions(["diff"]), gist: actions(["view"]) }),
   node: anyWord(/^(-[a-z]*[ep]|--(eval|print)(=.*)?)$/),
   python: PYTHON_SCRIPT, python3: PYTHON_SCRIPT, py: PYTHON_SCRIPT,
@@ -203,7 +212,7 @@ function readQuoted(command, at) {
   if (end >= command.length) return null;
   const text = command.slice(at + 1, end);
   if (quote === "'") return { text, end };
-  if (/`|\$[\w{(@*#?!$-]|\\\n/.test(text)) return null;
+  if (/`|\$[\w{([@*#?!$-]|\\\n/.test(text)) return null;
   return { text: text.replace(/\\(["\\])/g, "$1"), end };
 }
 
@@ -358,12 +367,24 @@ function isReshaper(words) {
   return isInputSearch(words);
 }
 
+// Words that run the command after them, past their own options.
+const RUNNERS = ["command", "builtin", "busybox"];
+
+// A command's name as a list knows it, without its folder or a Windows `.exe`.
+const commandName = (word) => word.split(/[\\/]/).pop().replace(/\.exe$/i, "").toLowerCase();
+
 // Whether a pipeline stage can print a file's text: a stage the hook reads by its options (a
 // search or a reshaper) when it names a file or takes an option outside its list, and any other
-// command when FILE_PRINTERS says that use can.
+// command when FILE_PRINTERS says that use can. A runner (`command cat`, `busybox cat`) or a
+// full path (`/bin/cat`) counts as the command it runs.
 function printsFiles(words) {
-  const [command = "", ...rest] = unwrap(words);
-  const name = command.toLowerCase();
+  let [command = "", ...rest] = unwrap(words);
+  while (RUNNERS.includes(commandName(command))) {
+    const next = rest.findIndex((word) => !word.startsWith("-"));
+    if (next < 0) return false;
+    [command, ...rest] = rest.slice(next);
+  }
+  const name = commandName(command);
   if (Object.hasOwn(STAGE_OPTIONS, name)) return !isReshaper([command, ...rest]);
   return Object.hasOwn(FILE_PRINTERS, name) && FILE_PRINTERS[name](rest);
 }
