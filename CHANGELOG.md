@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- The search hook lets a Grep or Glob call through when the place it searches is outside the indexed repo, such as a Grep with a `path` under `~/.claude/plugins/cache` or a Glob with an absolute pattern into another folder, even when the session runs inside the repo. FindWright's index cannot search there, and the Grep and Glob tools have no bypass marker, so such a call had no way through. A call that names no place, or one inside the repo, is still sent to FindWright ([#151](https://github.com/starfoxcom/findwright/issues/151)).
+
 ## [2.4.1] - 2026-11-22
 
 ### Fixed
