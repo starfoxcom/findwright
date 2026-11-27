@@ -70,7 +70,7 @@ const toolResult = (id, text) => JSON.stringify({
   type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, content: text }] },
 });
 
-test("a file opened outside the repo is neither a hit nor a miss", () => {
+test("a file opened outside the repo is skipped and the next one inside is scored", () => {
   const root = repoFittedAt(new Date());
   const transcript = join(root, "session.jsonl");
   writeFileSync(transcript, [
