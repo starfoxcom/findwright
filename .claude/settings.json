@@ -35,6 +35,23 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'test -f \"$0\" || exit 0; exec sh \"$0\" live-check' \"${CLAUDE_PROJECT_DIR}/.claude/hooks/run-hook.sh\"",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "sh -c 'test -f \"$0\" || exit 0; exec sh \"$0\" tool-rules' \"${CLAUDE_PROJECT_DIR}/.claude/hooks/run-hook.sh\"",
+            "timeout": 30
+          }
+        ]
+      }
     ]
   },
   "permissions": {

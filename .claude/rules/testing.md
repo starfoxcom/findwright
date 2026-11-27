@@ -1,6 +1,6 @@
 ---
 paths:
-  - "**/*.{js,jsx,ts,tsx,mjs,cjs,py,go,rs,java,kt,kts,cs,c,cc,cpp,h,hpp,swift,dart,rb,php,gd,lua,ex,exs,scala}"
+  - "**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts,vue,svelte,astro,py,go,rs,java,kt,kts,groovy,scala,cs,fs,vb,c,cc,cpp,cxx,h,hh,hpp,hxx,inl,m,mm,swift,dart,rb,php,gd,lua,ex,exs,erl,hs,ml,clj,zig,r,R,jl,pl,sh,bash,ps1,sql,mq4,mq5,mqh,hlsl,glsl,shader}"
 ---
 
 # Testing
@@ -22,6 +22,10 @@ Review blocks a new test that misses rules 1 to 3. `docs/test-audit.md` holds th
 ## Test the real code
 
 A test calls the production function. It never re-implements the logic in the test and checks the copy against itself, and it does not mock the unit under test. Mock only what the unit talks to (network, clock, disk) and only when the real thing is slow or unavailable.
+
+A fake of an outside service (an API, a database, a payment provider) refuses what that service refuses: its documented limits and anything it has been seen to refuse, and any call the fake has no rule for. A fake that takes every request passes a test the real service would fail, so the first sign of the bug is production.
+
+A change that adds a new kind of write to an outside service sends it once to the real service before it merges, to a test account or a throwaway resource, with the values the code really sends. The pull request's Notes carry a `Live check:` line saying what was sent and what came back.
 
 ## Cover the edges on purpose
 

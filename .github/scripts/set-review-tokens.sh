@@ -16,6 +16,13 @@
 # backup, and for the main attempt too while it holds CLAUDE_CODE_OAUTH_TOKEN,
 # so remove each one there to run every attempt on the key.
 #
+# It also writes the repository variable REVIEW_ACCOUNT_CEILING, the plan use
+# at which a review moves to the next account: the --ceiling value, or else
+# the percent a local usage guard pauses at, read from its settings file. With
+# neither, the variable stays as it is. --ceiling alone writes only the
+# variable, so after the guard's percent changes the reviews follow it with
+# one run and no token asked again.
+#
 # Get each token with `claude setup-token`, signed in to that account. Tokens
 # reach gh on standard input, never on a command line. Secrets of accounts
 # above --accounts stay as they are: `gh secret delete NAME -R OWNER/NAME`
@@ -27,10 +34,13 @@ set -euo pipefail
 
 readonly TOKEN_SECRET="CLAUDE_CODE_OAUTH_TOKEN"
 readonly KEY_SECRET="ANTHROPIC_API_KEY"
+readonly CEILING_VARIABLE="REVIEW_ACCOUNT_CEILING"
 readonly WORKFLOW=".github/workflows/claude-code-review.yml"
 readonly REPO_RE='^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$'
+readonly PERCENT_RE='^([1-9][0-9]?|100)$'
 
 ACCOUNTS=""
+CEILING=""
 ORGS=0
 WITH_KEY=0
 REPOS=()
@@ -39,7 +49,8 @@ KEY=""
 
 usage() {
   cat << 'EOF'
-Usage: set-review-tokens.sh --accounts N [--api-key] [--orgs | --repo OWNER/NAME...]
+Usage: set-review-tokens.sh --accounts N [--api-key] [--ceiling P] [--orgs | --repo OWNER/NAME...]
+       set-review-tokens.sh --ceiling P [--orgs | --repo OWNER/NAME...]
 
   --accounts N         How many Claude accounts the reviews use, 0 to 5.
                        The script asks for each one's token, from
@@ -47,6 +58,11 @@ Usage: set-review-tokens.sh --accounts N [--api-key] [--orgs | --repo OWNER/NAME
                        0 needs --api-key: the reviews run on the key alone.
   --api-key            Also ask for an Anthropic API key (from the Claude
                        Console) and set it as ANTHROPIC_API_KEY.
+  --ceiling P          The plan use, 1 to 100 percent, at which a review
+                       moves to the next account, set as the variable
+                       REVIEW_ACCOUNT_CEILING (default: the percent the
+                       usage guard pauses at, when its settings name one).
+                       Without --accounts, only the variable is written.
   --repo OWNER/NAME    A repository to set them in; repeat for more
                        (default: every repository you own whose default
                        branch holds .github/workflows/claude-code-review.yml).
@@ -66,6 +82,7 @@ parse_args() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --accounts) ACCOUNTS=${2:?--accounts needs a number}; shift ;;
+      --ceiling) CEILING=${2:?--ceiling needs a percent}; shift ;;
       --repo) REPOS+=("${2:?--repo needs OWNER/NAME}"); shift ;;
       --orgs) ORGS=1 ;;
       --api-key) WITH_KEY=1 ;;
@@ -74,9 +91,14 @@ parse_args() {
     esac
     shift
   done
-  [[ $ACCOUNTS =~ ^[0-5]$ ]] || die "--accounts takes a number from 0 to 5"
-  [ "$ACCOUNTS" != 0 ] || [ "$WITH_KEY" = 1 ] \
-    || die "--accounts 0 needs --api-key: with no account and no key the reviews cannot run"
+  [ -z "$CEILING" ] || [[ $CEILING =~ $PERCENT_RE ]] || die "--ceiling takes a whole percent from 1 to 100"
+  if [ -z "$ACCOUNTS" ] && [ -n "$CEILING" ] && [ "$WITH_KEY" = 0 ]; then
+    ACCOUNTS=0
+  else
+    [[ $ACCOUNTS =~ ^[0-5]$ ]] || die "--accounts takes a number from 0 to 5"
+    [ "$ACCOUNTS" != 0 ] || [ "$WITH_KEY" = 1 ] \
+      || die "--accounts 0 needs --api-key: with no account and no key the reviews cannot run"
+  fi
   [ "$ORGS" = 0 ] || [ ${#REPOS[@]} -eq 0 ] || die "--orgs sweeps; it does not go with --repo"
   for repo in ${REPOS[@]+"${REPOS[@]}"}; do
     [[ $repo =~ $REPO_RE ]] || die "--repo takes OWNER/NAME: $repo"
@@ -145,6 +167,20 @@ read_key() {
     || die "that is not an Anthropic API key (those start with sk-ant-api)"
 }
 
+# Without --ceiling, the percent the usage guard pauses at, when its settings
+# file names a whole one from 1 to 100; otherwise the variable is left alone.
+# The pattern takes the whole JSON number (sign, fraction and exponent), so
+# only a number written as a plain percent passes.
+guard_ceiling() {
+  local file="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/mods-data/usage-guard/settings.json" text
+  local pattern='"wrapUpAt"[[:space:]]*:[[:space:]]*(-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?)[[:space:]]*([,}]|$)'
+  [ -z "$CEILING" ] && [ -f "$file" ] && [ -r "$file" ] || return 0
+  text=$(cat -- "$file" 2> /dev/null) || return 0
+  [[ $text =~ $pattern ]] && [[ ${BASH_REMATCH[1]} =~ $PERCENT_RE ]] || return 0
+  CEILING=${BASH_REMATCH[1]}
+  echo "Ceiling: $CEILING%, the percent the usage guard pauses at" >&2
+}
+
 # One secret into one repository, from standard input so the value never
 # reaches a command line.
 set_secret() {
@@ -152,9 +188,10 @@ set_secret() {
 }
 
 write_secrets() {
-  local repo i name failed=0 what
-  what="$ACCOUNTS account(s)"
-  [ "$WITH_KEY" = 0 ] || what+=" and the API key"
+  local repo i name failed=0 what=""
+  [ "$ACCOUNTS" = 0 ] || what="$ACCOUNTS account(s)"
+  [ "$WITH_KEY" = 0 ] || what+="${what:+ and }the API key"
+  [ -z "$CEILING" ] || what+="${what:+, }$CEILING_VARIABLE $CEILING"
   for repo in "${REPOS[@]}"; do
     for ((i = 1; i <= ACCOUNTS; i++)); do
       name=$(secret_name "$i")
@@ -166,6 +203,11 @@ write_secrets() {
     done
     if [ "$WITH_KEY" = 1 ] && ! set_secret "$repo" "$KEY_SECRET" "$KEY"; then
       printf '  FAILED   %s: %s (setting a secret needs admin access)\n' "$repo" "$KEY_SECRET"
+      failed=1
+      continue
+    fi
+    if [ -n "$CEILING" ] && ! gh variable set "$CEILING_VARIABLE" -R "$repo" --body "$CEILING" > /dev/null; then
+      printf '  FAILED   %s: %s (setting a variable needs admin access)\n' "$repo" "$CEILING_VARIABLE"
       failed=1
       continue
     fi
@@ -183,6 +225,7 @@ main() {
   command -v gh > /dev/null || die "the gh CLI is not installed"
   [ ${#REPOS[@]} -gt 0 ] || find_repos
   echo "Repositories: ${REPOS[*]}" >&2
+  guard_ceiling
   read_tokens
   read_key
   write_secrets

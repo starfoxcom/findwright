@@ -102,16 +102,77 @@ def parse_args(argv):
 
 @functools.lru_cache(maxsize=None)
 def git_program():
-    """git on PATH as an absolute path, found once from the folder the check started in. Windows
-    looks a bare name up in the current folder first, so a repo could ship its own `git.exe`:
-    that search is switched off, and a relative match or one in that folder is refused."""
-    os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
-    found = shutil.which("git")
-    here = os.path.normcase(os.path.realpath(os.getcwd()))
-    if not found or not os.path.isabs(found) or os.path.normcase(
-            os.path.realpath(os.path.dirname(found))) == here:
-        raise CheckError("no git found outside the current folder")
+    """git as an absolute path, found once from the trusted folders of the folder the check
+    started in, so a repo's own `git` never runs."""
+    folders = trusted_folders(os.getcwd())
+    found = folders and shutil.which("git", path=os.pathsep.join(folders))
+    if not found or not os.path.isabs(found):
+        raise CheckError("no git found on PATH outside this repo's folders")
     return found
+
+
+def trusted_folders(session):
+    """The absolute PATH folders a repo cannot have shipped a program in, or None when the folders
+    cannot be read, as when the current folder was deleted. A PATH folder that is relative (a `.`),
+    is the session folder or the current folder, or sits in a folder repo_folder gives for the
+    session folder, as reached or with its links followed, is skipped, and Windows's search of the
+    current folder first is switched off.
+    Every program a guard runs is found here, always from the session folder, never from a repo
+    root found later, so every guard trusts the same folders."""
+    os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
+    try:
+        here = {real_path(place) for place in (session, os.getcwd())}
+        repos = {repo_folder(session), repo_folder(session, follow_links=False)} - {None}
+    except OSError:
+        return None
+    folders = {entry: resolved(entry) for entry in os.environ.get("PATH", "").split(os.pathsep)
+               if os.path.isabs(entry)}
+    return [entry for entry, real in folders.items()
+            if real and real not in here and not any(is_within(real, repo) for repo in repos)]
+
+
+def repo_folder(start, follow_links=True):
+    """The top folder of the outermost repo holding `start`, resolved, where a repo, or the one a
+    submodule sits in, could ship its own programs. A repo at the home folder or above it holds
+    the user's own installs and does not count, unless the home folder is unknown. Outside a
+    repo it is `start` itself, or None when `start` is the home folder or above it. With
+    `follow_links` false, the folders walked are the ones `start` was reached through. The walk
+    keeps each folder's own spelling, so a folder Windows marks case-sensitive still finds its
+    `.git`; only the folder given back is case-folded, for comparing."""
+    home = os.path.expanduser("~")
+    home = real_path(home) if os.path.isabs(home) else None
+    folder = os.path.realpath(start) if follow_links else os.path.abspath(start)
+    top, first = None, True
+    while True:
+        real = real_path(folder)
+        counts = not (home and is_within(home, real))
+        if counts and (first or os.path.exists(os.path.join(folder, ".git"))):
+            top = real
+        parent, first = os.path.dirname(folder), False
+        if parent == folder:
+            return top
+        folder = parent
+
+
+def real_path(path):
+    return os.path.normcase(os.path.realpath(path))
+
+
+def resolved(entry):
+    """`entry` resolved, or None when it cannot be, as Windows reports for a share that refuses the
+    sign-in; such a folder is never searched."""
+    try:
+        return real_path(entry)
+    except OSError:
+        return None
+
+
+def is_within(folder, top):
+    """Whether `folder` is `top` or below it; two paths on different drives never are."""
+    try:
+        return os.path.commonpath([folder, top]) == top
+    except ValueError:
+        return False
 
 
 def git(*args):

@@ -10,9 +10,10 @@ runner's `gh`, Python 3.8+. The workflows run the copy from the base branch.
     review_gate.py gate --state STATE [--triage T] [--routine R] [--escalated] [--deep D] [--order O]
         -> {"status", "conclusion", "title", "summary", "state"} for the "Review gate" check
     review_gate.py upsert --repo OWNER/NAME --sha HEAD [facts as for gate] [--note TEXT]
-        -> the same, after creating or updating the check on that commit (GH_TOKEN
-           needs checks: write); --note is appended to the check's summary, and
-           --order is required with --triage, --routine or --deep
+        -> the same, after setting the commit status and creating or updating the
+           check on that commit (GH_TOKEN needs statuses: write and checks: write);
+           --note is appended to the check's summary, and --order is required
+           with --triage, --routine or --deep
     review_gate.py settings [--file .github/review-gate.yml] -> KEY=value lines
         (dots become underscores; runner_labels adds the runner as a JSON list)
     review_gate.py escalate FILES DIFF [--file .github/review-gate.yml]
@@ -44,9 +45,22 @@ that harmless:
   - After writing, upsert reads the check back twice, a few seconds apart, and
     writes again when its own facts are gone.
 
+Every write also sets a commit status named "Review gate" to the same result,
+before the check. A status GitHub refuses is sent once more without its
+description; if that is refused too, the check is still written with the
+verdict and the step fails after it. Once the read-back settles, the status
+is set again from the check it read. A
+second run on one head commit (a reopened PR) can leave the check in a check
+suite the merge no longer counts, while the newest status for a name always
+counts; a failing check of that name still blocks beside a passing status.
+The status is written only once both review workflows on the default branch
+grant statuses: write: a job without it cannot replace a status another job
+set, so until then the check alone carries the result.
+
 Every command prints one line; a bad argument prints {"error": ...} and exits 1.
 """
 
+import base64
 import fnmatch
 import json
 import re
@@ -428,13 +442,72 @@ def _newest(repo, sha):
     return max(mine, key=lambda r: r["id"]) if mine else None
 
 
+STATUS_STATE = {"success": "success", "failure": "failure", None: "pending"}
+
+
+WORKFLOWS = (".github/workflows/claude-code-review.yml", ".github/workflows/claude.yml")
+_READY = {}
+
+
+def _statuses_ready(repo):
+    """Whether both review workflows on the default branch grant statuses: write.
+    A failed lookup counts as not, which leaves the check alone, as before."""
+    if repo not in _READY:
+        try:
+            branch = _gh("repos/%s" % repo)["default_branch"]
+            texts = [base64.b64decode(_gh("repos/%s/contents/%s?ref=%s" % (repo, path, branch))["content"])
+                     .decode("utf-8") for path in WORKFLOWS]
+            _READY[repo] = all(re.search(r"^\s*statuses:\s*write\s*$", text, re.M) for text in texts)
+        except (GateError, KeyError, TypeError, ValueError):
+            _READY[repo] = False
+    return _READY[repo]
+
+
+def _status_description(title):
+    """The check title as a status description: GitHub refuses characters above
+    U+FFFF there (the verdict emoji) and descriptions past 140 characters."""
+    return " ".join("".join(c for c in title if ord(c) <= 0xFFFF).split())[:140]
+
+
+def _set_status(repo, sha, check):
+    """Sets the commit status of the gate's name to the check's result, once
+    both review workflows may. A job without statuses: write all the same gets a
+    warning instead of a failed gate."""
+    if not _statuses_ready(repo):
+        return
+    body = {"state": STATUS_STATE[check["conclusion"]], "context": GATE,
+            "description": _status_description(check["title"])}
+    try:
+        _gh("repos/%s/statuses/%s" % (repo, sha), "POST", body)
+    except GateError as error:
+        if "Resource not accessible by integration" in str(error):
+            print("::warning::The Review gate commit status was not set: this job lacks statuses: write",
+                  file=sys.stderr)
+            return
+        # GitHub takes a status with no description, so a refused description
+        # cannot leave the status behind the check.
+        print("::warning::The Review gate commit status was refused; sending it without a description",
+              file=sys.stderr)
+        body.pop("description")
+        _gh("repos/%s/statuses/%s" % (repo, sha), "POST", body)
+
+
 def _write(repo, sha, current, note, facts):
     check = gate((current or {}).get("external_id") or "", **facts)
+    # The check carries the verdict, so a refused status write never keeps it
+    # from being written; the step still fails afterwards.
+    try:
+        _set_status(repo, sha, check)
+        refused = None
+    except GateError as error:
+        refused = error
     body = check_body(check, note)
     if current:
         _gh("repos/%s/check-runs/%d" % (repo, current["id"]), "PATCH", body)
     else:
         _gh("repos/%s/check-runs" % repo, "POST", dict(body, name=GATE, head_sha=sha))
+    if refused:
+        raise refused
     return check
 
 
@@ -472,6 +545,9 @@ def upsert(repo, sha, note="", **facts):
             if not _holds(current, facts):
                 break
         else:
+            # Another writer's check can land between this one's status and
+            # check, so the status is set once more from the check as it settled.
+            _set_status(repo, sha, gate(current.get("external_id") or ""))
             return check
         if round_ < WRITE_ROUNDS - 1:
             check = _write(repo, sha, current, note, facts)

@@ -21,24 +21,7 @@ For a job that changes a web page, add the layout check to the brief's test comm
 
 ## Watching CI
 
-After every push, watch the PR's checks; never use `gh run watch`. When the `ci-watch` mod is loaded, it watches the PR after `git push` or `gh pr create` and wakes the session once all checks settle; follow the mod and start no second watcher. Otherwise use the **Monitor tool** where it exists:
-
-- One monitor per PR, timeout one hour, so a stuck check becomes a loud timeout instead of a silent wait.
-- Inside it, poll `gh pr checks <pr> --json name,bucket` about every 60 seconds. Filter on the `bucket` field with `gh`'s own `--jq` (the standalone `jq` binary is missing on some shells, and an empty result looks exactly like "still running").
-- Print each check as it settles and finish with an explicit "all checks settled" line.
-- On a new push to the same PR, stop the old monitor and start a new one.
-
-Monitor is missing on some cloud providers and when non-essential traffic is disabled. Without it, run this as one Bash call with `run_in_background` and act when it exits. It stops after about nine minutes; if checks are still pending, run it again.
-
-```bash
-sleep 45
-for i in $(seq 8); do
-  state=$(gh pr checks <pr> --json bucket --jq 'if length == 0 then "none" else ([.[] | select(.bucket == "pending")] | length | tostring) end')
-  [ "$state" = "0" ] && break
-  sleep 60
-done
-gh pr checks <pr> --json name,bucket --jq '.[] | "\(.name): \(.bucket)"'
-```
+After every push, watch the PR's checks; never use `gh run watch`. When the `ci-watch` mod is loaded, it watches the PR after `git push` or `gh pr create` and wakes the session once all checks settle; follow the mod and start no second watcher. Otherwise follow `docs/ci-watching.md`, which holds the Monitor and background-loop watchers.
 
 When everything is green, merge per `git.md` § Merging. On a red check, read the failing log (`gh run view <id> --log-failed`), fix it on the branch and push. Ask first only when the failure is ambiguous (flaky test, infrastructure outage, or the test and the change disagree about intended behavior).
 
@@ -50,16 +33,16 @@ Diffs of only Markdown, images and fonts outside the always-reviewed paths (the 
 - `BLOCKED` on a required approval: a reviewer other than the author approves it; until then, wait.
 - Anything else: stop and report the state. Never merge past a rule.
 
-Approval to open the PR covers this merge. A PR that changes `.github/workflows/claude-code-review.yml` gets no AI review in CI; it merges only as `review-tiers.md` § PRs that edit the review workflow describes.
+Approval to open the PR covers this merge. A PR that changes `.github/workflows/claude-code-review.yml` gets no AI review in CI; it merges only as `review-workflow.md` describes.
 
 ## Long sessions
 
-An approaching auto-compaction is no reason to stop, wrap up or close the session: keep working through it, mid-task included. Run the close-session ritual only when the maintainer asks for it, or when every task of the session is done and nothing is left to work on.
-
-Without a hand-off that carries the work across a compaction (the `compact-handoff` mod is one), keep the task list current as the context fills, so the compaction's summary starts from where the work stands.
+Run the close-session ritual only when the maintainer asks for it, or when every task of the session is done and nothing is left to work on.
 
 When responses slow down or degrade, the same file keeps getting re-read, or system reminders pile up, stop and reframe from the task list rather than push on.
 
 ## Scratch and build output
 
 Scratch files, test copies and captures go in the session's scratchpad, or in the project's git-ignored build folder, never in a fixed folder such as `C:/tmp` or `/tmp`. The CLI deletes a session's scratchpad together with its transcript once both are older than `cleanupPeriodDays`, so anything worth keeping moves into the project before the session ends.
+
+A script that starts a browser with a profile folder of its own (`--user-data-dir`) stops that browser and deletes the folder on every exit path, errors, timeouts and stop signals included, and its next run clears what a run killed outright left behind: each profile can reach a gigabyte, and a browser whose script died keeps running, so forgotten runs fill the disk long before the scratchpad is freed.

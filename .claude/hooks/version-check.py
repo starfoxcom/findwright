@@ -87,12 +87,16 @@ TEXT_TOOLS = {"echo", "printf", "write-output", "write-host", "awk", "gawk", "ma
 # this budget, so the hook gives its own reason before that.
 HOOK_SECONDS = 27
 STARTED = time.monotonic()
+# The folder the command runs in, set by refusal(). Programs are found from it, never from the
+# repo root the check reads later, which can be a repo at the home folder.
+SESSION_FOLDER = "."
 PARSE_SECONDS = 20
 OUT_OF_TIME = (f"the version check did not finish within {HOOK_SECONDS} s. Run the command again "
                "once the computer is less busy.")
 UNREAD = ("Blocked: this command may make a release, and the version check could not read it. "
           "The check reads commands with the shell parser in Bindwright's helper, which needs "
-          "Node 18 or later: install both with `/bindwright:setup`, or turn the check off with "
+          "Node 18 or later on PATH outside this project's folders (a node the project ships is "
+          "never run): install both with `/bindwright:setup`, or turn the check off with "
           "\"versioning\": \"none\" in .bindwright/project.json. With both installed, the parser "
           "could not read this command: run the release as a plain git tag, gh release create "
           "or gh pr create command of its own.")
@@ -112,23 +116,82 @@ def parser_script():
     return next((script for script in scripts if os.path.isfile(script)), None)
 
 
-def trusted_program(name, project):
-    """The program on PATH as an absolute path, or None when the first one found is the project's.
-    Windows looks a bare name up in the current folder first, so a repo could ship its own
-    `git.exe` or `node.exe`: that search is switched off, and a relative match or one in the
-    project or the current folder is refused."""
+def trusted_program(name):
+    """The program as an absolute path from the trusted folders of the session folder, so a repo's
+    own `git` or `node` never runs, or None when none of them holds one."""
+    folders = trusted_folders(SESSION_FOLDER)
+    found = folders and shutil.which(name, path=os.pathsep.join(folders))
+    return found if found and os.path.isabs(found) else None
+
+
+def repo_folder(start, follow_links=True):
+    """The top folder of the outermost repo holding `start`, resolved, where a repo, or the one a
+    submodule sits in, could ship its own programs. A repo at the home folder or above it holds
+    the user's own installs and does not count, unless the home folder is unknown. Outside a
+    repo it is `start` itself, or None when `start` is the home folder or above it. With
+    `follow_links` false, the folders walked are the ones `start` was reached through. The walk
+    keeps each folder's own spelling, so a folder Windows marks case-sensitive still finds its
+    `.git`; only the folder given back is case-folded, for comparing."""
+    home = os.path.expanduser("~")
+    home = real_path(home) if os.path.isabs(home) else None
+    folder = os.path.realpath(start) if follow_links else os.path.abspath(start)
+    top, first = None, True
+    while True:
+        real = real_path(folder)
+        counts = not (home and is_within(home, real))
+        if counts and (first or os.path.exists(os.path.join(folder, ".git"))):
+            top = real
+        parent, first = os.path.dirname(folder), False
+        if parent == folder:
+            return top
+        folder = parent
+
+
+def trusted_folders(session):
+    """The absolute PATH folders a repo cannot have shipped a program in, or None when the folders
+    cannot be read, as when the current folder was deleted. A PATH folder that is relative (a `.`),
+    is the session folder or the current folder, or sits in a folder repo_folder gives for the
+    session folder, as reached or with its links followed, is skipped, and Windows's search of the
+    current folder first is switched off.
+    Every program a guard runs is found here, always from the session folder, never from a repo
+    root found later, so every guard trusts the same folders."""
     os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
-    found = shutil.which(name)
-    if not found or not os.path.isabs(found):
+    try:
+        here = {real_path(place) for place in (session, os.getcwd())}
+        repos = {repo_folder(session), repo_folder(session, follow_links=False)} - {None}
+    except OSError:
         return None
-    here = {os.path.normcase(os.path.realpath(folder)) for folder in (project, os.getcwd())}
-    return None if os.path.normcase(os.path.realpath(os.path.dirname(found))) in here else found
+    folders = {entry: resolved(entry) for entry in os.environ.get("PATH", "").split(os.pathsep)
+               if os.path.isabs(entry)}
+    return [entry for entry, real in folders.items()
+            if real and real not in here and not any(is_within(real, repo) for repo in repos)]
 
 
-def shell_commands(command, shell, project):
+def real_path(path):
+    return os.path.normcase(os.path.realpath(path))
+
+
+def resolved(entry):
+    """`entry` resolved, or None when it cannot be, as Windows reports for a share that refuses the
+    sign-in; such a folder is never searched."""
+    try:
+        return real_path(entry)
+    except OSError:
+        return None
+
+
+def is_within(folder, top):
+    """Whether `folder` is `top` or below it; two paths on different drives never are."""
+    try:
+        return os.path.commonpath([folder, top]) == top
+    except ValueError:
+        return False
+
+
+def shell_commands(command, shell):
     """Each simple command's words as the shell reads them, or None when the parser cannot run
     or read the command. A word built at run time is a RunTime."""
-    node, script = trusted_program("node", project), parser_script()
+    node, script = trusted_program("node"), parser_script()
     if not node or not script:
         return None
     try:
@@ -271,7 +334,7 @@ class OutOfTime(Exception):
 
 def git_output(project, *args):
     """What git prints, or "" when it fails. Running out of time is not an answer: it raises."""
-    git = trusted_program("git", project)
+    git = trusted_program("git")
     if not git:
         return ""
     try:
@@ -371,12 +434,14 @@ def check_script(project):
 
 
 def check_release(project, scheme, fmt, version, ref):
-    """The reasons the release is refused, or None when it may go ahead."""
+    """The reasons the release is refused, or None when it may go ahead. The script gets a PATH of
+    only the folders trusted from the session folder, so the repo root it runs in cannot widen them."""
     argv = [sys.executable, "-I", check_script(project), version, "--scheme", scheme, "--ref", ref]
     if scheme == "calver" and fmt:
         argv += ["--format", fmt]
+    env = dict(os.environ, PATH=os.pathsep.join(trusted_folders(SESSION_FOLDER) or []))
     try:
-        out = subprocess.run(argv, cwd=project, capture_output=True, text=True, encoding="utf-8",
+        out = subprocess.run(argv, cwd=project, env=env, capture_output=True, text=True, encoding="utf-8",
                              errors="replace", timeout=seconds_left())
     except subprocess.TimeoutExpired:
         return OUT_OF_TIME
@@ -392,8 +457,10 @@ def check_release(project, scheme, fmt, version, ref):
 def refusal(command, shell, project):
     """Why the command's release is blocked, or None. A command that cannot make a release
     returns before anything that can fail; past that, a failure blocks with its reason."""
+    global SESSION_FOLDER
     if not may_be_release(command):
         return None
+    SESSION_FOLDER = project
     try:
         return read_and_check(command, shell, project)
     except OutOfTime:
@@ -407,7 +474,7 @@ def read_and_check(command, shell, project):
     if not scheme_and_format or not os.path.isfile(check_script(project)):
         return None
     scheme, fmt = scheme_and_format
-    commands = shell_commands(command, shell, project)
+    commands = shell_commands(command, shell)
     if commands is None:
         return UNREAD
     return first_refusal(commands, project, scheme, fmt)
