@@ -1,8 +1,8 @@
 {
-  "version": "2.4.1",
+  "version": "2.4.2",
   "node": {
-    "file": "findwright-2.4.1.tgz",
-    "url": "https://github.com/starfoxcom/findwright/releases/download/v2.4.1/findwright-2.4.1.tgz",
-    "sha256": "a25bc62b75be03ab1c1385b901e71355e05371dfee48421647bb6a3c66fd9b63"
+    "file": "findwright-2.4.2.tgz",
+    "url": "https://github.com/starfoxcom/findwright/releases/download/v2.4.2/findwright-2.4.2.tgz",
+    "sha256": "d5df89de28673d6fd7eea6953416c99d6aa3d30379025ae292ceac290ba5e58a"
   }
 }
