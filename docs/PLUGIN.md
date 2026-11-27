@@ -1,6 +1,6 @@
 # FindWright as a plugin: design
 
-FindWright ships as its own Claude Code plugin, installed from its own marketplace and from Anthropic's plugin directory, with its own releases and page. Until now it shipped only inside Bindwright's helper (`helper/findwright/` there, a copy of `src/`).
+FindWright ships as its own Claude Code plugin, installed from its own marketplace and from Anthropic's plugin directory, with its own releases and page. It first shipped inside Bindwright's helper as a copy of `src/`; Bindwright now installs this plugin instead (see Living beside Bindwright).
 
 ## The constraint that shapes it
 

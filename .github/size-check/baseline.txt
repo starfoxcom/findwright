@@ -7,7 +7,6 @@ bench/harvest.py|line_length|-|1
 bench/replay.mjs|ccn|baselineRun|86
 bench/replay.mjs|function|baselineRun|203
 bench/replay.mjs|line_length|-|16
-bench/summarize.py|ccn|report|27
 bench/summarize.py|line_length|-|5
 bench/summarize4.py|line_length|-|3
 src/cli.mjs|line_length|-|1

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, parse } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HOOK = fileURLToPath(new URL("../hooks/findwright-first.mjs", import.meta.url));
@@ -32,6 +32,20 @@ const ROWS = [
   ["Grep with an indexed target path is blocked from outside",
     call("Grep", { pattern: "foo", path: indexed }, plain), true],
   ["Grep below the index root is blocked", call("Grep", { pattern: "foo" }, deepInside), true],
+  ["Grep with a target path outside the index is allowed from inside",
+    call("Grep", { pattern: "foo", path: plain }, indexed), false],
+  ["Grep with a relative path inside the index is blocked",
+    call("Grep", { pattern: "foo", path: "src" }, indexed), true],
+  ["Glob with an absolute pattern outside the index is allowed from inside",
+    call("Glob", { pattern: join(plain, "**", "*.md") }, indexed), false],
+  ["Glob with an outside path and an absolute pattern inside the index is blocked",
+    call("Glob", { path: plain, pattern: join(indexed, "src", "*.mjs") }, indexed), true],
+  ["Glob with an absolute pattern inside the index is blocked from outside",
+    call("Glob", { pattern: join(indexed, "src", "*.mjs") }, plain), true],
+  ["Glob with a pattern at the drive root, which holds the index, is blocked from inside",
+    call("Glob", { pattern: `${parse(indexed).root}**/*.mjs` }, indexed), true],
+  ["Grep with a parent folder of the index as its path is blocked from inside",
+    call("Grep", { pattern: "foo", path: ".." }, indexed), true],
   ["grep -rn in an indexed folder is blocked", shell("grep -rn foo ."), true],
   ["rg after a pipe is blocked", shell("cat notes.txt | rg foo"), true],
   ["grep filtering test output is allowed",
@@ -123,6 +137,24 @@ const ROWS = [
     shell('git commit -m "fix: let grep filter $OUTPUT"'), false],
   ["grep after a pipe that carries the error output too is allowed", shell("npm test |& grep fail"), false],
   ["grep after head with a line count is allowed", shell("npm test | head -n 50 | grep fail"), false],
+  ["grep filtering a script's output is allowed", shell("python tools/report.py | grep ok"), false],
+  ["grep filtering a build run through a package manager is allowed",
+    shell("npm run build 2>&1 | grep -i error"), false],
+  ["a quoted end anchor in the pattern is allowed", shell('git push 2>&1 | grep -v "^remote: *$"'), false],
+  ["a quoted zsh expansion, which can split into grep options, is blocked",
+    shell("o='-rn TODO src'; ls | grep \"$=o\""), true],
+  ["node --test naming the test files is allowed", shell("node --test test/x.test.mjs | grep fail"), false],
+  ["an interpreter option before the program file is blocked",
+    shell("node --require ./a.cjs tools/x.mjs | grep foo"), true],
+  ["git -c, which can define an alias, before a listed use is blocked",
+    shell("git -c alias.st=x status | grep foo"), true],
+  ["git's own options before a listed use are allowed", shell("git -C . --no-pager status -s | grep M"), false],
+  ["git's own options do not hide a use that prints a file",
+    shell("git -C . --no-pager show HEAD:src/a.mjs | grep foo"), true],
+  ["grep after an interpreter running inline code is blocked",
+    shell("python3 -c \"print(open('src/a.mjs').read())\" | grep foo"), true],
+  ["an npm option after the script name is blocked",
+    shell("npm run build --node-options=--require=./a.cjs | grep foo"), true],
   ["grep after a reshaper that reads a file is blocked", shell("ls | sort src/a.mjs | grep foo"), true],
   ["grep after a file read through a chained pipe is blocked",
     shell("cat src/a.mjs | sort | grep foo"), true],
