@@ -37,25 +37,68 @@ const LOG_OPTIONS = new RegExp("^(-\\d+|-n\\d*|-s|-[iE]+|--(oneline|graph|all|br
   + "|(no-)?merges|reverse|abbrev-commit|follow|no-patch|name-only|name-status|stat|shortstat|numstat"
   + "|all-match|invert-grep|regexp-ignore-case|extended-regexp|(no-)?decorate(=\\w+)?)"
   + "|--(max-count|skip|format|pretty|date|grep|author|committer|since|until|after|before)=.*)$");
-// Commands whose output is never a file's text (test runs, file lists, logs, ref updates), so a
-// search piped after them filters that output. Each allows any use (`true`), or names its
-// subcommands, each with `true`, the actions it may take, or the pattern every option must match.
-// Any other command or option may print a file (find through -exec, node -p, gh api, git log -p,
-// gh pr diff).
+// Each entry takes the words after a command's name and says whether that use never prints a
+// file's text.
+const always = () => true;
+const subcommands = (table) => ([subcommand = "", ...rest]) => {
+  const use = subcommand.toLowerCase();
+  return Object.hasOwn(table, use) && table[use](rest);
+};
+const actions = (list) => ([action = ""]) => list.includes(action);
+const optionsMatch = (pattern) => (rest) => {
+  const end = rest.includes("--") ? rest.indexOf("--") : rest.length;
+  return rest.slice(0, end).every((word) => !word.startsWith("-") || pattern.test(word));
+};
+// A program file run as the first word after an interpreter's name, with nothing before it, so no
+// inline code, no preloaded module and no program read from the pipe. What the program prints is
+// its own output.
+const runsFile = (extension) => ([script = ""]) => extension.test(script) && /^[\w./\\]/.test(script);
+const PYTHON_FILE = runsFile(/\.py$/i);
+// A package script named plainly after `run`, with no option word before a `--`: npm reads such
+// words as its own settings (`--node-options` preloads a module), and only what follows `--`
+// reaches the script.
+const runsPackageScript = ([name = "", ...rest]) => /^\w[\w:.-]*$/.test(name)
+  && optionsMatch(/(?!)/)(rest);
+const GIT_SUBCOMMANDS = subcommands({
+  status: optionsMatch(STATUS_OPTIONS), log: optionsMatch(LOG_OPTIONS),
+  ...Object.fromEntries("ls-files branch remote tag worktree push fetch pull".split(" ")
+    .map((name) => [name, always])),
+});
+// git's own options that may come before a listed subcommand: `-C <folder>`, `--no-pager` and
+// `-P`. Any other one, `-c` above all, which can define an alias on the spot, leaves the use
+// unknown.
+function gitUse(rest) {
+  let at = 0;
+  while (rest[at]?.startsWith("-")) {
+    if (rest[at] === "-C") at += 2;
+    else if (rest[at] === "--no-pager" || rest[at] === "-P") at += 1;
+    else return false;
+  }
+  return GIT_SUBCOMMANDS(rest.slice(at));
+}
+const NODE_FILE = runsFile(/\.[cm]?js$/i);
+const NODE_TEST_RUN = subcommands({ "--test": optionsMatch(/^--test(-[a-z-]+)?(=.*)?$/) });
+// Commands whose output is never a file's text, so a search piped after them filters that output:
+// listings, test runs, a program file run by its interpreter, a package script, and the git, gh
+// and claude uses that print no file's text. A test run or a script can print lines of code in
+// its own messages; that is the program's output, not a file the session reads through it. Any
+// other command, use or option may print a file (cat, sed, find -exec, node -e, git show,
+// git log -p, gh pr diff), so a search after it stays a search.
 const OUTPUT_SOURCES = {
-  ls: true, dir: true, echo: true, ps: true, pytest: true,
-  node: { "--test": /^--test(-[a-z-]+)?(=.*)?$/ },
-  npm: { test: true, ls: true, outdated: true },
-  gh: {
-    run: ["list", "view"], pr: ["list", "view", "checks", "status"], issue: ["list", "view", "status"],
-    release: ["list", "view"], workflow: ["list"],
-  },
-  git: {
-    status: STATUS_OPTIONS, log: LOG_OPTIONS,
-    "ls-files": true, branch: true, remote: true, tag: true, worktree: true,
-    push: true, fetch: true, pull: true,
-  },
-  cargo: { test: true }, go: { test: true }, dotnet: { test: true },
+  ls: always, dir: always, echo: always, ps: always, pytest: always,
+  node: (rest) => NODE_FILE(rest) || NODE_TEST_RUN(rest),
+  python: PYTHON_FILE, python3: PYTHON_FILE, py: PYTHON_FILE,
+  npm: subcommands({ run: runsPackageScript, test: always, ls: always, outdated: always }),
+  pnpm: subcommands({ run: runsPackageScript }),
+  cargo: subcommands({ test: always }), go: subcommands({ test: always }),
+  dotnet: subcommands({ test: always }),
+  git: gitUse,
+  gh: subcommands({
+    run: actions(["list", "view"]), pr: actions(["list", "view", "checks", "status"]),
+    issue: actions(["list", "view", "status"]), release: actions(["list", "view"]),
+    workflow: actions(["list"]),
+  }),
+  claude: subcommands({ plugin: actions(["list"]), mcp: actions(["list", "get"]) }),
 };
 // Stages that reshape the output fed to them, taking options only, so any other word is a file
 // they read. Scripted tools (sed, awk) can read files and are left out.
@@ -187,9 +230,10 @@ function startsWithSearchTool(token) {
 }
 
 // The quoted text starting at `at` as the shell reads it, with where it ends; undefined when no
-// quote starts there, null when it never closes, expands inside double quotes (`$`, a
-// backtick), which can run a command or yield several words (`"$@"`), or joins two lines with a
-// backslash, which Bash removes.
+// quote starts there, null when it never closes, expands inside double quotes (a `$` before a
+// name, a digit, a brace, a parenthesis, a bracket or a special parameter, or a backtick), which
+// can run a command or yield several words (`"$@"`), or joins two lines with a backslash, which
+// Bash removes. Any other `$`, such as a regex's end anchor (`"^remote: *$"`), stays literal.
 function readQuoted(command, at) {
   const quote = command[at];
   if (quote !== "'" && quote !== '"') return undefined;
@@ -199,7 +243,7 @@ function readQuoted(command, at) {
   if (end >= command.length) return null;
   const text = command.slice(at + 1, end);
   if (quote === "'") return { text, end };
-  if (/[$`]|\\\n/.test(text)) return null;
+  if (/`|\$[\w{([@*#?!$-]|\\\n/.test(text)) return null;
   return { text: text.replace(/\\(["\\])/g, "$1"), end };
 }
 
@@ -354,18 +398,10 @@ function isReshaper(words) {
   return isInputSearch(words);
 }
 
-// A source passes when its command allows any use, or its subcommand is listed and what follows
-// fits: an action the subcommand allows, or options, before any `--`, that its pattern accepts.
-function isOutputSource([command = "", subcommand = "", ...rest]) {
+// A source passes when OUTPUT_SOURCES lists its command and says that use never prints a file.
+function isOutputSource([command = "", ...rest]) {
   const name = command.toLowerCase();
-  const uses = Object.hasOwn(OUTPUT_SOURCES, name) ? OUTPUT_SOURCES[name] : {};
-  if (uses === true) return true;
-  const use = subcommand.toLowerCase();
-  const allowed = Object.hasOwn(uses, use) ? uses[use] : false;
-  if (Array.isArray(allowed)) return allowed.includes(rest[0]);
-  if (!(allowed instanceof RegExp)) return allowed;
-  const end = rest.includes("--") ? rest.indexOf("--") : rest.length;
-  return rest.slice(0, end).every((word) => !word.startsWith("-") || allowed.test(word));
+  return Object.hasOwn(OUTPUT_SOURCES, name) && OUTPUT_SOURCES[name](rest);
 }
 
 // A search filters output, not code, when its `|` or `|&` pipeline starts with a command that never
