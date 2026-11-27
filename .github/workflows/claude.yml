@@ -15,10 +15,9 @@
 # "Review gate" check on the PR head commit through the shared script
 # (.github/scripts/review_gate.py, taken from the PR's base commit, or from the
 # default branch when the base predates the gate), which
-# combines it with the routine result stored on the same check. See the
-# comment block in claude-code-review.yml. With `checks: two` in the gate
-# settings it also moves the older `Claude On-Demand` check to success or
-# failure, as before.
+# combines it with the routine result stored on the same check. With
+# `checks: two` in the gate settings it also moves the older
+# `Claude On-Demand` check to success or failure, as before.
 #
 # The review runs on the API credits first (ANTHROPIC_API_KEY, optional) and
 # on the subscription when that run leaves no verdict. With the key alone and
@@ -29,9 +28,13 @@
 # tokens below in repo secrets.
 # Optional: CLAUDE_CODE_OAUTH_TOKEN_2 to CLAUDE_CODE_OAUTH_TOKEN_5, more accounts' tokens
 # for when the first account has no room left; with only these, the first
-# attempt and its retry run on the first of them (see the routine workflow's
-# header for why each account has a secret of its own, and for the
-# REVIEW_ACCOUNT_CEILING variable both workflows read).
+# attempt and its retry run on the first of them. Each account has a secret
+# of its own, named here one by one: a value taken out of a combined secret
+# is no longer hidden in the logs, and a secret name built at run time sends
+# every secret of the repo to the runner. Optional too: the repo variable
+# REVIEW_ACCOUNT_CEILING, a percent from 1 to 100, which moves the review to
+# the next account once an account's plan use reaches it (the share a local
+# usage guard keeps back for its sessions); unset, only a spent plan does.
 
 name: Claude On-Demand
 
@@ -617,7 +620,7 @@ jobs:
       # One job-private copy of the newest CLI release, so the credits run, the
       # first attempt and the retry run the same version. The version is read
       # when the job runs, from the npm registry's release channel, and
-      # then installed exactly (see the routine workflow). When the lookup or
+      # then installed exactly. When the lookup or
       # the install fails, the credits run is skipped and the action's attempts
       # fall back to the CLI it bundles. The fallback model runs on the stable
       # release (see below).
@@ -1013,10 +1016,9 @@ jobs:
           PYEOF
           ANSWER_FROM="$out" bash "$RUNNER_TEMP/deep-answer.sh"
 
-      # The account the first attempt and its retry run on, picked as the
-      # routine workflow's "Pick the review's account" picks it, on the deep
-      # model: the first account, counting from the first, that answers a
-      # one-line request with its plan use under REVIEW_ACCOUNT_CEILING.
+      # The account the first attempt and its retry run on: the first account,
+      # counting from the first, that answers a one-line request on the deep
+      # model with its plan use under REVIEW_ACCOUNT_CEILING (see the header).
       # pick_account.py decides, read from the gate's commit, or from the
       # default branch's tip when that commit predates it (a PR can change
       # neither). Neither holding it, or a failed pick, leaves the first
@@ -1250,7 +1252,7 @@ jobs:
 
       # The fallback's CLI: the stable channel's release, one that has had time
       # in the field, so a newest release that installs but then breaks does
-      # not take out the fallback too (see the routine workflow's backup).
+      # not take out the fallback too.
       # When the stable release is the newest one, the job's copy is reused.
       # So is it when the stable lookup or install fails, so this step never
       # costs the fallback its run.
