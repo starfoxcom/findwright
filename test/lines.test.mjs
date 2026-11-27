@@ -21,12 +21,17 @@ const LINE_ROWS = [
   ["a trailing newline adds no empty last line", "a\nb\n", {}, ["a", "b"]],
   ["a last line without a newline counts", "a\nb", {}, ["a", "b"]],
   ["empty lines in the middle stay", "a\n\nb\n", {}, ["a", "", "b"]],
-  ["a line across several chunks is whole", "abcdefghij\nk\n", { chunkBytes: 3 }, ["abcdefghij", "k"]],
-  ["a newline at a chunk's last byte splits there", "abc\ndef\n", { chunkBytes: 4 }, ["abc", "def"]],
-  ["a multibyte character across a chunk boundary decodes", "é€😀\nx\n", { chunkBytes: 1 }, ["é€😀", "x"]],
+  ["a line across several chunks is whole",
+    "abcdefghij\nk\n", { chunkBytes: 3 }, ["abcdefghij", "k"]],
+  ["a newline at a chunk's last byte splits there",
+    "abc\ndef\n", { chunkBytes: 4 }, ["abc", "def"]],
+  ["a multibyte character across a chunk boundary decodes",
+    "é€😀\nx\n", { chunkBytes: 1 }, ["é€😀", "x"]],
   ["a carriage return stays on its line", "a\r\nb\r\n", {}, ["a\r", "b\r"]],
-  ["a line longer than a string can hold is skipped", "ok\ntoolong\nok2\n", { chunkBytes: 2, maxLineBytes: 4 }, ["ok", "ok2"]],
-  ["a line exactly at the string limit is kept", "abcd\n", { chunkBytes: 2, maxLineBytes: 4 }, ["abcd"]],
+  ["a line longer than a string can hold is skipped",
+    "ok\ntoolong\nok2\n", { chunkBytes: 2, maxLineBytes: 4 }, ["ok", "ok2"]],
+  ["a line exactly at the string limit is kept",
+    "abcd\n", { chunkBytes: 2, maxLineBytes: 4 }, ["abcd"]],
 ];
 
 for (const [name, content, options, expected] of LINE_ROWS) {

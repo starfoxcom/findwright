@@ -38,7 +38,10 @@ class LineCarry {
  * counts too. The newline byte never occurs inside a multibyte UTF-8 character, so splitting the
  * raw bytes on it never cuts one. A line too long for one string is skipped.
  */
-export function* linesOf(path, { chunkBytes = CHUNK_BYTES, maxLineBytes = constants.MAX_STRING_LENGTH } = {}) {
+export function* linesOf(path, {
+  chunkBytes = CHUNK_BYTES,
+  maxLineBytes = constants.MAX_STRING_LENGTH,
+} = {}) {
   const fd = openSync(path, "r");
   const chunk = Buffer.allocUnsafe(chunkBytes);
   const carry = new LineCarry(maxLineBytes);
