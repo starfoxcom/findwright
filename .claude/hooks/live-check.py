@@ -20,6 +20,7 @@ import datetime
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 
@@ -98,11 +99,80 @@ def has_live_check(body):
     return any(LIVE_CHECK_LINE.match(line) for line in body.split("\n"))
 
 
-def gh(*args):
-    """What gh prints, decoded from its bytes so no line ending is rewritten, or None when it
-    fails or runs out of time."""
+def real_path(path):
+    return os.path.normcase(os.path.realpath(path))
+
+
+def resolved(entry):
+    """`entry` resolved, or None when it cannot be, as Windows reports for a share that refuses the
+    sign-in; such a folder is never searched."""
     try:
-        done = subprocess.run(["gh", *args], capture_output=True, timeout=GH_SECONDS)
+        return real_path(entry)
+    except OSError:
+        return None
+
+
+def is_within(folder, top):
+    """Whether `folder` is `top` or below it; two paths on different drives never are."""
+    try:
+        return os.path.commonpath([folder, top]) == top
+    except ValueError:
+        return False
+
+
+def repo_folder(start, follow_links=True):
+    """The top folder of the outermost repo holding `start`, resolved, where a repo, or the one a
+    submodule sits in, could ship its own programs. A repo at the home folder or above it holds
+    the user's own installs and does not count, unless the home folder is unknown. Outside a
+    repo it is `start` itself, or None when `start` is the home folder or above it. With
+    `follow_links` false, the folders walked are the ones `start` was reached through. The walk
+    keeps each folder's own spelling, so a folder Windows marks case-sensitive still finds its
+    `.git`; only the folder given back is case-folded, for comparing."""
+    home = os.path.expanduser("~")
+    home = real_path(home) if os.path.isabs(home) else None
+    folder = os.path.realpath(start) if follow_links else os.path.abspath(start)
+    top, first = None, True
+    while True:
+        real = real_path(folder)
+        counts = not (home and is_within(home, real))
+        if counts and (first or os.path.exists(os.path.join(folder, ".git"))):
+            top = real
+        parent, first = os.path.dirname(folder), False
+        if parent == folder:
+            return top
+        folder = parent
+
+
+def trusted_folders(session):
+    """The absolute PATH folders a repo cannot have shipped a program in, or None when the folders
+    cannot be read, as when the current folder was deleted. A PATH folder that is relative (a `.`),
+    is the session folder or the current folder, or sits in a folder repo_folder gives for the
+    session folder, as reached or with its links followed, is skipped, and Windows's search of the
+    current folder first is switched off.
+    Every program a guard runs is found here, always from the session folder, never from a repo
+    root found later, so every guard trusts the same folders."""
+    os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
+    try:
+        here = {real_path(place) for place in (session, os.getcwd())}
+        repos = {repo_folder(session), repo_folder(session, follow_links=False)} - {None}
+    except OSError:
+        return None
+    folders = {entry: resolved(entry) for entry in os.environ.get("PATH", "").split(os.pathsep)
+               if os.path.isabs(entry)}
+    return [entry for entry, real in folders.items()
+            if real and real not in here and not any(is_within(real, repo) for repo in repos)]
+
+
+def gh(folders, *args):
+    """What the gh in the trusted `folders` prints, decoded from its bytes so no line ending is
+    rewritten, or None when none of them holds one, or it fails or runs out of time."""
+    found = folders and shutil.which("gh", path=os.pathsep.join(folders))
+    if not found or not os.path.isabs(found):
+        return None
+    # gh starts git itself, so its PATH holds only the trusted folders.
+    env = dict(os.environ, PATH=os.pathsep.join(folders))
+    try:
+        done = subprocess.run([found, *args], capture_output=True, timeout=GH_SECONDS, env=env)
     except (OSError, subprocess.SubprocessError):
         return None
     return done.stdout.decode("utf-8", "replace") if done.returncode == 0 else None
@@ -141,12 +211,12 @@ def record(address, matches):
         handle.write(json.dumps(entry) + "\n")
 
 
-def read_pull_request(repo, number):
+def read_pull_request(folders, repo, number):
     """(the body, the changed files) github.com holds for the pull request, or None when gh cannot
     read them. Both come as JSON, whose strings keep every character of the text."""
     path = "repos/%s/pulls/%s" % (repo, number)
-    pull = gh("api", "--hostname", GITHUB_HOST, path)
-    files = gh("api", "--hostname", GITHUB_HOST, "--paginate", path + "/files") if pull is not None else None
+    pull = gh(folders, "api", "--hostname", GITHUB_HOST, path)
+    files = gh(folders, "api", "--hostname", GITHUB_HOST, "--paginate", path + "/files") if pull is not None else None
     if files is None:
         return None
     body = json.loads(pull).get("body") or ""
@@ -156,7 +226,11 @@ def read_pull_request(repo, number):
 def observe(event):
     """Records the pull request when it adds an unchecked write; returns whether it did."""
     address = pr_address(event)
-    pull_request = read_pull_request(*address) if address else None
+    if not address:
+        return False
+    session = event.get("cwd")
+    folders = trusted_folders(session if isinstance(session, str) and session else os.getcwd())
+    pull_request = read_pull_request(folders, *address)
     if pull_request is None or has_live_check(pull_request[0]):
         return False
     matches = write_lines(pull_request[1])
@@ -167,8 +241,6 @@ def observe(event):
 
 
 def main():
-    # Windows searches the working folder for a program before PATH; a repo's own gh must not run.
-    os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
     try:
         noted = observe(json.loads(sys.stdin.buffer.read().decode("utf-8", "replace")))
     except Exception:  # observe mode: no failure of this hook may block the tool call

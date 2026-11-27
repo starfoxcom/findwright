@@ -62,37 +62,54 @@ def is_within(folder, top):
         return False
 
 
-def repo_folder(start):
-    """The top folder of the outermost repo holding `start`, where a repo, or the one a
+def repo_folder(start, follow_links=True):
+    """The top folder of the outermost repo holding `start`, resolved, where a repo, or the one a
     submodule sits in, could ship its own programs. A repo at the home folder or above it holds
     the user's own installs and does not count, unless the home folder is unknown. Outside a
-    repo it is `start` itself, or None when `start` is the home folder or above it."""
+    repo it is `start` itself, or None when `start` is the home folder or above it. With
+    `follow_links` false, the folders walked are the ones `start` was reached through. The walk
+    keeps each folder's own spelling, so a folder Windows marks case-sensitive still finds its
+    `.git`; only the folder given back is case-folded, for comparing."""
     home = os.path.expanduser("~")
     home = real_path(home) if os.path.isabs(home) else None
-    folder = real_path(start)
-    top = None if home and is_within(home, folder) else folder
+    folder = os.path.realpath(start) if follow_links else os.path.abspath(start)
+    top, first = None, True
     while True:
-        if os.path.exists(os.path.join(folder, ".git")) and not (home and is_within(home, folder)):
-            top = folder
-        parent = os.path.dirname(folder)
+        real = real_path(folder)
+        counts = not (home and is_within(home, real))
+        if counts and (first or os.path.exists(os.path.join(folder, ".git"))):
+            top = real
+        parent, first = os.path.dirname(folder), False
         if parent == folder:
             return top
         folder = parent
 
 
-def node_program(cwd):
-    """`node` as an absolute path, from the first PATH folder a repo cannot have shipped it in,
-    or None when no such folder holds one. A PATH folder that is relative (a `.`), is the session
-    folder or the current folder, or sits in the folder repo_folder gives for it is skipped, so a
-    repo's own `node` never runs; Windows's search of the current folder first is switched off."""
+def trusted_folders(session):
+    """The absolute PATH folders a repo cannot have shipped a program in, or None when the folders
+    cannot be read, as when the current folder was deleted. A PATH folder that is relative (a `.`),
+    is the session folder or the current folder, or sits in a folder repo_folder gives for the
+    session folder, as reached or with its links followed, is skipped, and Windows's search of the
+    current folder first is switched off.
+    Every program a guard runs is found here, always from the session folder, never from a repo
+    root found later, so every guard trusts the same folders."""
     os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
-    repo = repo_folder(cwd)
-    here = {real_path(place) for place in (cwd, os.getcwd())}
+    try:
+        here = {real_path(place) for place in (session, os.getcwd())}
+        repos = {repo_folder(session), repo_folder(session, follow_links=False)} - {None}
+    except OSError:
+        return None
     folders = {entry: resolved(entry) for entry in os.environ.get("PATH", "").split(os.pathsep)
                if os.path.isabs(entry)}
-    trusted = [entry for entry, real in folders.items()
-               if real and real not in here and not (repo and is_within(real, repo))]
-    found = shutil.which("node", path=os.pathsep.join(trusted))
+    return [entry for entry, real in folders.items()
+            if real and real not in here and not any(is_within(real, repo) for repo in repos)]
+
+
+def node_program(cwd):
+    """`node` as an absolute path from the trusted folders of the session folder `cwd`, so a repo's
+    own `node` never runs, or None when none of them holds one."""
+    folders = trusted_folders(cwd)
+    found = folders and shutil.which("node", path=os.pathsep.join(folders))
     return found if found and os.path.isabs(found) else None
 
 

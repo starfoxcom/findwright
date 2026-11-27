@@ -436,9 +436,11 @@ CHANGELOG_LIMIT = 4 * 1024 * 1024
 
 
 def repo_root():
-    """The folder holding CWD's `.git` (a folder, or a worktree's file), or None outside a repo."""
+    """The folder holding CWD's `.git` (a folder, or a worktree's file), or None outside a repo. CWD is
+    resolved first, as trusted_folders judges it, so the root always holds the folder it judged, and keeps
+    its own spelling, since git opens it."""
     try:
-        folder = os.path.abspath(CWD)
+        folder = os.path.realpath(CWD)
     except OSError:  # a "." whose folder was deleted
         return None
     while not os.path.exists(os.path.join(folder, ".git")):
@@ -470,45 +472,53 @@ def is_within(folder, top):
         return False
 
 
-def repo_folder(start):
-    """The top folder of the outermost repo holding `start`, where a repo, or the one a
+def repo_folder(start, follow_links=True):
+    """The top folder of the outermost repo holding `start`, resolved, where a repo, or the one a
     submodule sits in, could ship its own programs. A repo at the home folder or above it holds
     the user's own installs and does not count, unless the home folder is unknown. Outside a
-    repo it is `start` itself, or None when `start` is the home folder or above it."""
+    repo it is `start` itself, or None when `start` is the home folder or above it. With
+    `follow_links` false, the folders walked are the ones `start` was reached through. The walk
+    keeps each folder's own spelling, so a folder Windows marks case-sensitive still finds its
+    `.git`; only the folder given back is case-folded, for comparing."""
     home = os.path.expanduser("~")
     home = real_path(home) if os.path.isabs(home) else None
-    folder = real_path(start)
-    top = None if home and is_within(home, folder) else folder
+    folder = os.path.realpath(start) if follow_links else os.path.abspath(start)
+    top, first = None, True
     while True:
-        if os.path.exists(os.path.join(folder, ".git")) and not (home and is_within(home, folder)):
-            top = folder
-        parent = os.path.dirname(folder)
+        real = real_path(folder)
+        counts = not (home and is_within(home, real))
+        if counts and (first or os.path.exists(os.path.join(folder, ".git"))):
+            top = real
+        parent, first = os.path.dirname(folder), False
         if parent == folder:
             return top
         folder = parent
 
 
-def trusted_folders(root):
-    """The PATH folders a repo cannot have shipped a program in, or None when the hook's own folder is gone.
-    A PATH folder that is relative (a `.`), is the session folder or the current folder, or sits in the
-    folder repo_folder gives for `root` is skipped; Windows's search of the current folder first is switched
-    off."""
+def trusted_folders(session):
+    """The absolute PATH folders a repo cannot have shipped a program in, or None when the folders
+    cannot be read, as when the current folder was deleted. A PATH folder that is relative (a `.`),
+    is the session folder or the current folder, or sits in a folder repo_folder gives for the
+    session folder, as reached or with its links followed, is skipped, and Windows's search of the
+    current folder first is switched off.
+    Every program a guard runs is found here, always from the session folder, never from a repo
+    root found later, so every guard trusts the same folders."""
     os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
     try:
-        here = {real_path(place) for place in (CWD, os.getcwd())}
-    except OSError:  # the hook's own folder was deleted
+        here = {real_path(place) for place in (session, os.getcwd())}
+        repos = {repo_folder(session), repo_folder(session, follow_links=False)} - {None}
+    except OSError:
         return None
-    repo = repo_folder(root)
     folders = {entry: resolved(entry) for entry in os.environ.get("PATH", "").split(os.pathsep)
                if os.path.isabs(entry)}
     return [entry for entry, real in folders.items()
-            if real and real not in here and not (repo and is_within(real, repo))]
+            if real and real not in here and not any(is_within(real, repo) for repo in repos)]
 
 
-def trusted_program(root, name):
+def trusted_program(name):
     """The program `name` (git, gh) as an absolute path from the trusted folders, so a repo's own copy never
     runs, or None when none of them holds one."""
-    folders = trusted_folders(root)
+    folders = trusted_folders(CWD)
     found = folders and shutil.which(name, path=os.pathsep.join(folders))
     return found if found and os.path.isabs(found) else None
 
@@ -566,7 +576,7 @@ def edits_dated_changelog(text, shell):
     if not GIT_COMMIT(text, shell):
         return False
     root = repo_root()
-    git = root and trusted_program(root, "git")
+    git = root and trusted_program("git")
     if not git:
         return False
     deadline = time.monotonic() + GIT_SECONDS
@@ -667,7 +677,7 @@ def landed(program, *args):
     """The first line `program` prints in the session's repo, or None outside one, when it fails or when
     LANDED_SECONDS pass."""
     root = repo_root()
-    folders = root and trusted_folders(root)
+    folders = root and trusted_folders(CWD)
     found = folders and shutil.which(program, path=os.pathsep.join(folders))
     if not found or not os.path.isabs(found):
         return None
