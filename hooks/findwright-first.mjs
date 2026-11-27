@@ -37,7 +37,7 @@ const LOG_OPTIONS = new RegExp("^(-\\d+|-n\\d*|-s|-[iE]+|--(oneline|graph|all|br
   + "|(no-)?merges|reverse|abbrev-commit|follow|no-patch|name-only|name-status|stat|shortstat|numstat"
   + "|all-match|invert-grep|regexp-ignore-case|extended-regexp|(no-)?decorate(=\\w+)?)"
   + "|--(max-count|skip|format|pretty|date|grep|author|committer|since|until|after|before)=.*)$");
-// Each entry takes the words after a command's name and says whether that use can print a
+// Each entry takes the words after a command's name and says whether that use never prints a
 // file's text.
 const always = () => true;
 const subcommands = (table) => ([subcommand = "", ...rest]) => {
@@ -45,41 +45,55 @@ const subcommands = (table) => ([subcommand = "", ...rest]) => {
   return Object.hasOwn(table, use) && table[use](rest);
 };
 const actions = (list) => ([action = ""]) => list.includes(action);
-const optionOutside = (pattern) => (rest) => {
+const optionsMatch = (pattern) => (rest) => {
   const end = rest.includes("--") ? rest.indexOf("--") : rest.length;
-  return rest.slice(0, end).some((word) => word.startsWith("-") && !pattern.test(word));
+  return rest.slice(0, end).every((word) => !word.startsWith("-") || pattern.test(word));
 };
-const anyWord = (pattern) => (rest) => rest.some((word) => pattern.test(word));
+// A program file run as the first word after an interpreter's name, with no option before it, so
+// no inline code and no program read from the pipe. What the program prints is its own output.
+const runsScript = ([script = ""]) => script !== "" && !script.startsWith("-");
 const GIT_SUBCOMMANDS = subcommands({
-  show: always, diff: always, "cat-file": always, blame: always, "format-patch": always,
-  archive: always, status: optionOutside(STATUS_OPTIONS), log: optionOutside(LOG_OPTIONS),
+  status: optionsMatch(STATUS_OPTIONS), log: optionsMatch(LOG_OPTIONS),
+  ...Object.fromEntries("ls-files branch remote tag worktree push fetch pull".split(" ")
+    .map((name) => [name, always])),
 });
-// git's own options, which come before its subcommand; these take the next word as their value.
-const GIT_VALUE_OPTIONS = "-C -c --git-dir --work-tree --namespace --config-env --super-prefix"
-  .split(" ");
-const afterGitOptions = (rest) => {
+// git's own options that may come before a listed subcommand, and the ones among them that take
+// the next word as their value. Any other one leaves the use unknown.
+const GIT_OPTIONS = ["-C", "-c", "--git-dir", "--work-tree", "--no-pager", "-P"];
+const GIT_VALUE_OPTIONS = GIT_OPTIONS.slice(0, 4);
+function gitUse(rest) {
   let at = 0;
-  while (rest[at]?.startsWith("-")) at += GIT_VALUE_OPTIONS.includes(rest[at]) ? 2 : 1;
-  return rest.slice(at);
-};
-const SHELL_SCRIPT = anyWord(/^-[a-z]*c$/);
-const PYTHON_SCRIPT = anyWord(/^-[a-zA-Z]*c$/);
-// Commands that can print a file's text, so a search piped after them may be reading code: file
-// printers and text tools that take files, git and gh uses that print file contents or diffs,
-// find running a command per file, and interpreters, shells and eval running inline code. Any
-// other command's output (a test run, a build, a list, an API answer) is never this project's
-// code as the index holds it.
-const FILE_PRINTERS = {
-  ...Object.fromEntries(("cat tac nl rev fold fmt pr paste join comm column expand unexpand iconv"
-    + " diff sdiff zcat bzcat xzcat less more most view bat batcat strings xxd od hexdump base64 shuf"
-    + " dd jq yq sed awk gawk mawk perl xargs parallel eval").split(" ").map((name) => [name, always])),
-  find: anyWord(/^-(exec|execdir|ok|okdir)$/),
-  git: (rest) => GIT_SUBCOMMANDS(afterGitOptions(rest)),
-  gh: subcommands({ pr: actions(["diff"]), gist: actions(["view"]) }),
-  node: anyWord(/^(-[a-z]*[ep]|--(eval|print)(=.*)?)$/),
-  python: PYTHON_SCRIPT, python3: PYTHON_SCRIPT, py: PYTHON_SCRIPT,
-  ruby: anyWord(/^-[a-z]*e$/), php: anyWord(/^-r$/),
-  sh: SHELL_SCRIPT, bash: SHELL_SCRIPT, zsh: SHELL_SCRIPT, dash: SHELL_SCRIPT, ksh: SHELL_SCRIPT,
+  while (rest[at]?.startsWith("-")) {
+    const option = rest[at].split("=")[0];
+    if (!GIT_OPTIONS.includes(option)) return false;
+    at += GIT_VALUE_OPTIONS.includes(rest[at]) ? 2 : 1;
+  }
+  return GIT_SUBCOMMANDS(rest.slice(at));
+}
+const NODE_TEST = /^--test(-[a-z-]+)?(=.*)?$/;
+const PACKAGE_MANAGER = subcommands({ test: always, run: always, ls: always, outdated: always });
+// Commands whose output is never a file's text, so a search piped after them filters that output:
+// listings, test runs and builds, a program file run by its interpreter, and the read-only uses of
+// git, gh and claude. A test run or a script can print lines of code in its own messages; that is
+// the program's output, not a file the session reads through it. Any other command or use may
+// print a file (cat, sed, find through -exec, node -e, git show, git log -p, gh pr diff), so a
+// search after it stays a search.
+const OUTPUT_SOURCES = {
+  ...Object.fromEntries("ls dir echo printf pwd date which where ps pytest make tsc".split(" ")
+    .map((name) => [name, always])),
+  find: (rest) => !rest.some((word) => /^-(exec|execdir|ok|okdir)$/.test(word)),
+  node: (rest) => runsScript(rest) || (rest.length > 0 && rest.every((word) => NODE_TEST.test(word))),
+  python: runsScript, py: runsScript, ruby: runsScript, sh: runsScript, bash: runsScript,
+  npm: PACKAGE_MANAGER, pnpm: PACKAGE_MANAGER, yarn: PACKAGE_MANAGER, bun: PACKAGE_MANAGER,
+  cargo: actions(["test", "build", "check"]), go: actions(["test", "build", "vet"]),
+  dotnet: actions(["test", "build"]),
+  git: gitUse,
+  gh: subcommands({
+    run: actions(["list", "view"]), pr: actions(["list", "view", "checks", "status"]),
+    issue: actions(["list", "view", "status"]), release: actions(["list", "view"]),
+    workflow: actions(["list"]),
+  }),
+  claude: actions(["plugin", "mcp"]),
 };
 // Stages that reshape the output fed to them, taking options only, so any other word is a file
 // they read. Scripted tools (sed, awk) can read files and are left out.
@@ -367,36 +381,29 @@ function isReshaper(words) {
   return isInputSearch(words);
 }
 
-// Words that run the command after them, past their own options.
-const RUNNERS = ["command", "builtin", "busybox"];
-
-// A command's name as a list knows it, without its folder or a Windows `.exe`.
-const commandName = (word) => word.split(/[\\/]/).pop().replace(/\.exe$/i, "").toLowerCase();
-
-// Whether a pipeline stage can print a file's text: a stage the hook reads by its options (a
-// search or a reshaper) when it names a file or takes an option outside its list, and any other
-// command when FILE_PRINTERS says that use can. A runner (`command cat`, `busybox cat`) or a
-// full path (`/bin/cat`) counts as the command it runs.
-function printsFiles(words) {
-  let [command = "", ...rest] = unwrap(words);
-  while (RUNNERS.includes(commandName(command))) {
-    const next = rest.findIndex((word) => !word.startsWith("-"));
-    if (next < 0) return false;
-    [command, ...rest] = rest.slice(next);
-  }
-  const name = commandName(command);
-  if (Object.hasOwn(STAGE_OPTIONS, name)) return !isReshaper([command, ...rest]);
-  return Object.hasOwn(FILE_PRINTERS, name) && FILE_PRINTERS[name](rest);
+// A command's name as OUTPUT_SOURCES knows it: without its folder, a Windows `.exe` or, when only
+// that matches, a version after it (`/usr/bin/git`, `python3.12`).
+function commandName(word) {
+  const name = word.split(/[\\/]/).pop().replace(/\.exe$/i, "").toLowerCase();
+  return Object.hasOwn(OUTPUT_SOURCES, name) ? name : name.replace(/[\d.]+$/, "");
 }
 
-// A search filters output, not code, when it reads only its input at the end of a `|` or `|&`
-// pipeline and no stage before it can print a file's text. git grep ignores its input.
+// A source passes when OUTPUT_SOURCES lists its command and says that use never prints a file.
+function isOutputSource([command = "", ...rest]) {
+  const name = commandName(command);
+  return Object.hasOwn(OUTPUT_SOURCES, name) && OUTPUT_SOURCES[name](rest);
+}
+
+// A search filters output, not code, when its `|` or `|&` pipeline starts with a command that never
+// prints a file's text, every stage between only reshapes that output, and the search reads only
+// its input. git grep ignores its input.
 function isOutputFilter(commands, index) {
   const stages = [];
   for (let at = index; PIPES.includes(commands[at].operator); at--) stages.unshift(commands[at - 1].words);
   const search = commands[index].words;
   if (stages.length === 0 || !isInputSearch(search)) return false;
-  return !stages.some(printsFiles);
+  const [source, ...between] = stages;
+  return isOutputSource(source) && between.every(isReshaper);
 }
 
 // Commands that run the command after their own words, each with its options that take the next
