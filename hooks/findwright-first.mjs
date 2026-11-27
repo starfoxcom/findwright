@@ -3,7 +3,7 @@
 // boundary. Any failure lets the call through, since a broken hook must not
 // block every search in every project.
 import { existsSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 const BYPASS_MARKER = "FINDWRIGHT_BYPASS:";
 const SHELL_TOOLS = ["Bash", "PowerShell"];
@@ -193,22 +193,33 @@ function nonEmptyString(value) {
 const GLOB_WILDCARDS = "*?[{";
 const hasWildcard = (segment) => [...segment].some((character) => GLOB_WILDCARDS.includes(character));
 
-// The folders of an absolute Glob pattern before its first wildcard segment.
+// The folders of an absolute Glob pattern before its first wildcard segment. A bare drive
+// such as "C:" keeps its separator, since Windows reads "C:" as the working folder on C.
 function globBase(payload) {
   const pattern = payload.tool_name === "Glob" ? nonEmptyString(payload.tool_input?.pattern) : undefined;
   if (!pattern || !isAbsolute(pattern)) return undefined;
   const segments = pattern.split(/[\\/]/);
   const wildcard = segments.findIndex(hasWildcard);
-  return segments.slice(0, wildcard < 0 ? -1 : wildcard).join("/") || "/";
+  const base = segments.slice(0, wildcard < 0 ? -1 : wildcard).join("/");
+  return /^[A-Za-z]:$/.test(base) ? `${base}/` : base || "/";
 }
 
-// Where a search runs: the place a Grep or Glob call names (its path, or an absolute pattern's
-// folders), since it searches only there, and the working folder otherwise. A search counts
-// when that place is inside an indexed project.
-function searchFolder(payload) {
-  const cwd = nonEmptyString(payload.cwd) ?? process.cwd();
-  const target = nonEmptyString(payload.tool_input?.path) ?? globBase(payload);
+// Where a search runs: the place a Grep or Glob call names, since it searches only there, and
+// the working folder otherwise. A Glob with an absolute pattern searches from that pattern's
+// folders whatever its path says.
+function searchFolder(payload, cwd) {
+  const target = globBase(payload) ?? nonEmptyString(payload.tool_input?.path);
   return target ? resolve(cwd, target) : cwd;
+}
+
+// The index of the project the session works in, when `place` holds that whole project, such
+// as its parent folder or a drive root.
+function indexWithin(place, cwd) {
+  const indexFolder = findIndexFolder(cwd);
+  if (!indexFolder) return null;
+  const rel = relative(place, dirname(indexFolder));
+  const outside = isAbsolute(rel) || rel.split(/[\\/]/)[0] === "..";
+  return outside ? null : indexFolder;
 }
 
 function hasBypassMarker(command) {
@@ -230,10 +241,11 @@ function startsWithSearchTool(token) {
 }
 
 // The quoted text starting at `at` as the shell reads it, with where it ends; undefined when no
-// quote starts there, null when it never closes, expands inside double quotes (a `$` before a
-// name, a digit, a brace, a parenthesis, a bracket or a special parameter, or a backtick), which
-// can run a command or yield several words (`"$@"`), or joins two lines with a backslash, which
-// Bash removes. Any other `$`, such as a regex's end anchor (`"^remote: *$"`), stays literal.
+// quote starts there, null when it never closes, may expand inside double quotes (a backtick, or
+// a `$` anywhere but last, since each shell adds its own expansions, such as zsh's `"$=name"`),
+// which can run a command or yield several words (`"$@"`), or joins two lines with a backslash,
+// which Bash removes. A `$` right before the closing quote, such as a regex's end anchor
+// (`"^remote: *$"`), stays literal in every shell.
 function readQuoted(command, at) {
   const quote = command[at];
   if (quote !== "'" && quote !== '"') return undefined;
@@ -243,7 +255,7 @@ function readQuoted(command, at) {
   if (end >= command.length) return null;
   const text = command.slice(at + 1, end);
   if (quote === "'") return { text, end };
-  if (/`|\$[\w{([@*#?!$-]|\\\n/.test(text)) return null;
+  if (/`|\$(?!$)|\\\n/.test(text)) return null;
   return { text: text.replace(/\\(["\\])/g, "$1"), end };
 }
 
@@ -501,9 +513,13 @@ function blockMessage(indexFolder) {
   ].join("\n");
 }
 
+// A search counts when the place it runs and an indexed project overlap: the place is inside
+// one, or holds the one the session works in.
 function blockReason(payload) {
   if (!isSearch(payload)) return null;
-  const indexFolder = findIndexFolder(searchFolder(payload));
+  const cwd = nonEmptyString(payload.cwd) ?? process.cwd();
+  const place = searchFolder(payload, cwd);
+  const indexFolder = findIndexFolder(place) ?? indexWithin(place, cwd);
   return indexFolder ? blockMessage(indexFolder) : null;
 }
 

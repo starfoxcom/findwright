@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, parse } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HOOK = fileURLToPath(new URL("../hooks/findwright-first.mjs", import.meta.url));
@@ -38,8 +38,14 @@ const ROWS = [
     call("Grep", { pattern: "foo", path: "src" }, indexed), true],
   ["Glob with an absolute pattern outside the index is allowed from inside",
     call("Glob", { pattern: join(plain, "**", "*.md") }, indexed), false],
+  ["Glob with an outside path and an absolute pattern inside the index is blocked",
+    call("Glob", { path: plain, pattern: join(indexed, "src", "*.mjs") }, indexed), true],
   ["Glob with an absolute pattern inside the index is blocked from outside",
     call("Glob", { pattern: join(indexed, "src", "*.mjs") }, plain), true],
+  ["Glob with a pattern at the drive root, which holds the index, is blocked from inside",
+    call("Glob", { pattern: `${parse(indexed).root}**/*.mjs` }, indexed), true],
+  ["Grep with a parent folder of the index as its path is blocked from inside",
+    call("Grep", { pattern: "foo", path: ".." }, indexed), true],
   ["grep -rn in an indexed folder is blocked", shell("grep -rn foo ."), true],
   ["rg after a pipe is blocked", shell("cat notes.txt | rg foo"), true],
   ["grep filtering test output is allowed",
@@ -135,6 +141,8 @@ const ROWS = [
   ["grep filtering a build run through a package manager is allowed",
     shell("npm run build 2>&1 | grep -i error"), false],
   ["a quoted end anchor in the pattern is allowed", shell('git push 2>&1 | grep -v "^remote: *$"'), false],
+  ["a quoted zsh expansion, which can split into grep options, is blocked",
+    shell("o='-rn TODO src'; ls | grep \"$=o\""), true],
   ["node --test naming the test files is allowed", shell("node --test test/x.test.mjs | grep fail"), false],
   ["an interpreter option before the program file is blocked",
     shell("node --require ./a.cjs tools/x.mjs | grep foo"), true],
