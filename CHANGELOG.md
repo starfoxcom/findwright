@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.4.2] - 2026-11-26
 
 ### Fixed
 - The search hook lets more Bash output filters through without a bypass marker. A `$` that cannot expand inside a double-quoted pattern, such as the end anchor in `git push 2>&1 | grep -v "^remote: *$"`, no longer stops the hook from reading the command, which then counted as a search. The commands whose output a `grep`, `rg`, `ag` or `ack` may filter now also cover `python`, `python3` or `py` running a `.py` file and `node` running a `.js`, `.mjs` or `.cjs` file, with nothing between the interpreter and the file (`python tools/report.py`, `node tools/x.mjs`); `npm run` and `pnpm run` with a plain script name and no option before a `--` (`npm run build`); `claude plugin list`, `claude mcp list` and `claude mcp get`; and `git` with `-C <folder>`, `--no-pager` or `-P` before one of its listed uses (`git -C . --no-pager status -s`). Any other command or spelling keeps the old answer, so a filter after `cat`, `sed`, `git show`, `git log -p`, inline code such as `python -c`, an option before the program file such as `node --require`, an npm option after the script name such as `--node-options`, `git -c`, or a command the hook does not know is still a code search ([#149](https://github.com/starfoxcom/findwright/issues/149)).
