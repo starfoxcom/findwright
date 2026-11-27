@@ -3,7 +3,7 @@
 // boundary. Any failure lets the call through, since a broken hook must not
 // block every search in every project.
 import { existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
 const BYPASS_MARKER = "FINDWRIGHT_BYPASS:";
 const SHELL_TOOLS = ["Bash", "PowerShell"];
@@ -185,13 +185,25 @@ function nonEmptyString(value) {
   return typeof value === "string" && value !== "" ? value : undefined;
 }
 
-// A search counts when its working folder or its target path is inside an indexed project.
-function searchFolders(payload) {
+const GLOB_WILDCARDS = "*?[{";
+const hasWildcard = (segment) => [...segment].some((character) => GLOB_WILDCARDS.includes(character));
+
+// The folders of an absolute Glob pattern before its first wildcard segment.
+function globBase(payload) {
+  const pattern = payload.tool_name === "Glob" ? nonEmptyString(payload.tool_input?.pattern) : undefined;
+  if (!pattern || !isAbsolute(pattern)) return undefined;
+  const segments = pattern.split(/[\\/]/);
+  const wildcard = segments.findIndex(hasWildcard);
+  return segments.slice(0, wildcard < 0 ? -1 : wildcard).join("/") || "/";
+}
+
+// Where a search runs: the place a Grep or Glob call names (its path, or an absolute pattern's
+// folders), since it searches only there, and the working folder otherwise. A search counts
+// when that place is inside an indexed project.
+function searchFolder(payload) {
   const cwd = nonEmptyString(payload.cwd) ?? process.cwd();
-  const folders = [cwd];
-  const target = nonEmptyString(payload.tool_input?.path);
-  if (target) folders.push(resolve(cwd, target));
-  return folders;
+  const target = nonEmptyString(payload.tool_input?.path) ?? globBase(payload);
+  return target ? resolve(cwd, target) : cwd;
 }
 
 function hasBypassMarker(command) {
@@ -493,9 +505,7 @@ function blockMessage(indexFolder) {
 
 function blockReason(payload) {
   if (!isSearch(payload)) return null;
-  const indexFolder = searchFolders(payload)
-    .map((folder) => findIndexFolder(folder))
-    .find(Boolean);
+  const indexFolder = findIndexFolder(searchFolder(payload));
   return indexFolder ? blockMessage(indexFolder) : null;
 }
 
