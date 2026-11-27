@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.4.3] - 2026-11-27
 
 ### Fixed
 - `hits` scores a session transcript larger than about 512 MB. It read the whole transcript into one string, which stopped with `ERR_STRING_TOO_LONG` past the longest string Node can hold, so a long session got no hit rate, no saving and no recorded figure. It now reads the transcript a chunk at a time, in about the same memory for any size ([#162](https://github.com/starfoxcom/findwright/issues/162)).
