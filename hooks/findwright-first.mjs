@@ -193,13 +193,15 @@ function nonEmptyString(value) {
 const GLOB_WILDCARDS = "*?[{";
 const hasWildcard = (segment) => [...segment].some((character) => GLOB_WILDCARDS.includes(character));
 
-// The folders of an absolute Glob pattern before its first wildcard segment.
+// The folders of an absolute Glob pattern before its first wildcard segment. A bare drive
+// such as "C:" keeps its separator, since Windows reads "C:" as the working folder on C.
 function globBase(payload) {
   const pattern = payload.tool_name === "Glob" ? nonEmptyString(payload.tool_input?.pattern) : undefined;
   if (!pattern || !isAbsolute(pattern)) return undefined;
   const segments = pattern.split(/[\\/]/);
   const wildcard = segments.findIndex(hasWildcard);
-  return segments.slice(0, wildcard < 0 ? -1 : wildcard).join("/") || "/";
+  const base = segments.slice(0, wildcard < 0 ? -1 : wildcard).join("/");
+  return /^[A-Za-z]:$/.test(base) ? `${base}/` : base || "/";
 }
 
 // Where a search runs: the place a Grep or Glob call names, since it searches only there, and

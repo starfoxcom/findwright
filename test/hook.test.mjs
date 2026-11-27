@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, parse } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HOOK = fileURLToPath(new URL("../hooks/findwright-first.mjs", import.meta.url));
@@ -42,6 +42,8 @@ const ROWS = [
     call("Glob", { path: plain, pattern: join(indexed, "src", "*.mjs") }, indexed), true],
   ["Glob with an absolute pattern inside the index is blocked from outside",
     call("Glob", { pattern: join(indexed, "src", "*.mjs") }, plain), true],
+  ["Glob with a pattern at the drive root is allowed from inside",
+    call("Glob", { pattern: `${parse(indexed).root}*.md` }, indexed), false],
   ["grep -rn in an indexed folder is blocked", shell("grep -rn foo ."), true],
   ["rg after a pipe is blocked", shell("cat notes.txt | rg foo"), true],
   ["grep filtering test output is allowed",
