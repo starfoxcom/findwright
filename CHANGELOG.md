@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- The session hit rate leaves out a search whose next opened file is outside the repo, such as a plugin's skill under `~/.claude/plugins/cache` or a scratch script, so it counts as neither a hit nor a miss. On Windows a file on another drive than the repo counted as a miss, since its path relative to the repo stays absolute, and `assess` then suggested an include glob for the whole drive, such as `C:/**`. `assess` now also skips misses recorded outside the repo before this fix, so it never suggests a glob that reaches outside the repo ([#152](https://github.com/starfoxcom/findwright/issues/152)).
+
 ## [2.4.1] - 2026-11-22
 
 ### Fixed
