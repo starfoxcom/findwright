@@ -1,6 +1,6 @@
 ---
 paths:
-  - "**/*.{js,jsx,ts,tsx,mjs,cjs,py,go,rs,java,kt,kts,cs,c,cc,cpp,h,hpp,swift,dart,rb,php,gd,lua,ex,exs,scala}"
+  - "**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts,vue,svelte,astro,py,go,rs,java,kt,kts,groovy,scala,cs,fs,vb,c,cc,cpp,cxx,h,hh,hpp,hxx,inl,m,mm,swift,dart,rb,php,gd,lua,ex,exs,erl,hs,ml,clj,zig,r,R,jl,pl,sh,bash,ps1,sql,mq4,mq5,mqh,hlsl,glsl,shader}"
 ---
 
 # Clean code
