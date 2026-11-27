@@ -92,7 +92,8 @@ OUT_OF_TIME = (f"the version check did not finish within {HOOK_SECONDS} s. Run t
                "once the computer is less busy.")
 UNREAD = ("Blocked: this command may make a release, and the version check could not read it. "
           "The check reads commands with the shell parser in Bindwright's helper, which needs "
-          "Node 18 or later: install both with `/bindwright:setup`, or turn the check off with "
+          "Node 18 or later on PATH outside this project's folders (a node the project ships is "
+          "never run): install both with `/bindwright:setup`, or turn the check off with "
           "\"versioning\": \"none\" in .bindwright/project.json. With both installed, the parser "
           "could not read this command: run the release as a plain git tag, gh release create "
           "or gh pr create command of its own.")
@@ -113,16 +114,56 @@ def parser_script():
 
 
 def trusted_program(name, project):
-    """The program on PATH as an absolute path, or None when the first one found is the project's.
-    Windows looks a bare name up in the current folder first, so a repo could ship its own
-    `git.exe` or `node.exe`: that search is switched off, and a relative match or one in the
-    project or the current folder is refused."""
+    """The program as an absolute path, from the first PATH folder a repo cannot have shipped it
+    in, or None when no such folder holds it. A PATH folder that is relative, is the project
+    folder or the current folder, or sits anywhere in the project folder's repo is skipped, so a
+    repo's own `git` or `node` never runs; Windows's search of the current folder first is off."""
     os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
-    found = shutil.which(name)
-    if not found or not os.path.isabs(found):
+    repo = repo_folder(project)
+    here = {real_path(place) for place in (project, os.getcwd())}
+    folders = {entry: resolved(entry) for entry in os.environ.get("PATH", "").split(os.pathsep)
+               if os.path.isabs(entry)}
+    trusted = [entry for entry, real in folders.items()
+               if real and real not in here and not (repo and is_within(real, repo))]
+    found = shutil.which(name, path=os.pathsep.join(trusted))
+    return found if found and os.path.isabs(found) else None
+
+
+def repo_folder(path):
+    """The top folder of the outermost repo holding `path`, where a repo, or the one a submodule
+    sits in, could ship its own programs; None outside a repo. A repo at the home folder or above
+    it holds the user's own installs and does not count, unless the home folder is unknown."""
+    home = os.path.expanduser("~")
+    home = real_path(home) if os.path.isabs(home) else None
+    folder, top = real_path(path), None
+    while True:
+        if os.path.exists(os.path.join(folder, ".git")) and not (home and is_within(home, folder)):
+            top = folder
+        parent = os.path.dirname(folder)
+        if parent == folder:
+            return top
+        folder = parent
+
+
+def real_path(path):
+    return os.path.normcase(os.path.realpath(path))
+
+
+def resolved(entry):
+    """`entry` resolved, or None when it cannot be, as Windows reports for a share that refuses the
+    sign-in; such a folder is never searched."""
+    try:
+        return real_path(entry)
+    except OSError:
         return None
-    here = {os.path.normcase(os.path.realpath(folder)) for folder in (project, os.getcwd())}
-    return None if os.path.normcase(os.path.realpath(os.path.dirname(found))) in here else found
+
+
+def is_within(folder, top):
+    """Whether `folder` is `top` or below it; two paths on different drives never are."""
+    try:
+        return os.path.commonpath([folder, top]) == top
+    except ValueError:
+        return False
 
 
 def shell_commands(command, shell, project):

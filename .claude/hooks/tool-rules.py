@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""PreToolUse guard: refuse the shell patterns a session was told to stop using.
+"""PreToolUse guard: refuse the shell patterns a session was told to stop using. After a commit or
+PR command (PostToolUse), it also notes a commit subject or PR title that landed over its limit.
 
 Each rule in RULES names a pattern that keeps failing, why, and what to use
 instead. A correction of the kind "never use X, use Y" lands here as a new rule,
@@ -17,7 +18,13 @@ stands outside quotes and comments. Where the reading is unsure (a quote that
 never closes, a double-quoted string holding `$(`, a `<<` inside one), the
 text is left unread: a missed pattern costs less than a refused command. It is
 a safety net for the ordinary spelling, not a sandbox against a command built
-to slip past it.
+to slip past it. Two rows also read the repo: the merge-style row its saved
+answers, and the changelog row the staged CHANGELOG.md against the last
+commit's, as git stores them.
+
+The length notes parse no command: after one that mentions `git commit` or
+`gh pr create` or `edit`, they read the subject or title that landed from git
+and gh themselves, so every spelling and shell is covered.
 
 Each rule carries its mode. An `enforce` rule refuses the command. An `observe`
 rule only appends what it would have refused to the user's Bindwright folder
@@ -28,13 +35,17 @@ be undone (a repo secret write): that one enforces from the start. The mode
 lives here, never in a file a session could write, so nothing at run time
 relaxes a rule.
 
-Exit contract: JSON permissionDecision=deny on stdout, exit 0. Silent exit 0
+Exit contract: before a command, JSON permissionDecision=deny on stdout, exit 0;
+after one, JSON additionalContext with the length notes, exit 0. Silent exit 0
 otherwise, and for any input it cannot read.
 """
 import bisect
+import datetime
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import time
 
@@ -363,6 +374,207 @@ def cased(pattern):
     return lambda text, shell: bool(compiled.search(bare(text, shell)))
 
 
+# Where the hook runs: the session's folder, from the hook's input; "." until it says.
+CWD = "."
+def merge_style():
+    """How the repo the hook runs in merges its PRs, by the answers Bindwright's setup saved, or None."""
+    try:
+        folder = os.path.abspath(CWD)
+    except OSError:  # a "." whose folder was deleted
+        return None
+    while True:
+        try:
+            with open(os.path.join(folder, ".bindwright", "project.json"), encoding="utf-8") as answers:
+                style = json.load(answers).get("advanced", {}).get("mergeStyle")
+            return style if isinstance(style, str) else None
+        # RecursionError: JSON nested deeper than the reader goes.
+        except (OSError, ValueError, AttributeError, RecursionError):
+            pass
+        parent = os.path.dirname(folder)
+        if parent == folder or os.path.exists(os.path.join(folder, ".git")):
+            return None
+        folder = parent
+
+
+def squash_merges():
+    return merge_style() == "squash"
+
+
+# What may follow a flag the rows below count: a space, an operator that ends its command, a closing
+# parenthesis or the input's end. Anything else, a value written onto it (`--failed=false`) included, is
+# left unread.
+FLAG_END = r"(?=[\s|;&)]|$)"
+
+MERGE_STYLES = ("merge", "squash", "rebase")
+# The flags that rewrite a PR's commits. `--merge` is left out: gitflow merges release and cascade PRs
+# with it whatever the work PRs use, and a merge commit keeps every branch's history.
+MERGE_FLAGS = {style: Followed(r"\bgh\s+pr\s+merge\b", r"\n|;&", r"\s(?:--%s|-%s)" % (style, style[0]) + FLAG_END,
+                               flags=0)
+               for style in ("squash", "rebase")}
+
+
+def other_merge_style(text, shell):
+    """Whether a `gh pr merge` asks for a merge style other than the one the repo saved."""
+    command = bare(text, shell)
+    asked = {style for style, flag in MERGE_FLAGS.items() if flag.search(command)}
+    if not asked:
+        return False
+    saved = merge_style()
+    return saved in MERGE_STYLES and bool(asked - {saved})
+
+
+GIT_COMMIT = both(r"\bgit\s+commit\b")
+# A changelog heading that carries a date: a released section, which a later release never edits.
+DATED_HEADING = re.compile(r"^## .*\b\d{4}-\d{2}-\d{2}\b")
+# A link reference line (`[1.0.0]: https://...`), which Keep a Changelog keeps at the file's end: a release
+# cut edits these, so they belong to no section.
+LINK_REFERENCE = re.compile(r"^\[[^\]]+\]:\s")
+# Seconds the changelog row's git calls share, well inside the hook's 10 s limit in a project.
+GIT_SECONDS = 4
+# The largest changelog the row reads, in bytes, either copy: a long-lived project's runs to a few hundred KB.
+CHANGELOG_LIMIT = 4 * 1024 * 1024
+
+
+def repo_root():
+    """The folder holding CWD's `.git` (a folder, or a worktree's file), or None outside a repo."""
+    try:
+        folder = os.path.abspath(CWD)
+    except OSError:  # a "." whose folder was deleted
+        return None
+    while not os.path.exists(os.path.join(folder, ".git")):
+        parent = os.path.dirname(folder)
+        if parent == folder:
+            return None
+        folder = parent
+    return folder
+
+
+def real_path(path):
+    return os.path.normcase(os.path.realpath(path))
+
+
+def resolved(entry):
+    """`entry` resolved, or None when it cannot be, as Windows reports for a share that refuses the
+    sign-in; such a folder is never searched."""
+    try:
+        return real_path(entry)
+    except OSError:
+        return None
+
+
+def is_within(folder, top):
+    """Whether `folder` is `top` or below it; two paths on different drives never are."""
+    try:
+        return os.path.commonpath([folder, top]) == top
+    except ValueError:
+        return False
+
+
+def repo_folder(root):
+    """The top folder of the outermost repo holding `root`, where a repo, or the one a submodule sits
+    in, could ship its own programs. A repo at the home folder or above it holds the user's own
+    installs and does not count, unless the home folder is unknown."""
+    home = os.path.expanduser("~")
+    home = real_path(home) if os.path.isabs(home) else None
+    folder, top = real_path(root), real_path(root)
+    while True:
+        if os.path.exists(os.path.join(folder, ".git")) and not (home and is_within(home, folder)):
+            top = folder
+        parent = os.path.dirname(folder)
+        if parent == folder:
+            return top
+        folder = parent
+
+
+def trusted_folders(root):
+    """The PATH folders a repo cannot have shipped a program in, or None when the hook's own folder is gone.
+    A PATH folder that is relative (a `.`), is the session folder or the current folder, or sits anywhere in
+    the outermost repo holding `root` is skipped; Windows's search of the current folder first is switched
+    off."""
+    os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
+    try:
+        here = {real_path(place) for place in (CWD, os.getcwd())}
+    except OSError:  # the hook's own folder was deleted
+        return None
+    repo = repo_folder(root)
+    folders = {entry: resolved(entry) for entry in os.environ.get("PATH", "").split(os.pathsep)
+               if os.path.isabs(entry)}
+    return [entry for entry, real in folders.items() if real and real not in here and not is_within(real, repo)]
+
+
+def trusted_program(root, name):
+    """The program `name` (git, gh) as an absolute path from the trusted folders, so a repo's own copy never
+    runs, or None when none of them holds one."""
+    folders = trusted_folders(root)
+    found = folders and shutil.which(name, path=os.pathsep.join(folders))
+    return found if found and os.path.isabs(found) else None
+
+
+def git_output(git, root, deadline, *args):
+    """What a git command run in the repo prints, or None when it fails or the monotonic `deadline` passes."""
+    left = deadline - time.monotonic()
+    if left <= 0:
+        return None
+    # Nothing to wait on: no input, no credential prompt, no fetch of a missing object.
+    quiet = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_NO_LAZY_FETCH="1")
+    try:
+        process = subprocess.Popen([git, "-C", root, *args], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                   stderr=subprocess.DEVNULL, env=quiet)
+    except OSError:
+        return None
+    try:
+        out, _ = process.communicate(timeout=left)
+    except subprocess.TimeoutExpired:
+        # Waiting again for the output, as `subprocess.run` does, can outlast the deadline: on Windows a
+        # launcher's child keeps the pipe open after the launcher is killed.
+        process.kill()
+        return None
+    return out.decode("utf-8", "replace") if process.returncode == 0 else None
+
+
+def stored_text(git, root, deadline, spec):
+    """The blob git stores at `spec` (`HEAD:CHANGELOG.md`, `:CHANGELOG.md` for the staged copy), or None when
+    there is none, it passes CHANGELOG_LIMIT or git cannot read it. A link is stored as its target's name,
+    so nothing outside git's own data is ever opened."""
+    size = git_output(git, root, deadline, "cat-file", "-s", spec)
+    if size is None or not size.strip().isdigit() or int(size) > CHANGELOG_LIMIT:
+        return None
+    return git_output(git, root, deadline, "cat-file", "blob", spec)
+
+
+def dated_sections(changelog):
+    """Each dated section's text by its heading line, without link lines or trailing blank lines."""
+    sections, heading = {}, None
+    for line in changelog.split("\n"):
+        line = line.rstrip("\r")
+        if line.startswith("## "):
+            heading = line if DATED_HEADING.match(line) else None
+            if heading is not None:
+                sections[heading] = []
+        elif heading is not None and not LINK_REFERENCE.match(line):
+            sections[heading].append(line)
+    return {heading: "\n".join(lines).rstrip() for heading, lines in sections.items()}
+
+
+def edits_dated_changelog(text, shell):
+    """Whether a `git commit` runs while a dated section of the last commit's CHANGELOG.md is changed or gone
+    in the staged copy. Only what git stores is read, never the file on disk, which the repo controls, so a
+    change staged in the same command as the commit (`git add`, `git commit -a`) is not seen."""
+    if not GIT_COMMIT(text, shell):
+        return False
+    root = repo_root()
+    git = root and trusted_program(root, "git")
+    if not git:
+        return False
+    deadline = time.monotonic() + GIT_SECONDS
+    old = stored_text(git, root, deadline, "HEAD:CHANGELOG.md")
+    new = old and stored_text(git, root, deadline, ":CHANGELOG.md")
+    if new is None or not old:
+        return False
+    current = dated_sections(new)
+    return any(current.get(heading) != section for heading, section in dated_sections(old).items())
+
+
 # `origin/develop:.claude/x`: a git object path that starts with a dot.
 REV_DOT_PATH = Followed(r"\bgit\s+(?:show|cat-file|ls-tree|diff)\b", r"\n|;&", r"\s[\w./@~^-]+:\.[^/\s.]")
 
@@ -403,7 +615,7 @@ RULES = [
      lambda text, shell: GIT_BASH and shell == "bash" and REV_DOT_PATH.search(bare(text, shell)),
      "Git Bash rewrites it, so the file looks missing. Write `<rev>:./<path>` from the repo root.", ENFORCE),
     ("`gh run rerun --failed` or `--job`",
-     both(Followed(r"\bgh\s+run\s+rerun\b", r"\n|;&", r"\s(?:--failed|--job|-j)\b")),
+     both(Followed(r"\bgh\s+run\s+rerun\b", r"\n|;&", r"\s(?:--failed|--job|-j)" + FLAG_END)),
      "a re-run of only some jobs can leave a required check stuck. Re-run the whole run, or push again.", OBSERVE),
     ("an interactive git command (`-i`, `-p`)",
      # `git stash show -p` only prints, and a rebase given a scripted editor never waits for keys.
@@ -422,7 +634,95 @@ RULES = [
      "other sessions share it, and nothing cleans it up. Use the session's scratchpad instead.", OBSERVE),
     ("`jq` in Git Bash", lambda text, shell: GIT_BASH and shell == "bash" and JQ.search(bare(text, shell)),
      "Git Bash has no `jq`. Filter with the `--jq` option of `gh`, or with Python.", OBSERVE),
+    # `git checkout -- <file>` restores files and switches nothing.
+    ("a branch switch chained with other commands",
+     both(r"\bgit\s+(?:checkout|switch)\b(?!\s+--(?:\s|$))", r"&&|\|\||;|\n[^\S\n]*\S"),
+     "a refused or failed chain can skip the switch, so the next edit lands on the wrong branch. Switch in a"
+     " call of its own, check `git branch --show-current`, then go on.", OBSERVE),
+    ("a `gh pr merge` style other than the repo's", other_merge_style,
+     "the repo saved another merge style at setup (`mergeStyle` in `.bindwright/project.json`), and mixing"
+     " them breaks the history it reads. Merge with the flag `git.md` names.", OBSERVE),
+    ("a commit that edits a released CHANGELOG.md section", edits_dated_changelog,
+     "a dated section records what that release shipped, so it never changes. Put the change under"
+     " `[Unreleased]` instead.", OBSERVE),
 ]
+
+
+# The commit format's subject limit, and the PR title limit where PRs squash-merge: GitHub adds ` (#123)`
+# to the title it makes the commit subject.
+SUBJECT_LIMIT = 72
+TITLE_LIMIT = 64
+MENTIONS_COMMIT = Followed(r"\bgit\b", r"\n;&|", r"\bcommit\b", flags=0)
+MENTIONS_PR = re.compile(r"\bgh\s+pr\s+(?:create|edit)\b")
+LANDED_SECONDS = 10
+# A commit or PR counts as this command's only when it was written this recently: a command that only
+# mentions a commit or a PR (a log search, a dry run, a commit that failed) leaves an older one in place.
+FRESH_SECONDS = 120
+
+
+def landed(program, *args):
+    """The first line `program` prints in the session's repo, or None outside one, when it fails or when
+    LANDED_SECONDS pass."""
+    root = repo_root()
+    folders = root and trusted_folders(root)
+    found = folders and shutil.which(program, path=os.pathsep.join(folders))
+    if not found or not os.path.isabs(found):
+        return None
+    command = [found, "-C", root, *args] if program == "git" else [found, *args]
+    # gh starts git itself, so its PATH holds only the trusted folders.
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", PATH=os.pathsep.join(folders))
+    try:
+        process = subprocess.Popen(command, cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                                   stderr=subprocess.DEVNULL, env=env)
+    except OSError:
+        return None
+    try:
+        out, _ = process.communicate(timeout=LANDED_SECONDS)
+    except subprocess.TimeoutExpired:
+        process.kill()  # no second wait, as in git_output
+        return None
+    out = out.decode("utf-8", "replace") if process.returncode == 0 else ""
+    return out.split("\n", 1)[0].strip() or None
+
+
+def is_fresh(seconds_since_epoch):
+    """Written within FRESH_SECONDS of now either way, since GitHub's clock and this computer's can differ."""
+    return abs(time.time() - seconds_since_epoch) <= FRESH_SECONDS
+
+
+def fresh_subject():
+    """The subject of the commit at HEAD when it was written in the last FRESH_SECONDS and is not a merge,
+    whose subject git writes."""
+    line = landed("git", "log", "-1", "--format=%ct %P%x09%s")
+    stamp, _, subject = (line or "").partition("\t")
+    when, *parents = stamp.split(" ")
+    return subject if when.isdigit() and len(parents) <= 1 and is_fresh(int(when)) else None
+
+
+def fresh_title():
+    """The title of the current branch's PR when it changed in the last FRESH_SECONDS."""
+    line = landed("gh", "pr", "view", "--json", "title,updatedAt", "-q", '.updatedAt + "\\t" + .title')
+    stamp, _, title = (line or "").partition("\t")
+    try:
+        when = datetime.datetime.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
+    except ValueError:
+        return None
+    return title if is_fresh(when.timestamp()) else None
+
+
+def length_notes(text):
+    """A note for each commit subject or PR title the command wrote over its limit."""
+    notes = []
+    subject = fresh_subject() if MENTIONS_COMMIT.search(text) else None
+    if subject and len(subject) > SUBJECT_LIMIT:
+        notes.append(f"The commit subject that landed is {len(subject)} characters, over the {SUBJECT_LIMIT} the"
+                     " commit format allows. Shorten it with `git commit --amend` before pushing.")
+    if MENTIONS_PR.search(text) and squash_merges():
+        title = fresh_title()
+        if title and len(title) > TITLE_LIMIT:
+            notes.append(f"The PR title is {len(title)} characters, over {TITLE_LIMIT}: it becomes the commit"
+                         " subject when the PR squash-merges. Shorten it with `gh pr edit --title`.")
+    return notes
 
 
 def observe(name, text, shell):
@@ -469,6 +769,15 @@ def main():
     if not isinstance(text, str):
         sys.exit(0)
     shell = "powershell" if data.get("tool_name") == "PowerShell" else "bash"
+    global CWD
+    cwd = data.get("cwd")
+    CWD = cwd if isinstance(cwd, str) and cwd else CWD
+    if data.get("hook_event_name") == "PostToolUse":
+        notes = [] if data.get("agent_id") else length_notes(text)
+        if notes:
+            sys.stdout.write(json.dumps({"hookSpecificOutput": {
+                "hookEventName": "PostToolUse", "additionalContext": " ".join(notes)}}))
+        sys.exit(0)
     refused = refusal(text, shell)
     if refused:
         deny(*refused)

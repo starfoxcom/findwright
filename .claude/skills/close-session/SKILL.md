@@ -1,6 +1,6 @@
 ---
 name: close-session
-description: Close a work session. Verifies what is really finished, commits, lands the work, cleans up and hands off to the next session. Use when the maintainer asks for it, or when every task of the session is done; never just because the context is filling up.
+description: Close a work session. Verifies what is really finished, commits, lands the work, cleans up and hands off to the next session. Use when the maintainer asks for it, or when every task of the session is done.
 ---
 
 # /close-session
@@ -28,6 +28,10 @@ Then check the living docs are still current: for each behaviour, name, path, co
 ## The code-search tool's own close step
 
 When the guidance FindWright installed for the agent names a step for the end of a session, such as a report on how its searches did, run it here.
+
+## The reply style's close step
+
+When `~/.claude/hooks/reply-style.py` exists, run it with `--report` (with `python3`, or `python` on Windows). It prints `{goal, sessions, assess, worst}`: `sessions` are the newest sessions that measured five replies or more, newest first, each with its `rate` in percent. Say in one line how this session's replies did against the goal: the latest restated reply style names this session's count once it has measured a reply ("held in N of M replies of this session", or "This session so far: N of M"), counted up to the reply before that prompt. When it names none, say no reply was measured yet. Never give a figure it names for "the last session" as this one's. When `assess` is true, the last three sessions all fell short: name `worst`, the rule they broke most, with its count, and propose a change to the reply style's text in `~/.claude/output-styles/` that would prevent it; change the file only on the user's yes.
 
 ## Pruning pass
 
@@ -61,7 +65,7 @@ Commit and PR format, `--body-file`, merge style and branch cleanup are in `git.
 
 ## Hand-off in the tracker
 
-After the commit and PR, so the state records how they ended. For each issue this session worked on, rewrite its `### Current state` per `.claude/rules/tracker.md`: where the work stands, decisions made and why, what the next session should do first. Work without an issue gets one now with the "New item" command, a branch with no PR included. Rules and conventions stay in `.claude/rules/`; session figures (the code-research count, context use) stay in the chat.
+After the commit and PR, so the state records how they ended. For each issue this session worked on, rewrite its `### Current state` per `.claude/rules/tracker.md`: where the work stands, decisions made and why, what the next session should do first. Work without an issue gets one now with the "New item" command, a branch with no PR included. Rules and conventions stay in `.claude/rules/`; session figures (the code-research count, context use) stay in the chat. Leave out the history of the assistant's own setup (a rule, hook or plugin that changed along the way) unless changing it was the work.
 
 Then post a project status update only when this session completed a milestone or a major arc of one, changed the health colour, or changed the plan; `tracker.md` § Project status updates has the shape. Most sessions post none.
 

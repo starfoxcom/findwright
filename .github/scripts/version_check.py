@@ -102,16 +102,57 @@ def parse_args(argv):
 
 @functools.lru_cache(maxsize=None)
 def git_program():
-    """git on PATH as an absolute path, found once from the folder the check started in. Windows
-    looks a bare name up in the current folder first, so a repo could ship its own `git.exe`:
-    that search is switched off, and a relative match or one in that folder is refused."""
+    """git as an absolute path, found once from the folder the check started in, in the first PATH
+    folder a repo cannot have shipped it in. A PATH folder that is relative, is that folder, or
+    sits anywhere in its repo is skipped, so a repo's own `git` never runs; Windows's search of
+    the current folder first is switched off."""
     os.environ["NoDefaultCurrentDirectoryInExePath"] = "1"
-    found = shutil.which("git")
-    here = os.path.normcase(os.path.realpath(os.getcwd()))
-    if not found or not os.path.isabs(found) or os.path.normcase(
-            os.path.realpath(os.path.dirname(found))) == here:
-        raise CheckError("no git found outside the current folder")
+    here, repo = real_path(os.getcwd()), repo_folder(os.getcwd())
+    folders = {entry: resolved(entry) for entry in os.environ.get("PATH", "").split(os.pathsep)
+               if os.path.isabs(entry)}
+    trusted = [entry for entry, real in folders.items()
+               if real and real != here and not (repo and is_within(real, repo))]
+    found = shutil.which("git", path=os.pathsep.join(trusted))
+    if not found or not os.path.isabs(found):
+        raise CheckError("no git found on PATH outside this repo's folders")
     return found
+
+
+def repo_folder(path):
+    """The top folder of the outermost repo holding `path`, where a repo, or the one a submodule
+    sits in, could ship its own programs; None outside a repo. A repo at the home folder or above
+    it holds the user's own installs and does not count, unless the home folder is unknown."""
+    home = os.path.expanduser("~")
+    home = real_path(home) if os.path.isabs(home) else None
+    folder, top = real_path(path), None
+    while True:
+        if os.path.exists(os.path.join(folder, ".git")) and not (home and is_within(home, folder)):
+            top = folder
+        parent = os.path.dirname(folder)
+        if parent == folder:
+            return top
+        folder = parent
+
+
+def real_path(path):
+    return os.path.normcase(os.path.realpath(path))
+
+
+def resolved(entry):
+    """`entry` resolved, or None when it cannot be, as Windows reports for a share that refuses the
+    sign-in; such a folder is never searched."""
+    try:
+        return real_path(entry)
+    except OSError:
+        return None
+
+
+def is_within(folder, top):
+    """Whether `folder` is `top` or below it; two paths on different drives never are."""
+    try:
+        return os.path.commonpath([folder, top]) == top
+    except ValueError:
+        return False
 
 
 def git(*args):

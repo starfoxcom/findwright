@@ -10,8 +10,10 @@
 # - this folder holds no hook file <name>.py.
 #
 # A hook that starts and then crashes, times out or exits with a code other
-# than 0 or 2 is not handled here: the settings entry sets "onFailure":
-# "block", so Claude Code blocks the tool call.
+# than 0 or 2 is not handled here: each settings entry decides. A guard that
+# runs before the command sets "onFailure": "block", so Claude Code blocks
+# the tool call; one that runs after it sets none, since the command has
+# already run, and its failure only drops the note.
 #
 # A committed file cannot name the interpreter by absolute path, so this
 # looks for one. A virtual environment's interpreter is refused because it
