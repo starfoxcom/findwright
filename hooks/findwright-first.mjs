@@ -3,7 +3,7 @@
 // boundary. Any failure lets the call through, since a broken hook must not
 // block every search in every project.
 import { existsSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 const BYPASS_MARKER = "FINDWRIGHT_BYPASS:";
 const SHELL_TOOLS = ["Bash", "PowerShell"];
@@ -206,11 +206,20 @@ function globBase(payload) {
 
 // Where a search runs: the place a Grep or Glob call names, since it searches only there, and
 // the working folder otherwise. A Glob with an absolute pattern searches from that pattern's
-// folders whatever its path says. A search counts when that place is inside an indexed project.
-function searchFolder(payload) {
-  const cwd = nonEmptyString(payload.cwd) ?? process.cwd();
+// folders whatever its path says.
+function searchFolder(payload, cwd) {
   const target = globBase(payload) ?? nonEmptyString(payload.tool_input?.path);
   return target ? resolve(cwd, target) : cwd;
+}
+
+// The index of the project the session works in, when `place` holds that whole project, such
+// as its parent folder or a drive root.
+function indexWithin(place, cwd) {
+  const indexFolder = findIndexFolder(cwd);
+  if (!indexFolder) return null;
+  const rel = relative(place, dirname(indexFolder));
+  const outside = isAbsolute(rel) || rel.split(/[\\/]/)[0] === "..";
+  return outside ? null : indexFolder;
 }
 
 function hasBypassMarker(command) {
@@ -504,9 +513,13 @@ function blockMessage(indexFolder) {
   ].join("\n");
 }
 
+// A search counts when the place it runs and an indexed project overlap: the place is inside
+// one, or holds the one the session works in.
 function blockReason(payload) {
   if (!isSearch(payload)) return null;
-  const indexFolder = findIndexFolder(searchFolder(payload));
+  const cwd = nonEmptyString(payload.cwd) ?? process.cwd();
+  const place = searchFolder(payload, cwd);
+  const indexFolder = findIndexFolder(place) ?? indexWithin(place, cwd);
   return indexFolder ? blockMessage(indexFolder) : null;
 }
 
