@@ -49,44 +49,48 @@ const optionsMatch = (pattern) => (rest) => {
   const end = rest.includes("--") ? rest.indexOf("--") : rest.length;
   return rest.slice(0, end).every((word) => !word.startsWith("-") || pattern.test(word));
 };
-// A program file run as the first word after an interpreter's name, with no option before it, so
-// no inline code and no program read from the pipe. What the program prints is its own output.
-const runsScript = ([script = ""]) => script !== "" && !script.startsWith("-");
+// A program file run as the first word after an interpreter's name, with nothing before it, so no
+// inline code, no preloaded module and no program read from the pipe. What the program prints is
+// its own output.
+const runsFile = (extension) => ([script = ""]) => extension.test(script) && /^[\w./\\]/.test(script);
+const PYTHON_FILE = runsFile(/\.py$/i);
+// A package script named plainly after `run`.
+const RUNS_PACKAGE_SCRIPT = actions(["run"]);
+const packageScript = (rest) => RUNS_PACKAGE_SCRIPT(rest) && /^[\w:.-]+$/.test(rest[1] ?? "")
+  && !rest[1].startsWith("-");
 const GIT_SUBCOMMANDS = subcommands({
   status: optionsMatch(STATUS_OPTIONS), log: optionsMatch(LOG_OPTIONS),
   ...Object.fromEntries("ls-files branch remote tag worktree push fetch pull".split(" ")
     .map((name) => [name, always])),
 });
-// git's own options that may come before a listed subcommand, and the ones among them that take
-// the next word as their value. Any other one leaves the use unknown.
-const GIT_OPTIONS = ["-C", "-c", "--git-dir", "--work-tree", "--no-pager", "-P"];
-const GIT_VALUE_OPTIONS = GIT_OPTIONS.slice(0, 4);
+// git's own options that may come before a listed subcommand: `-C <folder>`, `--no-pager` and
+// `-P`. Any other one, `-c` above all, which can define an alias on the spot, leaves the use
+// unknown.
 function gitUse(rest) {
   let at = 0;
   while (rest[at]?.startsWith("-")) {
-    const option = rest[at].split("=")[0];
-    if (!GIT_OPTIONS.includes(option)) return false;
-    at += GIT_VALUE_OPTIONS.includes(rest[at]) ? 2 : 1;
+    if (rest[at] === "-C") at += 2;
+    else if (rest[at] === "--no-pager" || rest[at] === "-P") at += 1;
+    else return false;
   }
   return GIT_SUBCOMMANDS(rest.slice(at));
 }
-const NODE_TEST = /^--test(-[a-z-]+)?(=.*)?$/;
-const PACKAGE_MANAGER = subcommands({ test: always, run: always, ls: always, outdated: always });
+const NODE_FILE = runsFile(/\.[cm]?js$/i);
+const NODE_TEST_RUN = subcommands({ "--test": optionsMatch(/^--test(-[a-z-]+)?(=.*)?$/) });
 // Commands whose output is never a file's text, so a search piped after them filters that output:
-// listings, test runs and builds, a program file run by its interpreter, and the read-only uses of
-// git, gh and claude. A test run or a script can print lines of code in its own messages; that is
-// the program's output, not a file the session reads through it. Any other command or use may
-// print a file (cat, sed, find through -exec, node -e, git show, git log -p, gh pr diff), so a
+// listings, test runs, a program file run by its interpreter, a package script, and the read-only
+// uses of git, gh and claude. A test run or a script can print lines of code in its own messages;
+// that is the program's output, not a file the session reads through it. Any other command or use
+// may print a file (cat, sed, find through -exec, node -e, git show, git log -p, gh pr diff), so a
 // search after it stays a search.
 const OUTPUT_SOURCES = {
-  ...Object.fromEntries("ls dir echo printf pwd date which where ps pytest make tsc".split(" ")
-    .map((name) => [name, always])),
+  ls: always, dir: always, echo: always, ps: always, pytest: always,
   find: (rest) => !rest.some((word) => /^-(exec|execdir|ok|okdir)$/.test(word)),
-  node: (rest) => runsScript(rest) || (rest.length > 0 && rest.every((word) => NODE_TEST.test(word))),
-  python: runsScript, py: runsScript, ruby: runsScript, sh: runsScript, bash: runsScript,
-  npm: PACKAGE_MANAGER, pnpm: PACKAGE_MANAGER, yarn: PACKAGE_MANAGER, bun: PACKAGE_MANAGER,
-  cargo: actions(["test", "build", "check"]), go: actions(["test", "build", "vet"]),
-  dotnet: actions(["test", "build"]),
+  node: (rest) => NODE_FILE(rest) || NODE_TEST_RUN(rest),
+  python: PYTHON_FILE, python3: PYTHON_FILE, py: PYTHON_FILE,
+  npm: (rest) => packageScript(rest) || actions(["test", "ls", "outdated"])(rest),
+  pnpm: packageScript,
+  cargo: actions(["test"]), go: actions(["test"]), dotnet: actions(["test"]),
   git: gitUse,
   gh: subcommands({
     run: actions(["list", "view"]), pr: actions(["list", "view", "checks", "status"]),
@@ -393,16 +397,9 @@ function isReshaper(words) {
   return isInputSearch(words);
 }
 
-// A command's name as OUTPUT_SOURCES knows it: without its folder, a Windows `.exe` or, when only
-// that matches, a version after it (`/usr/bin/git`, `python3.12`).
-function commandName(word) {
-  const name = word.split(/[\\/]/).pop().replace(/\.exe$/i, "").toLowerCase();
-  return Object.hasOwn(OUTPUT_SOURCES, name) ? name : name.replace(/[\d.]+$/, "");
-}
-
 // A source passes when OUTPUT_SOURCES lists its command and says that use never prints a file.
 function isOutputSource([command = "", ...rest]) {
-  const name = commandName(command);
+  const name = command.toLowerCase();
   return Object.hasOwn(OUTPUT_SOURCES, name) && OUTPUT_SOURCES[name](rest);
 }
 
