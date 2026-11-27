@@ -202,12 +202,12 @@ function globBase(payload) {
   return segments.slice(0, wildcard < 0 ? -1 : wildcard).join("/") || "/";
 }
 
-// Where a search runs: the place a Grep or Glob call names (its path, or an absolute pattern's
-// folders), since it searches only there, and the working folder otherwise. A search counts
-// when that place is inside an indexed project.
+// Where a search runs: the place a Grep or Glob call names, since it searches only there, and
+// the working folder otherwise. A Glob with an absolute pattern searches from that pattern's
+// folders whatever its path says. A search counts when that place is inside an indexed project.
 function searchFolder(payload) {
   const cwd = nonEmptyString(payload.cwd) ?? process.cwd();
-  const target = nonEmptyString(payload.tool_input?.path) ?? globBase(payload);
+  const target = globBase(payload) ?? nonEmptyString(payload.tool_input?.path);
   return target ? resolve(cwd, target) : cwd;
 }
 

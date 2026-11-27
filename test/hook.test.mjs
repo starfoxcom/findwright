@@ -38,6 +38,8 @@ const ROWS = [
     call("Grep", { pattern: "foo", path: "src" }, indexed), true],
   ["Glob with an absolute pattern outside the index is allowed from inside",
     call("Glob", { pattern: join(plain, "**", "*.md") }, indexed), false],
+  ["Glob with an outside path and an absolute pattern inside the index is blocked",
+    call("Glob", { path: plain, pattern: join(indexed, "src", "*.mjs") }, indexed), true],
   ["Glob with an absolute pattern inside the index is blocked from outside",
     call("Glob", { pattern: join(indexed, "src", "*.mjs") }, plain), true],
   ["grep -rn in an indexed folder is blocked", shell("grep -rn foo ."), true],
